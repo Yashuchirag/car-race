@@ -10,7 +10,7 @@ concrete action is. Everything below it is detail.
 
 ## 1. Resume here
 
-**Last updated:** 2026-09-22 (git initialised, PROGRESS.md added)
+**Last updated:** 2026-09-23 (pushed to a private GitHub repo)
 
 **Last completed:** Vehicle physics core, all five validation checks passing
 against closed-form expectations.
@@ -52,11 +52,12 @@ A row only becomes DONE when its verification command passes.
 | Hardware audit and spec decisions | DONE | Section 3 of IMPLEMENTATION_REPORT.md |
 | Python venv and dependencies | DONE | `Tools/.venv`, `Tools/requirements.txt` |
 | .NET 8 SDK for headless physics | DONE | `dotnet --version` reports 8.0.131 |
-| Git repository | DONE | Initialised 2026-09-22. Local only, no remote yet. |
+| Git repository | DONE | Initialised 2026-09-22 |
+| Off-machine backup | DONE | Private GitHub repo `Yashuchirag/car-race`, `main` tracking `origin/main` |
 | Unity 6 LTS installed | BLOCKED | Manual step, needs your account login. Section 5. |
 | Unity project created at `D:\Dev\CarRace` | BLOCKED | Depends on the row above |
 | Git LFS configured | TODO | Only needed once binary art assets exist |
-| Remote backup | TODO | **Recommended.** Everything lives on one disk today. Section 5. |
+
 
 ### Phase 1, vehicle physics
 
@@ -109,9 +110,9 @@ Sim/            C# vehicle physics, engine agnostic         Phase 1, core DONE
    the only thing gating Phase 1 completion and everything after it.
 2. **Add a Windows Defender exclusion** for the project folder and the Unity
    processes once it exists. Typically 2 to 5x on import times on a spinning disk.
-3. **Decide on a remote backup.** The repo is local only. A private GitHub repo,
-   or any off-machine copy, would mean a disk failure costs nothing. I have not
-   pushed anywhere and will not without you asking.
+3. **Push after meaningful work.** `git push` now that `origin` is configured. The
+   repo is private; making it public later is a one-line change, the reverse is
+   not really possible.
 
 ---
 
@@ -193,3 +194,8 @@ learned, so context is not lost between sessions.
   work existed with no history and no backup.
 - Added this file, and a rule in `CLAUDE.md` section 5 to keep it current during
   work rather than at the end.
+
+### 2026-09-23
+
+- Created a private GitHub repo, `Yashuchirag/car-race`, and pushed `main`. Work
+  now exists off the machine. Nothing else changed.
