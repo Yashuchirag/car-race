@@ -10,7 +10,7 @@ concrete action is. Everything below it is detail.
 
 ## 1. Resume here
 
-**Last updated:** 2026-09-22
+**Last updated:** 2026-09-22 (git initialised, PROGRESS.md added)
 
 **Last completed:** Vehicle physics core, all five validation checks passing
 against closed-form expectations.
@@ -137,6 +137,10 @@ Known, deliberate, and not blocking. Recorded so they are not rediscovered.
 - Corners traced under 12 m radius are flagged but not widened. Hand work.
 - Camber and banking ship as zero. No open dataset has them.
 - Track width is uniform per circuit. Fields are per sample and ready to author.
+- Exported track JSON uses `indent=1`, which puts every array element on its own
+  line: 259,000 lines across the six circuits. They commit fine at 2.8 MB, but
+  regenerating one circuit produces a 50,000 line diff. Worth a more compact
+  writer before the set grows much. Noted 2026-09-22, not urgent.
 
 ---
 
@@ -185,5 +189,7 @@ learned, so context is not lost between sessions.
 - Replaced hand-picked validation targets with closed-form ones. The original 0 to
   100 target was below the car's own traction-limited floor and could never have
   been met.
-- Initialised git. Before this, 40 files of work existed with no history and no
-  backup.
+- Initialised git and committed everything as `b3836af`. Before this, 40 files of
+  work existed with no history and no backup.
+- Added this file, and a rule in `CLAUDE.md` section 5 to keep it current during
+  work rather than at the end.
