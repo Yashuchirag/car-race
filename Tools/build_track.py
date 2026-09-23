@@ -26,8 +26,26 @@ from trackgen import geo, osm  # noqa: E402
 from trackgen import racing_line as rl  # noqa: E402
 
 ROOT = Path(__file__).parent
-ATTRIBUTION = ("Layout geometry derived from OpenStreetMap, (c) OpenStreetMap "
-               "contributors, ODbL 1.0. Elevation from SRTM via OpenTopoData.")
+OSM_ATTRIBUTION = ("Layout geometry derived from OpenStreetMap, (c) OpenStreetMap "
+                   "contributors, ODbL 1.0.")
+SRTM_ATTRIBUTION = "Elevation from SRTM via OpenTopoData (public domain)."
+SYNTHETIC_ATTRIBUTION = ("Original fictional layout authored in build_track.py. "
+                         "Contains no third party data.")
+
+
+def attribution_for(spec, sampled_elevation):
+    """Say where this track's data actually came from.
+
+    A blanket OpenStreetMap credit on every export is wrong twice over: it puts
+    share-alike terms on a layout that was authored here, and it credits OSM for
+    something they had no part in.
+    """
+    if spec.get("synthetic"):
+        return SYNTHETIC_ATTRIBUTION
+    parts = [OSM_ATTRIBUTION]
+    if sampled_elevation:
+        parts.append(SRTM_ATTRIBUTION)
+    return " ".join(parts)
 
 
 # A hand-authored club circuit: main straight, fast right onto a north chute, a
@@ -239,7 +257,7 @@ def build(args):
         "name": spec["alias"],
         "source_layout": spec["display_name"],
         "generated": date.today().isoformat(),
-        "attribution": ATTRIBUTION,
+        "attribution": attribution_for(spec, elevation_source.startswith("SRTM")),
         "coordinate_system": ("ENU metres, X=east Y=north Z=up, right handed. "
                               "Unity import maps (x, y, z) to (x, z, y)."),
         "origin": {"lat": getattr(frame, "lat0", 0.0), "lon": getattr(frame, "lon0", 0.0)},

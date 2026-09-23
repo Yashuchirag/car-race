@@ -2,7 +2,7 @@
  "name": "Airfield Test Circuit",
  "source_layout": "Airfield Test Circuit",
  "generated": "2026-09-22",
- "attribution": "Layout geometry derived from OpenStreetMap, (c) OpenStreetMap contributors, ODbL 1.0. Elevation from SRTM via OpenTopoData.",
+ "attribution": "Original fictional layout authored in build_track.py. Contains no third party data.",
  "coordinate_system": "ENU metres, X=east Y=north Z=up, right handed. Unity import maps (x, y, z) to (x, z, y).",
  "origin": {
   "lat": 0.0,

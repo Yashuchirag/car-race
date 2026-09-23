@@ -2,7 +2,7 @@
  "name": "Desert Park Circuit",
  "source_layout": "Bahrain International Circuit",
  "generated": "2026-09-22",
- "attribution": "Layout geometry derived from OpenStreetMap, (c) OpenStreetMap contributors, ODbL 1.0. Elevation from SRTM via OpenTopoData.",
+ "attribution": "Layout geometry derived from OpenStreetMap, (c) OpenStreetMap contributors, ODbL 1.0. Elevation from SRTM via OpenTopoData (public domain).",
  "coordinate_system": "ENU metres, X=east Y=north Z=up, right handed. Unity import maps (x, y, z) to (x, z, y).",
  "origin": {
   "lat": 26.0325,

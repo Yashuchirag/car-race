@@ -138,7 +138,7 @@ not runtime framerate, since the game runs from RAM and VRAM once loaded. Adding
 Windows Defender exclusion for the project folder and the Unity processes is
 typically worth 2 to 5x on import times.
 
-## Accuracy and licensing
+## Accuracy
 
 Lap-time estimates run 8 to 20% slow against real times for the same class. The
 geometry is hand traced, the line is minimum-curvature rather than lap-time
@@ -147,10 +147,26 @@ layout, not to predict a lap. Elevation is SRTM at 30 m horizontal and roughly 5
 vertical, which gives a good base profile but needs hand sculpting for features
 like Eau Rouge. Camber and banking exist in no open dataset and ship as zero.
 
-Layout geometry comes from OpenStreetMap, © OpenStreetMap contributors, under
-ODbL 1.0, which requires attribution. That string is written into every exported
-file.
+## Licensing
+
+Two licences, because the repository holds two different kinds of thing.
+
+**Code is MIT.** Everything in `Tools/` and `Sim/`, and the documentation. See
+[LICENSE](LICENSE). Use it for anything.
+
+**Generated circuit data is ODbL.** The files in `Tracks_Data/` are a Derived
+Database built from OpenStreetMap, © OpenStreetMap contributors, so they carry
+[ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/) and its share-alike
+terms. See [Tracks_Data/LICENSE](Tracks_Data/LICENSE). Each file also records its
+own provenance in its `attribution` field.
+
+ODbL covers the database, not programs that read it, so the MIT licence on the
+pipeline is unaffected. The one exception in that directory is
+`testcircuit.json`, an original fictional layout with no OpenStreetMap data in it,
+which is MIT like the rest.
+
+Elevation comes from SRTM via OpenTopoData and is public domain.
 
 A circuit's geometry is factual and fine to recreate. Its name, logos, sponsor
-boards and liveries are not. Every catalogue entry carries an in-game alias, so
-Spa's layout ships as "Ardennes Circuit".
+boards and liveries are not, and none are reproduced here. Every catalogue entry
+carries an in-game alias, so Spa's layout ships as "Ardennes Circuit".

@@ -10,7 +10,7 @@ concrete action is. Everything below it is detail.
 
 ## 1. Resume here
 
-**Last updated:** 2026-09-23 (pushed to a private GitHub repo)
+**Last updated:** 2026-09-23 (repo public, licences added)
 
 **Last completed:** Vehicle physics core, all five validation checks passing
 against closed-form expectations.
@@ -53,7 +53,8 @@ A row only becomes DONE when its verification command passes.
 | Python venv and dependencies | DONE | `Tools/.venv`, `Tools/requirements.txt` |
 | .NET 8 SDK for headless physics | DONE | `dotnet --version` reports 8.0.131 |
 | Git repository | DONE | Initialised 2026-09-22 |
-| Off-machine backup | DONE | Private GitHub repo `Yashuchirag/car-race`, `main` tracking `origin/main` |
+| Off-machine backup | DONE | GitHub repo `Yashuchirag/car-race`, public, `main` tracking `origin/main` |
+| Licensing | DONE | MIT for code, ODbL for `Tracks_Data/`. See README. |
 | Unity 6 LTS installed | BLOCKED | Manual step, needs your account login. Section 5. |
 | Unity project created at `D:\Dev\CarRace` | BLOCKED | Depends on the row above |
 | Git LFS configured | TODO | Only needed once binary art assets exist |
@@ -197,5 +198,10 @@ learned, so context is not lost between sessions.
 
 ### 2026-09-23
 
-- Created a private GitHub repo, `Yashuchirag/car-race`, and pushed `main`. Work
-  now exists off the machine. Nothing else changed.
+- Created a GitHub repo, `Yashuchirag/car-race`, pushed `main`, then made it
+  public. Work now exists off the machine.
+- Added licensing: MIT for the code, ODbL for `Tracks_Data/` since it is a Derived
+  Database from OpenStreetMap. Found and fixed a real error doing so: the exporter
+  stamped an OpenStreetMap attribution onto every file including the synthetic
+  test circuit, which both encumbered original work with share-alike and credited
+  OSM for something they had no part in. Attribution is now per source.
