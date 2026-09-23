@@ -10,11 +10,12 @@ concrete action is. Everything below it is detail.
 
 ## 1. Resume here
 
-**Last updated:** 2026-09-23 (the car now drives the generated circuits)
+**Last updated:** 2026-09-23 (a field of AI cars races headlessly)
 
-**Last completed:** The headless lap runner. The validated car drives every
-circuit the pipeline generates, on track, in `--lap all`. Before this the two
-halves of the project had never met.
+**Last completed:** The race framework. Sixteen AI cars, ten laps of Monza, in
+about 20 seconds: grid, standing start, lap times, positions, overtaking, contact
+detection. Its exit criterion is **not** met, deliberately recorded as WIP rather
+than dressed up: two cars still touch on the opening lap.
 
 **Next action:** Install Unity 6 LTS (manual, section 5). Then follow
 `Unity/README.md`: copy both script folders in, build the skidpad scene it
@@ -28,6 +29,13 @@ Tools/.venv/bin/python Tools/verify_all.py                     # expect: 6 of 6 
 dotnet run --project Sim/CarRace.Harness -c Release            # expect: All 5 checks pass
 dotnet run --project Sim/CarRace.Harness -c Release -- --lap all  # expect: 6 of 6 on track
 dotnet build Sim/CarRace.UnityCheck -c Release                 # expect: 0 Error(s)
+```
+
+One suite does **not** pass, on purpose rather than by neglect:
+
+```bash
+dotnet run --project Sim/CarRace.Harness -c Release -- --race monza --cars 16 --laps 10
+#   expect: 16 of 16 finish, 2 contacts on lap one, FAIL, exit code 1
 ```
 
 The four WIP rows in section 3 are WIP because compiling is not running. Nothing
@@ -107,7 +115,30 @@ physics has never driven a corner the track pipeline produced.
 | Speed plan from the car's own limits | DONE | Quasi-steady-state, both passes sharing one friction ellipse. The plan in the JSON is for a GT3, not this car. |
 | Path-following driver | DONE | Curvature feedforward plus Stanley feedback at the front axle, PI on speed. Reused by Unity AI later. |
 | Headless lap on a real circuit | DONE | `--lap all`, 6 of 6 on track. Section 7. |
-| AI opponents, race state machine, flags, pit stops | TODO | The rest of Phase 3, untouched. |
+| Racing line offsets and a speed cap on the driver | DONE | `PathDriver.LineOffsetM`, `SpeedCapMs`. Offset lines also get a lower speed limit, because the inside of a corner is a tighter radius than the plan was written for. |
+| AI personalities and traffic awareness | DONE | `RaceDriver`. Pace spread, braking-distance safety bound, side-by-side separation, picking a side to pass. |
+| Race control: grid, laps, positions, classification | DONE | `RaceControl`. Grid behind the line so every car drives the same distance. |
+| Headless race | WIP | `--race` runs. **The exit criterion is not met.** See below. |
+| Catching a slide | WIP | Partial. `PathDriver` counter-steers and lifts above 12 degrees of sideslip, which stopped spun cars crawling for the rest of the race, but 11 crawl reports in a ten-lap race still show more than 25 degrees. |
+| Flags, penalties, pit stops | TODO | Not started. |
+
+**Where the race stands.** Sixteen cars, ten laps of Monza, in about 20 seconds of
+wall time. Everyone finishes, the grid order changes on merit, and lap times spread
+by a few seconds across the field. What does not pass is the criterion itself:
+
+```
+16 cars, 10 laps, Monza   4 contacts, 2 on lap one    FAIL
+16 cars,  3 laps, Monza   4 contacts, 2 on lap one    FAIL
+ 8 cars,  3 laps, Monza   0 contacts                  PASS
+10 cars,  3 laps, testcircuit   4 contacts, 4 on lap one   FAIL
+```
+
+Eight cars is clean; sixteen is not, and the test that matters is sixteen. Almost
+every remaining contact is a car arriving at 40 to 190 km/h behind one doing 8 to
+30, which means the cause is still cars that spin and then crawl rather than the
+avoidance logic being too loose. The next thing to try is on the driver, not on the
+traffic rules: it needs to not put itself in that state, and to get going again
+properly when it does.
 
 ### Phases 4 to 6
 
@@ -183,6 +214,18 @@ Known, deliberate, and not blocking. Recorded so they are not rediscovered.
 - The ground under the lap runner is flat. Elevation is in the track files and is
   ignored, so nothing here says anything about Eau Rouge.
 
+**Racing a field**
+
+- Two contacts on the opening lap with sixteen cars, none with eight. Detail in
+  section 3. Contact is counted and reported, never simulated: making two cars
+  bounce off each other is the physics engine's job, in Unity, where they are
+  already rigid bodies that collide.
+- Spin recovery is partial. A car that loses it still ends up crawling, and being
+  hit while crawling is what most of the remaining contacts are.
+- Every car in the field is the same car. Different models per driver is a Phase 6
+  question and needs more than one validated `CarConfig`.
+- The AI has no notion of defending a position, of tyres, or of fuel.
+
 **Track pipeline**
 
 - Lap estimates run 8 to 20% slow. Documented and expected, see `Tools/README.md`.
@@ -220,12 +263,17 @@ dotnet build Sim/CarRace.UnityCheck -c Release
 dotnet run --project Sim/CarRace.Harness -c Release -- --lap all
 #   expect: "6 of 6 circuits completed on track", exit code 0
 
+# a field of AI cars. Passes at eight cars, fails at sixteen; see section 3.
+dotnet run --project Sim/CarRace.Harness -c Release -- --race monza --cars 8 --laps 3
+#   expect: "8 of 8 finished, 0 contacts", exit code 0
+
 # diagnostics, when something is wrong
 dotnet run --project Sim/CarRace.Harness -c Release -- --trace    # launch, skidpad
 dotnet run --project Sim/CarRace.Harness -c Release -- --grip     # lateral force probe
 dotnet run --project Sim/CarRace.Harness -c Release -- --corner   # steady cornering sweep
 Tools/.venv/bin/python Tools/build_track.py spa                   # one circuit, verbose
 dotnet run --project Sim/CarRace.Harness -c Release -- --lap monza --verbose --csv lap.csv
+dotnet run --project Sim/CarRace.Harness -c Release -- --race monza --laps 3 --verbose  # CONTACT and SLOW lines
 ```
 
 ---
@@ -257,6 +305,32 @@ learned, so context is not lost between sessions.
   work existed with no history and no backup.
 - Added this file, and a rule in `CLAUDE.md` section 5 to keep it current during
   work rather than at the end.
+
+### 2026-09-23, fourth session
+
+- Built the race framework: `RaceDriver` (pace personality, traffic, overtaking),
+  `RaceControl` (grid, laps, positions, classification), and `--race` in the
+  harness. Sixteen cars, ten laps of Monza, about 20 seconds of wall time.
+- The exit criterion is not met and the row says so. Eight cars is clean, sixteen
+  leaves two contacts on the opening lap.
+- The bug that mattered most was invisible from the outside: the driver's
+  `LineErrorM` is the error from the line it is AIMING at, so it is near zero
+  whenever the car is driving well. Passing that around as each car's position
+  across the road meant every car reported itself as sitting on the racing line,
+  and the whole field's avoidance logic ran on zeros while looking merely badly
+  tuned. There is now a separate `LateralFromLineM` and a comment on both.
+- Three other findings worth keeping. Lifting off mid-corner because of traffic
+  spins a rear wheel drive car at the limit, which is correct physics and terrible
+  driving, so the speed cap now comes down no faster than the friction ellipse
+  allows. A follower cannot be kept safe by a proportional rule at a closing rate
+  of 80 m/s; it needs the braking-distance bound, and that bound has to use a wider
+  lateral window than the question of whether a car is in the way. And a separation
+  rule has to be a constraint rather than a target, because a target makes a car
+  drive towards the gap it is trying to keep.
+- Every one of those was found by logging and reading, never by reasoning about the
+  code. The pattern from the previous session held: the symptom never resembled the
+  cause. A phantom car at a wrapped index looked like a slow field; zeros in a
+  lateral position looked like bad tuning.
 
 ### 2026-09-23, third session
 

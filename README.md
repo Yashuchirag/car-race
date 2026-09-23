@@ -95,11 +95,14 @@ car_race/
       Rig.cs                    fixed 500 Hz substepping, measurement helpers
       TrackLoader.cs            reads the pipeline's JSON, ENU to Y-up
       LapRun.cs                 drives a generated circuit and reports
+      RaceRun.cs                a field of AI cars, contacts counted not simulated
       Program.cs                the five checks, traces, telemetry export
-    CarRace.Track/              track geometry and a reference driver, engine agnostic
+    CarRace.Track/              track geometry, drivers and race control, engine agnostic
       TrackData.cs              samples, widths, curvature, lateral offsets
       SpeedPlan.cs              speed at every sample, one friction ellipse both ways
       PathDriver.cs             curvature feedforward plus feedback, PI on speed
+      RaceDriver.cs             pace personality, traffic, overtaking
+      RaceControl.cs            grid, laps, positions, classification
     CarRace.UnityCheck/         type-checks the Unity scripts without Unity
       UnityEngineStub.cs        signatures only, nothing here runs
   Unity/
@@ -134,6 +137,11 @@ dotnet run --project Sim/CarRace.Harness -c Release
 # both halves together: drive the validated car round every generated circuit
 dotnet run --project Sim/CarRace.Harness -c Release -- --lap all
 dotnet run --project Sim/CarRace.Harness -c Release -- --lap monza --verbose
+
+# a field of AI cars. Clean at eight, two contacts on lap one at sixteen, which is
+# the Phase 3 exit criterion and is not met yet. PROGRESS.md section 3 has the detail.
+dotnet run --project Sim/CarRace.Harness -c Release -- --race monza --cars 8 --laps 3
+dotnet run --project Sim/CarRace.Harness -c Release -- --race monza --cars 16 --laps 10 --verbose
 
 # Unity integration layer: compiles against a UnityEngine stub, so a broken
 # call into the model fails here instead of in the editor

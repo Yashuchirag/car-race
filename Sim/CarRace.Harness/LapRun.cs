@@ -25,6 +25,26 @@ namespace CarRace.Harness
         const int Laps = 2;
 
         /// <summary>
+        /// What the car can be planned around, at full pace. Not what its tyres could do in
+        /// theory: the skidpad ceiling assumes all four peak at once, and this car measures
+        /// 85% of it because the front axle saturates first. Callers scale these by their
+        /// own pace, which is the margin a driver keeps for its own steering error.
+        /// </summary>
+        public static SpeedPlan.Limits PlanningLimits(CarConfig config) => new SpeedPlan.Limits
+        {
+            LateralMs2 = Analytic.SkidpadCeilingG(config) * 0.85f * Physics.Gravity,
+            BrakingMs2 = (27.78f * 27.78f) / (2f * Analytic.BrakingMetres(config)) * 0.85f,
+
+            // Accelerating out of a corner is grip limited only while the gear is low enough
+            // to have the torque for it. The car's own 0 to 100 gives the average of the two,
+            // which is the right order of magnitude for a plan and needs no new model.
+            TractionMs2 = (100f / 3.6f) / Analytic.ZeroToHundredSeconds(config),
+            PowerW = Analytic.PeakPowerWatts(config) * config.DrivetrainEfficiency,
+            MassKg = config.Mass,
+            TopSpeedMs = Analytic.TopSpeedKph(config) / 3.6f,
+        };
+
+        /// <summary>
         /// One lap on every circuit, as a regression. Passing means the validated car can get
         /// round every track the pipeline produces, without leaving the road, which is not
         /// something either half can be asked on its own.
@@ -110,31 +130,14 @@ namespace CarRace.Harness
                 return 2;
             }
 
-            // What the car can actually hold, not what its tyres could in theory. The
-            // skidpad ceiling assumes all four tyres peak at once; this car measures 85%
-            // of it, because the front axle saturates first. A driver following a fixed
-            // line needs margin on top of that for its own steering error, so the plan
-            // takes 85% again. Planning at the limit means leaving the road at the limit.
-            float holdable = Analytic.SkidpadCeilingG(config) * 0.85f * Physics.Gravity;
+            SpeedPlan.Limits limits = PlanningLimits(config);
+            float holdable = limits.LateralMs2;
             float lateralLimit = holdable * pace;
-            float brakeDistance = Analytic.BrakingMetres(config);
-            float brakingLimit = (27.78f * 27.78f) / (2f * brakeDistance) * 0.85f;
-            float topSpeed = Analytic.TopSpeedKph(config) / 3.6f;
+            float brakingLimit = limits.BrakingMs2;
+            float topSpeed = limits.TopSpeedMs;
 
-            // Accelerating out of a corner is grip limited only while the gear is low enough
-            // to have the torque for it. The car's own 0 to 100 gives the average of the two,
-            // which is the right order of magnitude for a plan and needs no new model.
-            float tractionLimit = (100f / 3.6f) / Analytic.ZeroToHundredSeconds(config);
-
-            float[] plan = SpeedPlan.Build(track, new SpeedPlan.Limits
-            {
-                LateralMs2 = lateralLimit,
-                BrakingMs2 = brakingLimit,
-                TractionMs2 = tractionLimit,
-                PowerW = Analytic.PeakPowerWatts(config) * config.DrivetrainEfficiency,
-                MassKg = config.Mass,
-                TopSpeedMs = topSpeed,
-            });
+            limits.LateralMs2 = lateralLimit;
+            float[] plan = SpeedPlan.Build(track, limits);
 
             Console.WriteLine($"=== Lap: {track.Name} ===");
             Console.WriteLine($"  {track.LengthM:0.0} m, {track.Count} samples at "

@@ -26,6 +26,21 @@ namespace CarRace.Track
         public float[] WidthLeft;           // m from the centreline to the left edge
         public float[] WidthRight;
 
+        /// <summary>
+        /// Where the racing line sits across the road, positive to the right of the
+        /// centreline. Needed by anything that wants to move off the line: the line is
+        /// already most of the way to the edge through a corner, so an offset that ignores
+        /// this puts a car in the gravel while the number it was given looked modest.
+        /// </summary>
+        public float[] LineFromCentreM;
+
+        /// <summary>Road left to the right of the racing line, less what a car needs.</summary>
+        public float RoomRight(int index, float halfWidthM)
+            => WidthRight[index] - LineFromCentreM[index] - halfWidthM;
+
+        public float RoomLeft(int index, float halfWidthM)
+            => WidthLeft[index] + LineFromCentreM[index] - halfWidthM;
+
         public int Count => Line != null ? Line.Length : 0;
 
         public int Wrap(int index)

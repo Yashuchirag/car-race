@@ -41,6 +41,19 @@ namespace CarRace.Harness
             if (Array.IndexOf(args, "--corner") >= 0) { CornerSweep(config); return 0; }
             if (Array.IndexOf(args, "--dump") >= 0) { DumpCase(config, "/tmp/case.csv"); return 0; }
 
+            int raceIndex = Array.IndexOf(args, "--race");
+            if (raceIndex >= 0)
+            {
+                string circuit = raceIndex + 1 < args.Length && !args[raceIndex + 1].StartsWith("--")
+                    ? args[raceIndex + 1] : "monza";
+                return RaceRun.Run(config, circuit,
+                                   Option(args, "--cars", 16),
+                                   Option(args, "--laps", 3),
+                                   Option(args, "--seed", 1),
+                                   Array.IndexOf(args, "--reverse-grid") >= 0,
+                                   Array.IndexOf(args, "--verbose") >= 0);
+            }
+
             int lapIndex = Array.IndexOf(args, "--lap");
             if (lapIndex >= 0)
             {
@@ -532,6 +545,14 @@ namespace CarRace.Harness
                 }));
             }
             Console.WriteLine($"  telemetry written to {path}");
+        }
+
+        static int Option(string[] args, string name, int fallback)
+        {
+            int index = Array.IndexOf(args, name);
+            return index >= 0 && index + 1 < args.Length
+                ? int.Parse(args[index + 1], CultureInfo.InvariantCulture)
+                : fallback;
         }
 
         static float PeakTorque(CarConfig c)

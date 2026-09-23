@@ -22,6 +22,10 @@ dotnet run --project Sim/CarRace.Harness -c Release -- --lap all      # a lap on
 dotnet run --project Sim/CarRace.Harness -c Release -- --lap monza    # one circuit, in detail
 dotnet run --project Sim/CarRace.Harness -c Release -- --lap monza --verbose --csv lap.csv
 dotnet run --project Sim/CarRace.Harness -c Release -- --lap monza --pace 0.95
+
+dotnet run --project Sim/CarRace.Harness -c Release -- --race monza --cars 8 --laps 3
+dotnet run --project Sim/CarRace.Harness -c Release -- --race monza --cars 16 --laps 10 --verbose
+dotnet run --project Sim/CarRace.Harness -c Release -- --race monza --reverse-grid
 ```
 
 Exit code is 0 when all five checks pass, and 0 from `--lap` when the car gets
@@ -142,6 +146,25 @@ a defect, and each would have been far harder to find inside an engine.
    throttle to balance drag, so it settled at 7.89 m/s against an 8.00 target and
    silently failed every skidpad run. This one was in the harness, not the model.
 
+## Racing a field
+
+`--race` grids a field of AI cars and runs a race: standing start, lap times,
+positions, overtaking, and contact detection. Sixteen cars over ten laps of Monza
+takes about twenty seconds.
+
+Contact is counted, never simulated. Making two cars bounce off each other is the
+physics engine's job, in Unity, where they are rigid bodies that already collide.
+What this can answer is the question that comes first: do sixteen drivers get off a
+grid, round a lap and past each other without needing to touch.
+
+Not yet, is the answer. Eight cars is clean; sixteen leaves two contacts on the
+opening lap, and that is the exit criterion. The failure is recorded rather than
+tuned away: `PROGRESS.md` section 3 has the numbers and section 6 says why.
+
+Drivers differ only in pace, which is the share of the car's grip they will use.
+Each one plans its own speeds at its own limits rather than scaling a shared plan,
+because a driver who corners slower also has to brake earlier.
+
 ## Bugs the lap runner caught
 
 1. **Braking planned without the friction ellipse.** The plan let the car brake at
@@ -166,6 +189,35 @@ a defect, and each would have been far harder to find inside an engine.
    axle is ahead of the mass and that lead is most of the stability.
 6. **Lap counter read after the driver moved.** The start line crossing was never
    seen, every lap went unrecorded, and the run ended with nothing to report.
+
+## Bugs the race caught
+
+1. **A driver's line error is not its position on the road.** `LineErrorM` is the
+   distance from the line the car is aiming at, so it is near zero whenever the car
+   is driving well. Passing it around as each car's lateral position meant every car
+   reported itself as sitting on the racing line, so no car could tell whether
+   another was alongside it or half the track away. An entire field's worth of
+   avoidance logic ran on zeros and looked like bad tuning for hours.
+2. **Lifting off mid-corner for traffic spins the car.** Correct physics, terrible
+   driving. The speed cap now comes down no faster than the friction ellipse allows,
+   which is what a real driver does: give up the corner, back off on the straight.
+3. **A proportional following rule cannot answer an 80 m/s closing rate.** A quicker
+   car brakes later by design, so the gap it was holding disappears in under a
+   second. It needs the braking-distance bound, and that bound needs a wider lateral
+   window than the question of whether a car is in the way: something three metres to
+   one side of a car doing 25 km/h still cannot be arrived at, at 85.
+4. **A separation rule must be a constraint, not a target.** Aiming at the gap it
+   wants makes a car drive towards a car it already had more room than. Giving one
+   car priority instead is worse: the priority car converges onto the racing line
+   without asking who is there.
+5. **A car removed from a list by moving it to a nonsense index is still on the
+   track.** Index arithmetic wraps, so a retired car reappeared as a stationary
+   obstacle at a real place on the circuit, and the field crawled towards a car that
+   was not there.
+6. **A minimum following distance set generously breaks a standing start.** With the
+   grid spaced at exactly that distance, no car may exceed the speed of the one in
+   front, so each lags the one ahead and sixteen deep the back of the field was doing
+   7 km/h ten seconds in.
 
 ## Next
 

@@ -39,6 +39,10 @@ namespace CarRace.Harness
             // the file is in ENU and means the opposite turn. Magnitudes should still agree
             // with the file, and a disagreement means the two are not describing the same
             // line at all, so it is worth saying out loud.
+            track.LineFromCentreM = new float[track.Count];
+            for (int i = 0; i < track.Count; i++)
+                track.LineFromCentreM[i] = track.LateralOffset(track.Centre, i, track.Line[i]);
+
             int stride = Math.Max(1, (int)MathF.Round(6f / track.SampleSpacingM));
             track.LineCurvature = TrackData.SignedCurvature(track.Line, stride);
             float mine = Peak(track.LineCurvature);
