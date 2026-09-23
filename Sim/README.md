@@ -25,6 +25,7 @@ dotnet run --project Sim/CarRace.Harness -c Release -- --lap monza --pace 0.95
 
 dotnet run --project Sim/CarRace.Harness -c Release -- --race monza --cars 8 --laps 3
 dotnet run --project Sim/CarRace.Harness -c Release -- --race monza --cars 16 --laps 10 --verbose
+dotnet run --project Sim/CarRace.Harness -c Release -- --race testcircuit --cars 8 --csv race.csv
 dotnet run --project Sim/CarRace.Harness -c Release -- --race monza --reverse-grid
 ```
 

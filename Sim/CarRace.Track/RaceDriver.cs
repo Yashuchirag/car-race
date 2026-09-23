@@ -88,6 +88,10 @@ namespace CarRace.Track
         public int BlockedBy { get; private set; } = -1;
         public float BlockedGapM { get; private set; }
 
+        /// <summary>Where across the road it has decided to be, relative to the racing line,
+        /// for diagnostics. The line it drives moves towards this at a rate.</summary>
+        public float WantedOffsetM => _wantedOffset;
+
         float _wantedOffset;
         float _cap = -1f;
         readonly float _brakingMs2;

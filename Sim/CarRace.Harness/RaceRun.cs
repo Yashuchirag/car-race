@@ -28,7 +28,8 @@ namespace CarRace.Harness
         const float CarWidthM = 1.9f;
 
         public static int Run(CarConfig config, string circuit, int cars, int raceLaps,
-                              int seed, bool reverseGrid, bool verbose = false)
+                              int seed, bool reverseGrid, bool verbose = false,
+                              string csvPath = null)
         {
             TrackData track;
             try
@@ -83,6 +84,16 @@ namespace CarRace.Harness
             Console.WriteLine($"  {cars} cars, {raceLaps} laps, pace {slowest:0.000} to {fastest:0.000}"
                             + $"{(reverseGrid ? ", fastest gridded last" : "")}");
             Console.WriteLine($"  grid is behind the line, so every car drives the same distance\n");
+
+            System.IO.StreamWriter csv = null;
+            if (csvPath != null)
+            {
+                csv = new System.IO.StreamWriter(csvPath);
+                csv.WriteLine("t,car,lap,s,x,z,speed_kph,fwd_kph,target_kph,planned_kph,cap_kph,"
+                            + "steer,throttle,brake,cross_m,lateral_m,offset_m,wanted_m,heading_deg,"
+                            + "sideslip_deg,recovering,yaw_rate,slip_fl,slip_fr,slip_rl,slip_rr,"
+                            + "load_fl,load_fr,load_rl,load_rr,gear,blocked_by,gap_m,following,overtaking");
+            }
 
             float time = 0f;
             float timeout = raceLaps * track.EstimatedLapTimeS * 4f + 120f;
@@ -178,6 +189,8 @@ namespace CarRace.Harness
 
                     VehicleInputs input = drivers[i].Drive(rig.Body.State, Dt);
                     rig.Step(input);
+                    if (csv != null && step % ReactionSteps == 0)
+                        WriteCsvRow(csv, i, rig, drivers[i], input, track);
 
                     // How far from the centreline, so a car that loses it shows up as a number
                     // rather than as an unexplained forty seconds.
@@ -202,7 +215,60 @@ namespace CarRace.Harness
                 if (!running) break;
             }
 
+            csv?.Dispose();
+            if (csvPath != null) Console.WriteLine($"  telemetry written to {csvPath}\n");
+
             return Report(control, retired, track, totalContacts, contactsOnLapOne, time, timeout);
+        }
+
+        /// <summary>
+        /// One row per car per reaction interval: what the lap runner writes, plus what the
+        /// driver decided about traffic. Reading those decisions beside the tyres is what
+        /// found why cars touched; the contact log only ever showed the aftermath. The
+        /// sideslip is the rig's, which folds past 90 degrees, so a negative forward speed
+        /// is the column that says a car is travelling backwards.
+        /// </summary>
+        static void WriteCsvRow(System.IO.StreamWriter csv, int car, Rig rig, RaceDriver driver,
+                                in VehicleInputs input, TrackData track)
+        {
+            PathDriver path = driver.Path;
+            Wheel[] w = rig.Sim.Wheels;
+            var c = System.Globalization.CultureInfo.InvariantCulture;
+            csv.WriteLine(string.Join(",", new[]
+            {
+                rig.Time.ToString("0.###", c),
+                (car + 1).ToString(c),
+                path.Laps.ToString(c),
+                (path.Index * track.SampleSpacingM).ToString("0.#", c),
+                rig.Body.State.Position.X.ToString("0.##", c),
+                rig.Body.State.Position.Z.ToString("0.##", c),
+                rig.SpeedKph.ToString("0.##", c),
+                (rig.ForwardSpeed * 3.6f).ToString("0.##", c),
+                (path.TargetSpeedMs * 3.6f).ToString("0.##", c),
+                (path.PlannedSpeedMs * 3.6f).ToString("0.##", c),
+                (path.SpeedCapMs < 0f ? -1f : path.SpeedCapMs * 3.6f).ToString("0.##", c),
+                input.Steer.ToString("0.####", c),
+                input.Throttle.ToString("0.###", c), input.Brake.ToString("0.###", c),
+                path.LineErrorM.ToString("0.###", c),
+                path.LateralFromLineM.ToString("0.###", c),
+                path.LineOffsetM.ToString("0.###", c),
+                driver.WantedOffsetM.ToString("0.###", c),
+                path.HeadingErrorDeg.ToString("0.##", c),
+                rig.SideslipDegrees.ToString("0.##", c),
+                path.Recovering.ToString("0.##", c),
+                rig.YawRate.ToString("0.####", c),
+                (w[0].SlipAngle * 180f / MathF.PI).ToString("0.##", c),
+                (w[1].SlipAngle * 180f / MathF.PI).ToString("0.##", c),
+                (w[2].SlipAngle * 180f / MathF.PI).ToString("0.##", c),
+                (w[3].SlipAngle * 180f / MathF.PI).ToString("0.##", c),
+                w[0].Load.ToString("0", c), w[1].Load.ToString("0", c),
+                w[2].Load.ToString("0", c), w[3].Load.ToString("0", c),
+                rig.Sim.Drivetrain.Gear.ToString(c),
+                (driver.BlockedBy + 1).ToString(c),
+                driver.BlockedGapM.ToString("0.#", c),
+                (driver.IsFollowing ? 1 : 0).ToString(c),
+                (driver.IsOvertaking ? 1 : 0).ToString(c),
+            }));
         }
 
         static int LeaderLaps(RaceControl control)

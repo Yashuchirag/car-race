@@ -20,6 +20,10 @@ exit criterion still fails.
 **Next action:** Step 1 of the brief below, then cause 1, the overtaking decision in
 `RaceDriver.Observe`. Everything else in this file is still true.
 
+**In progress (WIP, seventh session):** step 1, race telemetry, is DONE: `--race ...
+--csv <path>`. With it on, the repro prints identical contacts, laps and summary, and
+its rows agree with the scratch probe's. Step 2 is next and not started.
+
 ---
 
 ### Next: why cars touch in traffic (diagnosed, not fixed)
@@ -109,9 +113,10 @@ car's negative speed can switch off the safety cap of the car behind it.
 
 **Steps, in order:**
 
-1. Add per-car telemetry to `--race`: `--csv` with the `--lap` columns plus the traffic
-   decisions (blocked by, following, overtaking, wanted offset, line offset, lateral from
-   line, cap). Check it by confirming the repro still prints the same six contacts.
+1. DONE. Add per-car telemetry to `--race`: `--csv` with the `--lap` columns plus the
+   traffic decisions (blocked by, following, overtaking, wanted offset, line offset,
+   lateral from line, cap). Check it by confirming the repro still prints the same six
+   contacts.
 2. Cause 1. A pass needs to be a commitment rather than a verdict retaken every 20 ms:
    keep the side until the car is ahead or the pass is clearly off, judge "quicker" on
    like-for-like terms, and look alongside and behind on the chosen side as well as
@@ -224,6 +229,7 @@ physics has never driven a corner the track pipeline produced.
 | AI personalities and traffic awareness | DONE | `RaceDriver`. Pace spread, braking-distance safety bound, side-by-side separation, picking a side to pass. |
 | Race control: grid, laps, positions, classification | DONE | `RaceControl`. Grid behind the line so every car drives the same distance. |
 | Headless race | WIP | `--race` runs. **The exit criterion is not met.** See below. |
+| Race telemetry | DONE | `--race ... --csv <path>`. One row per car every 20 ms: the `--lap` columns plus blocked by, following, overtaking, wanted and driven offset, and the cap. |
 | Catching a slide | WIP | Partial. `PathDriver` counter-steers and lifts above 12 degrees of sideslip, which stopped spun cars crawling for the rest of the race, but 11 crawl reports in a ten-lap race still show more than 25 degrees. |
 | Flags, penalties, pit stops | TODO | Not started. |
 
@@ -438,6 +444,7 @@ dotnet run --project Sim/CarRace.Harness -c Release -- --corner   # steady corne
 Tools/.venv/bin/python Tools/build_track.py spa                   # one circuit, verbose
 dotnet run --project Sim/CarRace.Harness -c Release -- --lap monza --verbose --csv lap.csv
 dotnet run --project Sim/CarRace.Harness -c Release -- --race monza --laps 3 --verbose  # CONTACT and SLOW lines
+dotnet run --project Sim/CarRace.Harness -c Release -- --race testcircuit --cars 8 --csv race.csv  # every car, every 20 ms
 ```
 
 ---

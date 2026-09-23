@@ -61,12 +61,14 @@ namespace CarRace.Harness
             {
                 string circuit = raceIndex + 1 < args.Length && !args[raceIndex + 1].StartsWith("--")
                     ? args[raceIndex + 1] : "monza";
+                int raceCsv = Array.IndexOf(args, "--csv");
                 return RaceRun.Run(config, circuit,
                                    Option(args, "--cars", 16),
                                    Option(args, "--laps", 3),
                                    Option(args, "--seed", 1),
                                    Array.IndexOf(args, "--reverse-grid") >= 0,
-                                   Array.IndexOf(args, "--verbose") >= 0);
+                                   Array.IndexOf(args, "--verbose") >= 0,
+                                   raceCsv >= 0 && raceCsv + 1 < args.Length ? args[raceCsv + 1] : null);
             }
 
             int lapIndex = Array.IndexOf(args, "--lap");
