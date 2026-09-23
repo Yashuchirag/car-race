@@ -9,5 +9,6 @@
   <ItemGroup>
     <ProjectReference Include="../CarRace.Vehicle/CarRace.Vehicle.csproj" />
     <ProjectReference Include="../CarRace.Track/CarRace.Track.csproj" />
+    <ProjectReference Include="../CarRace.Net/CarRace.Net.csproj" />
   </ItemGroup>
 </Project>

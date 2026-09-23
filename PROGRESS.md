@@ -10,12 +10,14 @@ concrete action is. Everything below it is detail.
 
 ## 1. Resume here
 
-**Last updated:** 2026-09-23 (a field of AI cars races headlessly)
+**Last updated:** 2026-09-23 (LAN snapshot sync, measured over real sockets)
 
-**Last completed:** The race framework. Sixteen AI cars, ten laps of Monza, in
-about 20 seconds: grid, standing start, lap times, positions, overtaking, contact
-detection. Its exit criterion is **not** met, deliberately recorded as WIP rather
-than dressed up: two cars still touch on the opening lap.
+**Last completed:** LAN snapshot sync, in `Sim/CarRace.Net/`. A host and a client
+over real UDP sockets: 6.4 kB/s for sixteen cars, worst reconstruction error 12 cm
+through 10% packet loss, and LAN discovery that finds a host with no address typed.
+
+Still open from the session before: the race exit criterion fails, two cars touch on
+the opening lap with a full field. Recorded as WIP rather than dressed up.
 
 **Next action:** Install Unity 6 LTS (manual, section 5). Then follow
 `Unity/README.md`: copy both script folders in, build the skidpad scene it
@@ -140,7 +142,34 @@ avoidance logic being too loose. The next thing to try is on the driver, not on 
 traffic rules: it needs to not put itself in that state, and to get going again
 properly when it does.
 
-### Phases 4 to 6
+### Phase 5, LAN multiplayer
+
+Brought forward for the same reason Phase 3 was: the netcode is testable without an
+engine, and everything left in Phases 1 and 4 is not.
+
+| Task | Status | Notes |
+|---|---|---|
+| Snapshot format and bit packing | DONE | `Sim/CarRace.Net/`. 21 bytes a car, orientation in 4 of them. |
+| Interpolation buffer on the client | DONE | Renders two snapshot intervals late, handles reordering and loss. |
+| LAN discovery | DONE | 36 byte beacon, verified over loopback. Broadcast is sent but cannot be proved on a one-machine setup. |
+| Measured host to client run | DONE | `--net`. Section 7. |
+| Input prediction, collisions, lobby | TODO | Not started. This is where the hard part of multiplayer lives: everything above is one machine talking, not two disagreeing. |
+
+**What the sync measures.** Sixteen cars, real UDP sockets on loopback, with latency,
+jitter and loss added on purpose:
+
+```
+network                     bandwidth     worst error    view lag
+25 ms, 10 ms jitter, 2%     6.4 kB/s      0.116 m        151 ms
+120 ms, 40 ms jitter, 10%   5.9 kB/s      0.116 m        248 ms
+```
+
+The error does not move when the link gets worse, and that is the point rather than a
+mistake: interpolation between two snapshots the host really sent does not become less
+accurate on a slow link, it becomes further behind. Latency is spent on freshness, which
+is why the lag column is reported next to it.
+
+### Phases 4 and 6
 
 TODO, all of them. Specified in IMPLEMENTATION_REPORT.md sections 11 to 13.
 Nothing started, nothing to resume.
@@ -226,6 +255,19 @@ Known, deliberate, and not blocking. Recorded so they are not rediscovered.
   question and needs more than one validated `CarConfig`.
 - The AI has no notion of defending a position, of tyres, or of fuel.
 
+**Networking**
+
+- Only the host talks. A remote player's inputs, prediction of the local car, and two
+  cars wanting the same piece of road are all untouched, and that is where multiplayer
+  gets hard.
+- Discovery is proved over loopback only. The broadcast is sent and does not throw, but
+  one machine cannot show that a second one hears it. Two machines on a real LAN is the
+  test that counts, and it needs your second computer.
+- Snapshots are whole, not delta compressed against what a client already has. At
+  6.4 kB/s there is no reason to bother yet.
+- No reconnection, no version negotiation beyond the beacon rejecting a version it does
+  not know.
+
 **Track pipeline**
 
 - Lap estimates run 8 to 20% slow. Documented and expected, see `Tools/README.md`.
@@ -262,6 +304,10 @@ dotnet build Sim/CarRace.UnityCheck -c Release
 # both halves together: the car drives every generated circuit, twelve laps in ~5 s
 dotnet run --project Sim/CarRace.Harness -c Release -- --lap all
 #   expect: "6 of 6 circuits completed on track", exit code 0
+
+# LAN sync: host and client over real sockets, with a bad network simulated
+dotnet run --project Sim/CarRace.Harness -c Release -- --net monza --cars 16 --seconds 30
+#   expect: "PASS", worst error under 0.5 m, exit code 0
 
 # a field of AI cars. Passes at eight cars, fails at sixteen; see section 3.
 dotnet run --project Sim/CarRace.Harness -c Release -- --race monza --cars 8 --laps 3
@@ -305,6 +351,25 @@ learned, so context is not lost between sessions.
   work existed with no history and no backup.
 - Added this file, and a rule in `CLAUDE.md` section 5 to keep it current during
   work rather than at the end.
+
+### 2026-09-23, fifth session
+
+- Built the LAN sync: `Sim/CarRace.Net` (bit packing, snapshot codec, interpolation
+  buffer, discovery beacon) and `--net` in the harness, which runs a host and a client
+  over real UDP sockets and measures what the client actually sees.
+- Sixteen cars cost 6.4 kB/s and 21 bytes a car a snapshot. Most of that saving is
+  refusing to send floats: a position to the centimetre is seven bytes rather than
+  twelve, and an orientation is four rather than sixteen, because a unit quaternion's
+  largest component can be recomputed from the other three.
+- The result that needed care in the reporting: reconstruction error does not change
+  when latency goes from 25 ms to 120 ms. That is correct and not a broken test.
+  Interpolating between two snapshots the host really sent is exactly as accurate on a
+  slow link; what gets worse is how far behind the view is. So the test reports view
+  lag next to the error, or a 200 ms connection would look identical to a 20 ms one.
+- One self-inflicted failure worth recording: the first run reported the client's
+  initial buffering as the buffer running dry, and failed a connection that was
+  healthy. A client that has just joined holds less history than the delay it renders
+  at and has to wait rather than draw.
 
 ### 2026-09-23, fourth session
 

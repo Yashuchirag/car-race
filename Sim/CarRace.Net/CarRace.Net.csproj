@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- netstandard2.1, like the rest of the simulation side, so it drops into Unity
+       unchanged. Contains no sockets: what is shared between a dedicated host, a
+       listen server and a Unity client is the format and the timing, not the
+       transport, and the transport is the part each of those wants to own. -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <AssemblyName>CarRace.Net</AssemblyName>
+    <RootNamespace>CarRace.Net</RootNamespace>
+  </PropertyGroup>
+</Project>

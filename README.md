@@ -96,6 +96,7 @@ car_race/
       TrackLoader.cs            reads the pipeline's JSON, ENU to Y-up
       LapRun.cs                 drives a generated circuit and reports
       RaceRun.cs                a field of AI cars, contacts counted not simulated
+      NetRun.cs                 host and client over real sockets, error measured
       Program.cs                the five checks, traces, telemetry export
     CarRace.Track/              track geometry, drivers and race control, engine agnostic
       TrackData.cs              samples, widths, curvature, lateral offsets
@@ -103,6 +104,11 @@ car_race/
       PathDriver.cs             curvature feedforward plus feedback, PI on speed
       RaceDriver.cs             pace personality, traffic, overtaking
       RaceControl.cs            grid, laps, positions, classification
+    CarRace.Net/                multiplayer wire format, no sockets in it
+      BitBuffer.cs              bit level writer and reader, quantisation
+      Snapshot.cs               car state packed to 21 bytes, smallest-three rotation
+      Interpolator.cs           the client's buffer: render late, blend two real states
+      Beacon.cs                 what a host broadcasts so a client can find it
     CarRace.UnityCheck/         type-checks the Unity scripts without Unity
       UnityEngineStub.cs        signatures only, nothing here runs
   Unity/
@@ -142,6 +148,10 @@ dotnet run --project Sim/CarRace.Harness -c Release -- --lap monza --verbose
 # the Phase 3 exit criterion and is not met yet. PROGRESS.md section 3 has the detail.
 dotnet run --project Sim/CarRace.Harness -c Release -- --race monza --cars 8 --laps 3
 dotnet run --project Sim/CarRace.Harness -c Release -- --race monza --cars 16 --laps 10 --verbose
+
+# LAN sync: a host and a client over real UDP, with a bad network simulated
+dotnet run --project Sim/CarRace.Harness -c Release -- --net monza --cars 16 --seconds 30
+dotnet run --project Sim/CarRace.Harness -c Release -- --net monza --latency 120 --jitter 40 --loss 10
 
 # Unity integration layer: compiles against a UnityEngine stub, so a broken
 # call into the model fails here instead of in the editor

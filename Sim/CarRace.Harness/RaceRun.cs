@@ -22,7 +22,7 @@ namespace CarRace.Harness
         /// does not make a better driver, only a twitchier one.</summary>
         const int ReactionSteps = 10;
 
-        const float RowGapM = 10f;
+        internal const float RowGapM = 10f;
         const float GridLateralM = 2f;
         const float CarLengthM = 4.4f;
         const float CarWidthM = 1.9f;
@@ -268,7 +268,7 @@ namespace CarRace.Harness
             return along < CarLengthM && across < CarWidthM;
         }
 
-        static void PlaceOnGrid(Rig rig, RaceDriver driver, TrackData track, int slot)
+        internal static void PlaceOnGrid(Rig rig, RaceDriver driver, TrackData track, int slot)
         {
             rig.Settle();
 

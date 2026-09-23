@@ -623,7 +623,7 @@ Each phase ends in something playable with a measurable exit condition.
 | 2 | Track pipeline: OSM to spline, elevation, racing line, timing | hot-lap two circuits, invalid laps flagged, new circuit under a day | **DONE** |
 | 3 | AI drivers, race state machine, sessions, flags, penalties, pit stops | ten-lap race against fifteen AI with a plausible spread and no turn-one pile-up | **drivers, traffic and race control all run headlessly; the field spread is plausible and the ten-lap race completes, but two cars still touch on lap one, so the criterion is NOT met. Flags, penalties and pit stops untouched** |
 | 4 | Car paint, liveries, baked lighting, weather, environment art, VFX, post, photo mode, quality presets | 1080p at 100fps+ measured on this laptop; screenshots read as a modern racing game | not started |
-| 5 | LAN discovery, server browser, vehicle sync, collisions, lobby | four machines racing ten laps, no warping, no desync, host framerate unaffected | not started |
+| 5 | LAN discovery, server browser, vehicle sync, collisions, lobby | four machines racing ten laps, no warping, no desync, host framerate unaffected | **discovery, snapshot sync and client interpolation measured over real sockets: 6.4 kB/s for sixteen cars, 12 cm worst error through 10% loss. Remote input, prediction, collisions and the lobby untouched, and the four-machine test needs four machines** |
 | 6 | Career, setup UI, assists, saves, leaderboards, replays, ghosts, audio | someone can play five hours without running out of things to do | not started |
 
 **Realistic total:** 6 to 9 months of focused solo work with bought art. With cars

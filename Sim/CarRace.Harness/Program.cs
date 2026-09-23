@@ -41,6 +41,21 @@ namespace CarRace.Harness
             if (Array.IndexOf(args, "--corner") >= 0) { CornerSweep(config); return 0; }
             if (Array.IndexOf(args, "--dump") >= 0) { DumpCase(config, "/tmp/case.csv"); return 0; }
 
+            int netIndex = Array.IndexOf(args, "--net");
+            if (netIndex >= 0)
+            {
+                string circuit = netIndex + 1 < args.Length && !args[netIndex + 1].StartsWith("--")
+                    ? args[netIndex + 1] : "monza";
+                return NetRun.Run(config, circuit,
+                                  Option(args, "--cars", 16),
+                                  Option(args, "--seconds", 30),
+                                  Option(args, "--hz", 20),
+                                  Option(args, "--latency", 25),
+                                  Option(args, "--jitter", 10),
+                                  Option(args, "--loss", 2),
+                                  Array.IndexOf(args, "--verbose") >= 0);
+            }
+
             int raceIndex = Array.IndexOf(args, "--race");
             if (raceIndex >= 0)
             {
