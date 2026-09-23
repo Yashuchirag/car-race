@@ -1,0 +1,10 @@
+Tools/.venv/
+Tools/out/cache/
+Tools/out/*.png
+__pycache__/
+*.pyc
+bin/
+obj/
+
+# generated track data is reproducible from Tools/circuits.json, but it is small
+# and committing it keeps the engine side working without a network round trip

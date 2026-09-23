@@ -1,0 +1,65 @@
+{
+  "_comment": [
+    "Circuit catalogue. Centre coordinates locate the Overpass bounding box.",
+    "official_length_m is published circuit length, used ONLY to validate the",
+    "generated geometry. width_m is a flat starting value; real circuits vary",
+    "along their length and that detail gets authored per section later.",
+    "Layout geometry is factual. Do not ship the real names, logos or sponsor",
+    "art. The 'alias' field is the name to use in-game."
+  ],
+  "testcircuit": {
+    "display_name": "Airfield Test Circuit",
+    "alias": "Airfield Test Circuit",
+    "synthetic": true,
+    "official_length_m": 2285,
+    "width_m": 14.0,
+    "noise_m": 2.0,
+    "_note": "Fictional layout, authored in build_track.py. Its length is whatever the authored waypoints produce."
+  },
+  "bahrain": {
+    "display_name": "Bahrain International Circuit",
+    "alias": "Desert Park Circuit",
+    "lat": 26.0325,
+    "lon": 50.5106,
+    "radius_m": 3200,
+    "official_length_m": 5412,
+    "width_m": 14.0
+  },
+  "silverstone": {
+    "display_name": "Silverstone Circuit",
+    "alias": "Northants Aerodrome",
+    "lat": 52.0733,
+    "lon": -1.0147,
+    "radius_m": 3200,
+    "official_length_m": 5891,
+    "width_m": 13.0
+  },
+  "monza": {
+    "display_name": "Autodromo Nazionale Monza",
+    "alias": "Royal Park Speedway",
+    "lat": 45.6206,
+    "lon": 9.2811,
+    "radius_m": 3200,
+    "official_length_m": 5793,
+    "width_m": 13.0
+  },
+  "spa": {
+    "display_name": "Circuit de Spa-Francorchamps",
+    "alias": "Ardennes Circuit",
+    "lat": 50.4372,
+    "lon": 5.9714,
+    "radius_m": 4200,
+    "official_length_m": 7004,
+    "width_m": 13.0
+  },
+  "suzuka": {
+    "display_name": "Suzuka International Racing Course",
+    "alias": "Ise Bay Circuit",
+    "lat": 34.8431,
+    "lon": 136.5407,
+    "radius_m": 3200,
+    "official_length_m": 5807,
+    "width_m": 12.0,
+    "self_intersects": true
+  }
+}
