@@ -94,6 +94,17 @@ car_race/
       RigidBody.cs              stands in for a Unity Rigidbody
       Rig.cs                    fixed 500 Hz substepping, measurement helpers
       Program.cs                the five checks, traces, telemetry export
+    CarRace.UnityCheck/         type-checks the Unity scripts without Unity
+      UnityEngineStub.cs        signatures only, nothing here runs
+  Unity/
+    README.md                   scene setup, project settings, how to copy it in
+    Assets/Scripts/Game/        the Unity integration layer
+      Bridge.cs                 vector and quaternion conversion, convention check
+      CarDefinition.cs          ScriptableObject returning a CarConfig
+      UnityGround.cs            IGround over Physics.SphereCast
+      CarController.cs          runs the model in FixedUpdate, applies the wrench
+      DriverInput.cs            keyboard and gamepad to normalised inputs
+      CarCamera.cs              chase, hood and cockpit views
 ```
 
 ## Quick start
@@ -113,6 +124,10 @@ Tools/.venv/bin/python Tools/verify_all.py
 
 # vehicle physics: the five validation checks
 dotnet run --project Sim/CarRace.Harness -c Release
+
+# Unity integration layer: compiles against a UnityEngine stub, so a broken
+# call into the model fails here instead of in the editor
+dotnet build Sim/CarRace.UnityCheck -c Release
 ```
 
 **Look at the generated plot before importing anything.** A wrong loop,

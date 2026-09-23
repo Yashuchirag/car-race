@@ -619,7 +619,7 @@ Each phase ends in something playable with a measurable exit condition.
 | Phase | Work | Exit criterion | State |
 |---|---|---|---|
 | 0 | Unity 6 + HDRP installed on D:, Git with LFS, a box on a plane driven by gamepad | packaged build runs standalone above 200fps | **not started** |
-| 1 | Vehicle physics: suspension, Pacejka tyres, drivetrain, aero, telemetry, cameras | placeholder car on a skidpad feels genuinely good; all five validation tests pass; oversteer can be provoked and caught | **physics and validation DONE; cameras and the Unity wrapper remain** |
+| 1 | Vehicle physics: suspension, Pacejka tyres, drivetrain, aero, telemetry, cameras | placeholder car on a skidpad feels genuinely good; all five validation tests pass; oversteer can be provoked and caught | **physics, validation and the Unity layer all written; the layer has never been run, and the feel test needs Unity** |
 | 2 | Track pipeline: OSM to spline, elevation, racing line, timing | hot-lap two circuits, invalid laps flagged, new circuit under a day | **DONE** |
 | 3 | AI drivers, race state machine, sessions, flags, penalties, pit stops | ten-lap race against fifteen AI with a plausible spread and no turn-one pile-up | not started |
 | 4 | Car paint, liveries, baked lighting, weather, environment art, VFX, post, photo mode, quality presets | 1080p at 100fps+ measured on this laptop; screenshots read as a modern racing game | not started |
@@ -640,12 +640,18 @@ not code.
 3. **Create the HDRP project** at `D:\Dev\CarRace`, native Windows path.
 4. **Initialise Git with LFS.** Track `*.fbx *.png *.tga *.wav *.asset`, and use
    Unity's standard `.gitignore` for `Library/` and `Temp/`.
-5. **Wire the physics into Unity.** `Sim/CarRace.Vehicle/*.cs` copies into
-   `Assets/Scripts/Vehicle/` unchanged. What is needed alongside it: a
-   MonoBehaviour that calls `VehicleSim.Step` from `FixedUpdate` and applies the
-   returned wrench with `AddForceAtPosition`, an `IGround` implementation wrapping
-   `Physics.SphereCast`, a ScriptableObject returning a `CarConfig`, and chase,
-   hood and cockpit cameras.
+5. **Wire the physics into Unity.** Written, in `Unity/Assets/Scripts/Game/`: the
+   MonoBehaviour that steps the model in `FixedUpdate`, the `IGround` over
+   `Physics.SphereCast`, the ScriptableObject returning a `CarConfig`, the input
+   reader and the three cameras. `Sim/CarRace.Vehicle/*.cs` copies in unchanged
+   alongside them. `Unity/README.md` has the copy step, the project settings and
+   the scene. It compiles against a stub and has never run, so treat the first
+   import as debugging, not as a milestone.
+
+   One change to the wrench: it is applied as `AddForce` plus `AddTorque`, not as
+   per-wheel `AddForceAtPosition`. A wrench is already reduced to a force through
+   the centre of mass plus a torque about it, so the two are equivalent, and the
+   first does not need the per-wheel forces handed back out of the model.
 6. **Then judge it by feel on a gamepad.** The numbers are right; whether it is
    enjoyable is a separate question and the one that actually decides Phase 1.
 

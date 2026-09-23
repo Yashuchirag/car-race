@@ -10,20 +10,26 @@ concrete action is. Everything below it is detail.
 
 ## 1. Resume here
 
-**Last updated:** 2026-09-23 (repo public, licences added)
+**Last updated:** 2026-09-23 (Unity integration layer written)
 
-**Last completed:** Vehicle physics core, all five validation checks passing
-against closed-form expectations.
+**Last completed:** The Unity integration layer, in `Unity/Assets/Scripts/Game/`.
+Six scripts, compiling against a UnityEngine stub. Never run.
 
-**Next action:** Install Unity 6 LTS (manual, section 5), then write the Unity
-integration layer listed in section 3, Phase 1.
+**Next action:** Install Unity 6 LTS (manual, section 5). Then follow
+`Unity/README.md`: copy both script folders in, build the skidpad scene it
+describes, and drive it. Expect a few compile errors on first import where the
+stub's signatures differ from the real engine, and fix the stub when you hit one.
 
-**Nothing is half-finished right now.** Both test suites pass on a clean run:
+**Nothing is half-finished.** Three checks pass on a clean run:
 
 ```bash
-Tools/.venv/bin/python Tools/verify_all.py          # expect: 6 of 6 circuits pass
-dotnet run --project Sim/CarRace.Harness -c Release # expect: All 5 checks pass
+Tools/.venv/bin/python Tools/verify_all.py           # expect: 6 of 6 circuits pass
+dotnet run --project Sim/CarRace.Harness -c Release  # expect: All 5 checks pass
+dotnet build Sim/CarRace.UnityCheck -c Release       # expect: 0 Error(s)
 ```
+
+The four WIP rows in section 3 are WIP because compiling is not running. Nothing
+about them is unfinished code; what is missing is the editor.
 
 If either fails on a fresh checkout, that is a regression and not something you
 left unfinished.
@@ -73,10 +79,12 @@ A row only becomes DONE when its verification command passes.
 | Closed-form expectations | DONE | `Analytic.cs` |
 | Five validation checks | DONE | All pass. Section 7. |
 | Telemetry CSV export | DONE | `--csv <path>` |
-| Unity MonoBehaviour wrapper | TODO | Calls `VehicleSim.Step` in `FixedUpdate`, applies the wrench with `AddForceAtPosition` |
-| `IGround` over `Physics.SphereCast` | TODO | Interface already defined in `Types.cs` |
-| ScriptableObject returning a `CarConfig` | TODO | Thin wrapper, the data model is done |
-| Cameras: chase, hood, cockpit | TODO | Speed-based FOV, look into corner |
+| Unity MonoBehaviour wrapper | WIP | `CarController.cs`. Written and type-checked, not run in the editor. Applies the wrench as `AddForce` plus `AddTorque`, which is equivalent to per-wheel `AddForceAtPosition` and cheaper. |
+| `IGround` over `Physics.SphereCast` | WIP | `UnityGround.cs`. Written and type-checked, not run. Raycast fallback for a probe that starts already overlapping. |
+| ScriptableObject returning a `CarConfig` | WIP | `CarDefinition.cs`. Every number mirrored as a serialized field; a new asset defaults to the validated reference car. |
+| Cameras: chase, hood, cockpit | WIP | `CarCamera.cs`. Chase rig follows the velocity vector, not the car's facing, so a slide is visible. |
+| Driver input, keyboard and gamepad | WIP | `DriverInput.cs`. Old input manager, so a car drives with no input asset authored. |
+| Manual shifting in the model | DONE | `Drivetrain.Shift`. Setting `Gear` directly skipped the shift time, so a manual upshift was free lap time. |
 | **Feel test on a gamepad** | BLOCKED | The real Phase 1 exit criterion. Needs Unity. Numbers passing is not the same as enjoyable. |
 
 ### Phase 2, track pipeline
@@ -100,7 +108,10 @@ Tracks_Data/    six generated circuits, committed           Phase 2, DONE
 Sim/            C# vehicle physics, engine agnostic         Phase 1, core DONE
   CarRace.Vehicle/    the model. Copies into Unity unchanged.
   CarRace.Harness/    headless validation. Stays outside Unity.
-(Unity project)  not created yet                            Phase 0, BLOCKED
+  CarRace.UnityCheck/ compiles the Unity scripts against a stub. Never ships.
+Unity/          the integration layer, written, never run    Phase 1, WIP
+  Assets/Scripts/Game/  copies into the Unity project on D:
+(Unity project)  not created yet, lives at D:\Dev\CarRace     Phase 0, BLOCKED
 ```
 
 ---
@@ -131,6 +142,15 @@ Known, deliberate, and not blocking. Recorded so they are not rediscovered.
 - Tyre temperature and wear are not modelled. Phase 6 if wanted at all.
 - Force feedback for a wheel needs a native plugin. Real uncertainty, Phase 6.
 
+- The model reads the car's pose once per Unity physics step and holds it across its
+  own substeps, because Unity owns the integration and there is no correct pose to
+  read in between. The harness re-reads every substep, so the two differ slightly at
+  the same nominal rate. Mitigated by asking for a 0.005 s fixed timestep, which
+  caps the lag at 5 ms. Worth re-measuring against the harness once Unity runs.
+- The Unity scripts are checked against a hand-written `UnityEngine` stub, so a stub
+  signature that differs from the real engine hides a compile error until first
+  import. Known limit of the approach, not a defect in it.
+
 **Track pipeline**
 
 - Lap estimates run 8 to 20% slow. Documented and expected, see `Tools/README.md`.
@@ -158,6 +178,11 @@ Tools/.venv/bin/python Tools/verify_all.py
 # vehicle physics: five checks against closed-form expectations
 dotnet run --project Sim/CarRace.Harness -c Release
 #   expect: "All 5 checks pass", exit code 0
+
+# Unity integration layer: type-checks the scripts against a UnityEngine stub.
+# Proves they compile and call the model correctly. Proves nothing about behaviour.
+dotnet build Sim/CarRace.UnityCheck -c Release
+#   expect: "0 Error(s)", exit code 0
 
 # diagnostics, when something is wrong
 dotnet run --project Sim/CarRace.Harness -c Release -- --trace    # launch, skidpad
@@ -195,6 +220,29 @@ learned, so context is not lost between sessions.
   work existed with no history and no backup.
 - Added this file, and a rule in `CLAUDE.md` section 5 to keep it current during
   work rather than at the end.
+
+### 2026-09-23, second session
+
+- Wrote the Unity integration layer: `Bridge`, `CarDefinition`, `UnityGround`,
+  `CarController`, `DriverInput`, `CarCamera`, with `Unity/README.md` covering the
+  scene, the project settings and the copy step.
+- Added `Sim/CarRace.UnityCheck`, which compiles those scripts against a
+  signature-only `UnityEngine` stub. Verified the check works by breaking a call on
+  purpose and watching it fail. It catches typos and wrong calls into the model; it
+  runs nothing, and every method in the stub throws so it can never be mistaken for
+  a behaviour test.
+- Added `Drivetrain.Shift`. `AutomaticGearbox = false` was unusable from outside the
+  model: `Gear` is a public field, and setting it swapped ratios with no shift time,
+  so a manual upshift interrupted no drive at all and was worth free lap time.
+- Talked myself out of one piece of superstition. Unity is described as left handed
+  and `System.Numerics` as right handed, which suggests the quaternion conversion
+  needs a sign flip. It does not: Unity defines its cross product by the left hand
+  rule, so the component arithmetic is identical and a positive rotation about +Y
+  takes +Z to +X in both. `Bridge.VerifyConventions` asserts that against the real
+  engine at startup, because reasoning of that kind is worth nothing unchecked.
+- Three traps in the integration are things that look like physics bugs and are not,
+  so all three now report themselves: a ground mask that includes the car's own
+  layer, a 50 Hz fixed timestep, and a torque curve out of rpm order.
 
 ### 2026-09-23
 

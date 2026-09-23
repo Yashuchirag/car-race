@@ -199,6 +199,23 @@ namespace CarRace.Vehicle
             }
         }
 
+        /// <summary>
+        /// Manual shift, one gear at a time, through neutral between forward and
+        /// reverse. Needed because setting Gear directly would swap ratios with no
+        /// shift time at all, so a driver could upshift mid corner with the drive
+        /// never interrupted, which is worth free lap time.
+        /// </summary>
+        public void Shift(int delta)
+        {
+            if (ShiftInProgress || delta == 0) return;
+
+            int target = Gear + (delta > 0 ? 1 : -1);
+            if (target < -1 || target > _cfg.GearRatios.Length) return;
+
+            Gear = target;
+            _shiftTimer = _cfg.ShiftTimeSeconds;
+        }
+
         public void Reset()
         {
             Slipping = false;

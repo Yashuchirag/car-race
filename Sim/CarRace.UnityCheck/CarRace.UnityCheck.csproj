@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Type-checks the Unity integration layer without Unity. It compiles the scripts in
+    Unity/Assets/Scripts/Game against a signature-only UnityEngine stub plus the real
+    vehicle model, so a wrong call into the model, or a typo, fails here instead of
+    surfacing hours later in the editor. It does not run anything and is not a test of
+    behaviour. Never referenced by the game.
+  -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <AssemblyName>CarRace.UnityCheck</AssemblyName>
+    <RootNamespace>CarRace.UnityCheck</RootNamespace>
+    <NoWarn>CS0414;CS0649</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="../../Unity/Assets/Scripts/Game/*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../CarRace.Vehicle/CarRace.Vehicle.csproj" />
+  </ItemGroup>
+
+</Project>
