@@ -19,7 +19,66 @@ through 10% packet loss, and LAN discovery that finds a host with no address typ
 Still open from the session before: the race exit criterion fails, two cars touch on
 the opening lap with a full field. Recorded as WIP rather than dressed up.
 
-**Next action:** Install Unity 6 LTS (manual, section 5). Then follow
+**Next action:** The failing race scenarios. Brief below; everything else in this
+file is still true but is not what tomorrow is about.
+
+---
+
+### Tomorrow: why cars touch in traffic
+
+**Minimal repro. Four seconds, deterministic, verified identical across runs:**
+
+```bash
+dotnet run --project Sim/CarRace.Harness -c Release -- --race testcircuit --cars 8 --laps 3 --verbose
+#   6 contacts, 3 on lap one. Every single one of them involves AI 02.
+```
+
+**It is a density effect, and the threshold is sharp:**
+
+| circuit | clean up to | fails from |
+|---|---|---|
+| Monza | 8 cars | 10 cars (2 contacts, both on lap one) |
+| testcircuit | 6 cars | 8 cars (6 contacts, 3 on lap one) |
+
+**What is already ruled out.** One car alone at the fastest pace any driver in the
+field uses laps Monza cleanly: `--lap monza --pace 0.847` finishes on track with a
+maximum sideslip of 6.9 degrees. So this is not the car being over-driven, and not the
+speed plan. It only happens with company.
+
+**What the repro shows.** Every contact involves one car that is much slower than the
+one arriving: 64 against 115, 47 against 186, 28 against 60. AI 02 is in a bad state
+and the others run into it. The question to answer first is what puts it there, not
+why nobody avoided it.
+
+**The instruments that exist:** the `CONTACT` log gives time, place, both speeds and the
+closing rate; the `SLOW` log gives the cap, who is blocking, distance off line, sideslip
+and gear, for any car under 45% of its planned speed. What does not exist is per-car
+telemetry for a race. `--lap` has `--csv` and `--race` does not, and reading a car's
+steering, slip angles and wheel loads through the moment it goes wrong is what settled
+every hard question in the last two sessions. **Build that first.**
+
+**Hypotheses, in the order worth testing:**
+
+1. A car that has to lift or steer off line in traffic ends up beyond what the tyres
+   will take, spins, and never recovers properly. Spin recovery exists but is partial:
+   57 crawl reports in a ten-lap race, worst sideslip 70 degrees.
+2. The overtaking offset puts a car somewhere the speed plan does not describe. There
+   is a correction for the tighter radius on the inside of a corner, but none for the
+   car being on a different line through a braking zone.
+3. The safety bound looks along the racing line. Two cars can be metres apart on the
+   road and far apart in racing line index near a hairpin, or the reverse.
+4. Reaction is 20 ms and the field is read all at once. Nothing staggers the drivers,
+   so sixteen cars decide identical things on identical frames.
+
+**One correction to make honestly:** the note in section 3 said almost every remaining
+contact was a fast car hitting a crawling one. That was measured on an earlier build. It
+still holds for the testcircuit repro, but two of the four contacts at Monza are now
+moderate speed incidents between cars that are both driving normally, and those may have
+a different cause. Do not assume one fix covers both.
+
+---
+
+**After that:** Install Unity 6 LTS (manual, section 5). Then follow
 `Unity/README.md`: copy both script folders in, build the skidpad scene it
 describes, and drive it. Expect a few compile errors on first import where the
 stub's signatures differ from the real engine, and fix the stub when you hit one.
@@ -135,12 +194,10 @@ by a few seconds across the field. What does not pass is the criterion itself:
 10 cars,  3 laps, testcircuit   4 contacts, 4 on lap one   FAIL
 ```
 
-Eight cars is clean; sixteen is not, and the test that matters is sixteen. Almost
-every remaining contact is a car arriving at 40 to 190 km/h behind one doing 8 to
-30, which means the cause is still cars that spin and then crawl rather than the
-avoidance logic being too loose. The next thing to try is on the driver, not on the
-traffic rules: it needs to not put itself in that state, and to get going again
-properly when it does.
+Eight cars is clean; sixteen is not, and the test that matters is sixteen. The
+failure is a density effect with a sharp threshold, and it is deterministic. The
+brief in section 1 has the current evidence, the minimal four second repro, and what
+has already been ruled out.
 
 ### Phase 5, LAN multiplayer
 
