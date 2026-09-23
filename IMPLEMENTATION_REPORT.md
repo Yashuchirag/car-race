@@ -621,7 +621,7 @@ Each phase ends in something playable with a measurable exit condition.
 | 0 | Unity 6 + HDRP installed on D:, Git with LFS, a box on a plane driven by gamepad | packaged build runs standalone above 200fps | **not started** |
 | 1 | Vehicle physics: suspension, Pacejka tyres, drivetrain, aero, telemetry, cameras | placeholder car on a skidpad feels genuinely good; all five validation tests pass; oversteer can be provoked and caught | **physics, validation and the Unity layer all written; the layer has never been run, and the feel test needs Unity** |
 | 2 | Track pipeline: OSM to spline, elevation, racing line, timing | hot-lap two circuits, invalid laps flagged, new circuit under a day | **DONE** |
-| 3 | AI drivers, race state machine, sessions, flags, penalties, pit stops | ten-lap race against fifteen AI with a plausible spread and no turn-one pile-up | not started |
+| 3 | AI drivers, race state machine, sessions, flags, penalties, pit stops | ten-lap race against fifteen AI with a plausible spread and no turn-one pile-up | **started early: a reference driver laps all six circuits headlessly, because the rest of Phase 1 needs Unity and this did not** |
 | 4 | Car paint, liveries, baked lighting, weather, environment art, VFX, post, photo mode, quality presets | 1080p at 100fps+ measured on this laptop; screenshots read as a modern racing game | not started |
 | 5 | LAN discovery, server browser, vehicle sync, collisions, lobby | four machines racing ten laps, no warping, no desync, host framerate unaffected | not started |
 | 6 | Career, setup UI, assists, saves, leaderboards, replays, ghosts, audio | someone can play five hours without running out of things to do | not started |

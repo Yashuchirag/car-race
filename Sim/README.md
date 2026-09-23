@@ -17,9 +17,45 @@ dotnet run --project Sim/CarRace.Harness -c Release -- --trace   # launch and sk
 dotnet run --project Sim/CarRace.Harness -c Release -- --grip    # lateral force probe
 dotnet run --project Sim/CarRace.Harness -c Release -- --corner  # steady cornering sweep
 dotnet run --project Sim/CarRace.Harness -c Release -- --csv run.csv
+
+dotnet run --project Sim/CarRace.Harness -c Release -- --lap all      # a lap on every circuit
+dotnet run --project Sim/CarRace.Harness -c Release -- --lap monza    # one circuit, in detail
+dotnet run --project Sim/CarRace.Harness -c Release -- --lap monza --verbose --csv lap.csv
+dotnet run --project Sim/CarRace.Harness -c Release -- --lap monza --pace 0.95
 ```
 
-Exit code is 0 when all five checks pass.
+Exit code is 0 when all five checks pass, and 0 from `--lap` when the car gets
+round inside the track edges.
+
+## Driving a real circuit
+
+`--lap` puts the validated car on a circuit the Python pipeline generated and has
+it drive two laps: one from a standing start, then a flying one. It is the only
+thing that exercises both halves of the project at once. The five checks say the
+car obeys physics on an empty plane and the pipeline says a circuit is
+geometrically sound; neither says the car can get round it.
+
+```
+circuit              lap  plan bound  vs bound    track edge  result
+--------------------------------------------------------------------
+bahrain         2:50.764    2:34.822    +10.3%         0.54 m  on track
+monza           2:34.104    2:19.462    +10.5%         1.17 m  on track
+silverstone     3:03.177    2:49.428     +8.1%         0.89 m  on track
+spa             3:22.156    3:06.475     +8.4%         0.54 m  on track
+suzuka          2:55.213    2:44.695     +6.4%         0.30 m  on track
+testcircuit     1:05.182    1:01.093     +6.7%         1.26 m  on track
+```
+
+The plan bound is the speed plan driven perfectly, with no driver error, so the
+gap to it is what the reference driver gives away. The ground is still flat:
+elevation is in the track files and is ignored, so this measures cornering,
+braking and gearing, not hills.
+
+`--pace` scales how much of the car's measured grip the plan asks for. The
+default is 0.85. At 0.95 the car spins on some circuits, which is the same
+understeer balance the skidpad shows: the front axle saturates first, and past
+its peak slip angle more steering means less grip, so a fixed-line driver cannot
+recover what it could not anticipate.
 
 ## Current state
 
@@ -106,8 +142,32 @@ a defect, and each would have been far harder to find inside an engine.
    throttle to balance drag, so it settled at 7.89 m/s against an 8.00 target and
    silently failed every skidpad run. This one was in the harness, not the model.
 
+## Bugs the lap runner caught
+
+1. **Braking planned without the friction ellipse.** The plan let the car brake at
+   full capability while already at the cornering limit, which no tyre can do. The
+   car arrived hot, was still braking past turn-in, the load left the rear axle
+   exactly as it was asked for lateral grip, and it spun. Same corner, every run.
+2. **The ellipse, applied naively, was worse.** Taking the lateral demand at the
+   cornering-limit speed makes it the whole ellipse by definition, so the plan
+   allowed no braking at all through turn-in and made the car reach apex speed the
+   moment the road started bending. Half a minute a lap, and it looked like a slow
+   car rather than a bad plan. It has a closed form; use it.
+3. **Curvature measured across adjacent samples.** At 2 m spacing that measures the
+   wiggle in the sampling as much as the bend in the road: peak curvature came out
+   30 to 50% high on three circuits, putting corners in the plan that are not there.
+   A stride spanning about 6 m reproduces the pipeline's own curvature exactly.
+4. **Pure pursuit alone.** Aiming at a point ahead cuts the corner, so the error
+   grows through the turn and the correction arrives with the front tyres already
+   near their limit. Steering for the curvature the road actually has, and letting
+   feedback only trim, is what made it stable.
+5. **Cross-track error measured at the centre of mass.** Measured at the front axle
+   instead, the same car could be trusted with far more of its grip, because the
+   axle is ahead of the mass and that lead is most of the stability.
+6. **Lap counter read after the driver moved.** The start line crossing was never
+   seen, every lap went unrecorded, and the run ended with nothing to report.
+
 ## Next
 
-Cameras, a Unity `MonoBehaviour` wrapper around `VehicleSim`, and a
-`ScriptableObject` that returns a `CarConfig`. None of it needs the physics to
-change.
+The feel test on a gamepad, which needs Unity. The Unity integration layer is
+written and compiles; see `Unity/README.md`.

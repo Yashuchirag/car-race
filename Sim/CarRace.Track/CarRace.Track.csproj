@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- netstandard2.1 so it drops into Unity unchanged, like CarRace.Vehicle.
+       Deliberately contains no file or JSON handling: the harness reads the track
+       files with System.Text.Json, and Unity will read them its own way. What is
+       shared is the geometry and the driving, which is the part worth testing. -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <AssemblyName>CarRace.Track</AssemblyName>
+    <RootNamespace>CarRace.Track</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../CarRace.Vehicle/CarRace.Vehicle.csproj" />
+  </ItemGroup>
+</Project>

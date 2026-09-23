@@ -93,7 +93,13 @@ car_race/
       Analytic.cs               closed-form expectations from the config
       RigidBody.cs              stands in for a Unity Rigidbody
       Rig.cs                    fixed 500 Hz substepping, measurement helpers
+      TrackLoader.cs            reads the pipeline's JSON, ENU to Y-up
+      LapRun.cs                 drives a generated circuit and reports
       Program.cs                the five checks, traces, telemetry export
+    CarRace.Track/              track geometry and a reference driver, engine agnostic
+      TrackData.cs              samples, widths, curvature, lateral offsets
+      SpeedPlan.cs              speed at every sample, one friction ellipse both ways
+      PathDriver.cs             curvature feedforward plus feedback, PI on speed
     CarRace.UnityCheck/         type-checks the Unity scripts without Unity
       UnityEngineStub.cs        signatures only, nothing here runs
   Unity/
@@ -124,6 +130,10 @@ Tools/.venv/bin/python Tools/verify_all.py
 
 # vehicle physics: the five validation checks
 dotnet run --project Sim/CarRace.Harness -c Release
+
+# both halves together: drive the validated car round every generated circuit
+dotnet run --project Sim/CarRace.Harness -c Release -- --lap all
+dotnet run --project Sim/CarRace.Harness -c Release -- --lap monza --verbose
 
 # Unity integration layer: compiles against a UnityEngine stub, so a broken
 # call into the model fails here instead of in the editor

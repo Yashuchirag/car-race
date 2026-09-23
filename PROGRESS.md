@@ -10,10 +10,11 @@ concrete action is. Everything below it is detail.
 
 ## 1. Resume here
 
-**Last updated:** 2026-09-23 (Unity integration layer written)
+**Last updated:** 2026-09-23 (the car now drives the generated circuits)
 
-**Last completed:** The Unity integration layer, in `Unity/Assets/Scripts/Game/`.
-Six scripts, compiling against a UnityEngine stub. Never run.
+**Last completed:** The headless lap runner. The validated car drives every
+circuit the pipeline generates, on track, in `--lap all`. Before this the two
+halves of the project had never met.
 
 **Next action:** Install Unity 6 LTS (manual, section 5). Then follow
 `Unity/README.md`: copy both script folders in, build the skidpad scene it
@@ -23,9 +24,10 @@ stub's signatures differ from the real engine, and fix the stub when you hit one
 **Nothing is half-finished.** Three checks pass on a clean run:
 
 ```bash
-Tools/.venv/bin/python Tools/verify_all.py           # expect: 6 of 6 circuits pass
-dotnet run --project Sim/CarRace.Harness -c Release  # expect: All 5 checks pass
-dotnet build Sim/CarRace.UnityCheck -c Release       # expect: 0 Error(s)
+Tools/.venv/bin/python Tools/verify_all.py                     # expect: 6 of 6 circuits pass
+dotnet run --project Sim/CarRace.Harness -c Release            # expect: All 5 checks pass
+dotnet run --project Sim/CarRace.Harness -c Release -- --lap all  # expect: 6 of 6 on track
+dotnet build Sim/CarRace.UnityCheck -c Release                 # expect: 0 Error(s)
 ```
 
 The four WIP rows in section 3 are WIP because compiling is not running. Nothing
@@ -93,9 +95,23 @@ A row only becomes DONE when its verification command passes.
 `Tools/README.md`. Remaining polish is listed under section 6, not here, because
 none of it blocks anything.
 
-### Phases 3 to 6
+### Phase 3, AI and race systems
 
-TODO, all of them. Specified in IMPLEMENTATION_REPORT.md sections 10 to 13.
+Brought forward out of order, because everything left in Phase 1 needs Unity and
+this does not. It is also the first time the two halves of the project meet: the
+physics has never driven a corner the track pipeline produced.
+
+| Task | Status | Notes |
+|---|---|---|
+| Track data into C# | DONE | `Sim/CarRace.Track/`, engine agnostic. JSON loading stays in the harness because Unity brings its own. |
+| Speed plan from the car's own limits | DONE | Quasi-steady-state, both passes sharing one friction ellipse. The plan in the JSON is for a GT3, not this car. |
+| Path-following driver | DONE | Curvature feedforward plus Stanley feedback at the front axle, PI on speed. Reused by Unity AI later. |
+| Headless lap on a real circuit | DONE | `--lap all`, 6 of 6 on track. Section 7. |
+| AI opponents, race state machine, flags, pit stops | TODO | The rest of Phase 3, untouched. |
+
+### Phases 4 to 6
+
+TODO, all of them. Specified in IMPLEMENTATION_REPORT.md sections 11 to 13.
 Nothing started, nothing to resume.
 
 ---
@@ -151,6 +167,22 @@ Known, deliberate, and not blocking. Recorded so they are not rediscovered.
   signature that differs from the real engine hides a compile error until first
   import. Known limit of the approach, not a defect in it.
 
+**Driving a circuit**
+
+- The plan is trusted with 0.85 of the grip the car measures on a skidpad, and not
+  more. At 0.95 it spins on some circuits. Same cause as the understeer note above:
+  the front saturates first, and past its peak slip angle more steering means less
+  grip, so a fixed-line driver cannot recover what it did not anticipate. A driver
+  that eased the throttle on rear slip angle would carry more, and that is a Phase 3
+  decision rather than a physics one.
+- The reference driver gives away 6 to 11% against its own plan bound. Most of that
+  is corner exit, where it is still tracking a target speed rather than simply using
+  the throttle it has.
+- Peak sideslip reaches 18 degrees at Suzuka. The car gets round, but it is sliding
+  more than a quick driver would allow.
+- The ground under the lap runner is flat. Elevation is in the track files and is
+  ignored, so nothing here says anything about Eau Rouge.
+
 **Track pipeline**
 
 - Lap estimates run 8 to 20% slow. Documented and expected, see `Tools/README.md`.
@@ -184,11 +216,16 @@ dotnet run --project Sim/CarRace.Harness -c Release
 dotnet build Sim/CarRace.UnityCheck -c Release
 #   expect: "0 Error(s)", exit code 0
 
+# both halves together: the car drives every generated circuit, twelve laps in ~5 s
+dotnet run --project Sim/CarRace.Harness -c Release -- --lap all
+#   expect: "6 of 6 circuits completed on track", exit code 0
+
 # diagnostics, when something is wrong
 dotnet run --project Sim/CarRace.Harness -c Release -- --trace    # launch, skidpad
 dotnet run --project Sim/CarRace.Harness -c Release -- --grip     # lateral force probe
 dotnet run --project Sim/CarRace.Harness -c Release -- --corner   # steady cornering sweep
 Tools/.venv/bin/python Tools/build_track.py spa                   # one circuit, verbose
+dotnet run --project Sim/CarRace.Harness -c Release -- --lap monza --verbose --csv lap.csv
 ```
 
 ---
@@ -220,6 +257,30 @@ learned, so context is not lost between sessions.
   work existed with no history and no backup.
 - Added this file, and a rule in `CLAUDE.md` section 5 to keep it current during
   work rather than at the end.
+
+### 2026-09-23, third session
+
+- The physics drove a circuit the pipeline made, for the first time. `--lap all`:
+  six circuits, twelve laps, about five seconds, all on track. Added
+  `Sim/CarRace.Track` (track data, speed plan, path driver) and the harness side
+  that loads the JSON and reports.
+- It did not work at first, and guessing did not fix it. What fixed it was dumping
+  per-step telemetry and reading it: the car was braking hard past turn-in, the rear
+  axle unloaded exactly as it was asked for lateral grip, and it spun. The plan was
+  letting it brake at full capability while already at the cornering limit, which no
+  tyre can do.
+- The obvious fix for that made it much worse, in a way that read as a slow car
+  rather than a bad plan, and cost half a minute a lap. Taking lateral demand at the
+  cornering-limit speed uses the whole ellipse by definition, so no braking is
+  allowed through turn-in at all. The constraint has a closed form; use it.
+- Measured rather than assumed: curvature across adjacent samples at 2 m spacing is
+  30 to 50% noise on three of the six circuits. A stride of about 6 m reproduces the
+  pipeline's own curvature with a correlation of 1.0000. Worth remembering that the
+  pipeline had already solved this and the two only disagreed because I recomputed
+  it without asking why theirs looked different.
+- The lap times are honest but slow, because the plan only dares use 0.85 of the
+  car's measured grip. That number is the understeer balance showing up again, and
+  it is the most useful thing this run found.
 
 ### 2026-09-23, second session
 

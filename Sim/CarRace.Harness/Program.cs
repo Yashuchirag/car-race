@@ -41,6 +41,22 @@ namespace CarRace.Harness
             if (Array.IndexOf(args, "--corner") >= 0) { CornerSweep(config); return 0; }
             if (Array.IndexOf(args, "--dump") >= 0) { DumpCase(config, "/tmp/case.csv"); return 0; }
 
+            int lapIndex = Array.IndexOf(args, "--lap");
+            if (lapIndex >= 0)
+            {
+                string circuit = lapIndex + 1 < args.Length && !args[lapIndex + 1].StartsWith("--")
+                    ? args[lapIndex + 1] : "monza";
+                int paceIndex = Array.IndexOf(args, "--pace");
+                float pace = paceIndex >= 0 && paceIndex + 1 < args.Length
+                    ? float.Parse(args[paceIndex + 1], CultureInfo.InvariantCulture)
+                    : 0.85f;
+                if (circuit == "all") return LapRun.RunAll(config, pace);
+
+                int lapCsv = Array.IndexOf(args, "--csv");
+                string csvPath = lapCsv >= 0 && lapCsv + 1 < args.Length ? args[lapCsv + 1] : null;
+                return LapRun.Run(config, circuit, Array.IndexOf(args, "--verbose") >= 0, pace, csvPath);
+            }
+
             int csvIndex = Array.IndexOf(args, "--csv");
             if (csvIndex >= 0 && csvIndex + 1 < args.Length)
             {
