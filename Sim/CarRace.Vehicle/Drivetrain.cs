@@ -184,6 +184,8 @@ namespace CarRace.Vehicle
             }
         }
 
+        const float DownshiftShare = 0.8f;
+
         void AutoShift(in VehicleInputs input)
         {
             if (ShiftInProgress || Gear <= 0) return;
@@ -192,7 +194,13 @@ namespace CarRace.Vehicle
                 Gear++;
                 _shiftTimer = _cfg.ShiftTimeSeconds;
             }
-            else if (EngineRpm <= _cfg.IdleRpm * 1.45f && Gear > 1)
+            // Down whenever the gear below would still be under DownshiftShare of the limit.
+            // Waiting until the engine was nearly at idle, as this first did, meant a car that
+            // braked from 200 km/h left the corner in fifth at 1,300 rpm with an eighth of its
+            // power: the headless AI lost 12 s a lap at Monza to it, all at full throttle.
+            // The gap to the 97% upshift point is what stops it hunting between two gears.
+            else if (Gear > 1 && EngineRpm * _cfg.GearRatios[Gear - 2] / _cfg.GearRatios[Gear - 1]
+                                 <= _cfg.RevLimitRpm * DownshiftShare)
             {
                 Gear--;
                 _shiftTimer = _cfg.ShiftTimeSeconds;

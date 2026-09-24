@@ -70,11 +70,12 @@ namespace CarRace.UnityGame.EditorTools
         }
 
         /// <summary>The headless reference driver's lap on each circuit, pace 0.85, from
-        /// `--lap all` on 2026-09-24. On flat ground, so a guide rather than a par here.</summary>
+        /// `--lap all` on 2026-09-24 after the gearbox fix. On flat ground, so a guide rather
+        /// than a par here.</summary>
         static readonly Dictionary<string, float> ReferenceLaps = new Dictionary<string, float>
         {
-            ["bahrain"] = 171.071f, ["monza"] = 154.490f, ["silverstone"] = 183.688f,
-            ["spa"] = 202.576f, ["suzuka"] = 175.725f, ["testcircuit"] = 65.336f,
+            ["bahrain"] = 160.977f, ["monza"] = 147.018f, ["silverstone"] = 175.119f,
+            ["spa"] = 193.311f, ["suzuka"] = 169.529f, ["testcircuit"] = 62.260f,
         };
 
         [Serializable] class Polyline { public float[] x, y, z, width_left, width_right; }
