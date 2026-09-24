@@ -78,6 +78,7 @@ so tuned car values survive. The steps below are what it does, for building it b
 |---|---|---|
 | Steer | A / D | Left stick |
 | Throttle, brake | W / S | Right trigger, left trigger (or left stick up, down) |
+| Reverse (automatic gearbox): hold brake at a standstill, then brake drives backwards and throttle brakes | S | Left trigger |
 | Handbrake | Space | A |
 | Shift up, down (manual gearbox) | E / Q | RB / LB |
 | Recover onto the track where you are (the start on the skidpad) | R | View |

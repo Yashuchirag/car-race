@@ -125,6 +125,10 @@ namespace CarRace.UnityGame
             float rate = 1f / MathF.Max(outward ? steerRampSeconds : steerReturnSeconds, 0.01f);
             _request += MathF.Max(-rate * dt, MathF.Min(rate * dt, raw - _request));
 
+            // Backing up, the car turns the other way for the same lock, so the turn rate
+            // feedback below would push the wrong way. Plain ramped lock is what reversing needs.
+            if (speed < -0.5f) { _steer = _request; return; }
+
             float v = MathF.Max(MathF.Abs(speed), 3f);
             float yawRate = Vec3.Dot(body.AngularVelocity, body.Up);
 

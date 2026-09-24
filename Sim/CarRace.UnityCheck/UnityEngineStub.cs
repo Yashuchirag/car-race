@@ -61,6 +61,7 @@ namespace UnityEngine
         public static float Min(float a, float b) => throw new NotImplementedException();
         public static int RoundToInt(float v) => throw new NotImplementedException();
         public static float Exp(float v) => throw new NotImplementedException();
+        public static float Abs(float v) => throw new NotImplementedException();
     }
 
     public static class Time

@@ -29,6 +29,12 @@ namespace CarRace.UnityGame
         [SerializeField] bool automaticGearbox = true;
         [SerializeField] bool antiLockBrakes = true;
         [SerializeField] bool tractionControl = true;
+        [Tooltip("With the automatic gearbox: hold brake at a standstill to engage reverse, then " +
+                 "brake drives backwards and throttle brakes; throttle at a standstill goes forward again.")]
+        [SerializeField] bool brakeToReverse = true;
+        [Tooltip("Throttle in reverse, as a share of full. Reverse is geared low and traction " +
+                 "control only watches forward wheelspin, so a full key spins the rear wheels.")]
+        [SerializeField, Range(0.1f, 1f)] float reverseThrottle = 0.25f;
 
         [Tooltip("Rate the vehicle model runs at. Below about 300 the tyre model goes unstable, " +
                  "which reads as a car that will not settle. Substepped inside each physics step.")]
@@ -63,6 +69,7 @@ namespace CarRace.UnityGame
         CarConfig _config;
         readonly float[] _spinDegrees = new float[4];
         Vector3 _spawnPosition;
+        float _stoppedOnBrake;
         Quaternion _spawnRotation;
 
         void Awake()
@@ -142,6 +149,9 @@ namespace CarRace.UnityGame
             }
 
             float dt = Time.fixedDeltaTime;
+            if (brakeToReverse && automaticGearbox && Autopilot == null && driver != null)
+                inputs = BrakeToReverse(inputs, dt);
+
             int substeps = Mathf.Max(1, Mathf.RoundToInt(modelHz * dt));
             float subDt = dt / substeps;
 
@@ -172,6 +182,52 @@ namespace CarRace.UnityGame
             _body.AddTorque(Bridge.ToUnity(torque / substeps), ForceMode.Force);
 
             TrackWheelSpin(dt);
+        }
+
+        const float StoppedMs = 0.5f;
+        const float ReverseAfterSeconds = 0.3f;
+
+        /// <summary>
+        /// Reverse on the brake key, as in most driving games. Without it a keyboard car that
+        /// stopped nose first against a wall could not get away: turning needs the car to move,
+        /// forward was the wall, and reverse was only on the manual gearbox's shift key.
+        ///
+        /// Braked to a standstill, or rolling backwards, for ReverseAfterSeconds, the car selects
+        /// reverse; from then brake drives backwards at reverseThrottle and throttle brakes, and
+        /// throttle once stopped selects first again. The gear is set directly rather than
+        /// through Shift, which would go through neutral one shift time at a time: at a
+        /// standstill no shift time is being skipped.
+        /// </summary>
+        VehicleInputs BrakeToReverse(VehicleInputs inputs, float dt)
+        {
+            float forward = Vector3.Dot(_body.linearVelocity, transform.forward);
+            var gearbox = Sim.Drivetrain;
+
+            if (gearbox.Gear > 0)
+            {
+                // Rolling backwards counts as stopped: braked to a standstill the model's tyres
+                // rock the car back at up to 4.5 km/h for half a second (PROGRESS.md, section 6),
+                // and waiting for that to settle made reverse feel late.
+                bool holding = inputs.Brake > 0.5f && inputs.Throttle < 0.05f && forward < StoppedMs;
+                _stoppedOnBrake = holding ? _stoppedOnBrake + dt : 0f;
+                if (_stoppedOnBrake >= ReverseAfterSeconds)
+                {
+                    gearbox.Gear = -1;
+                    _stoppedOnBrake = 0f;
+                }
+            }
+            else if (gearbox.Gear < 0 && inputs.Throttle > 0.5f && forward > -StoppedMs)
+            {
+                gearbox.Gear = 1;
+            }
+
+            if (gearbox.Gear < 0)
+            {
+                float back = inputs.Brake;
+                inputs.Brake = inputs.Throttle;
+                inputs.Throttle = back * reverseThrottle;
+            }
+            return inputs;
         }
 
         void TrackWheelSpin(float dt)
