@@ -29,6 +29,10 @@ namespace CarRace.UnityGame
         [SerializeField] bool automaticGearbox = true;
         [SerializeField] bool antiLockBrakes = true;
         [SerializeField] bool tractionControl = true;
+        [Tooltip("Engine drag torque control: eases engine braking off a rear tyre that is near " +
+                 "its grip limit, braking and cornering together, so braking into a corner does " +
+                 "not push the rear out. A plain lift keeps its engine braking.")]
+        [SerializeField] bool engineDragControl = true;
         [Tooltip("With the automatic gearbox: hold brake at a standstill to engage reverse, then " +
                  "brake drives backwards and throttle brakes; throttle at a standstill goes forward again.")]
         [SerializeField] bool brakeToReverse = true;
@@ -128,6 +132,7 @@ namespace CarRace.UnityGame
             Sim.AutomaticGearbox = automaticGearbox;
             Sim.AntiLockBrakes = antiLockBrakes;
             Sim.TractionControl = tractionControl;
+            Sim.EngineDragControl = engineDragControl;
 
             if (transform.position.y < fallLimitY) Recover();
 

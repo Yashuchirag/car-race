@@ -69,6 +69,8 @@ namespace CarRace.Vehicle
         /// <summary>Driver aid authority, 0 fully cut to 1 untouched. Smoothed, not instant.</summary>
         public float TractionScale = 1f;
         public float BrakeScale = 1f;
+        public float EngineDragScale = 1f;   // share of engine braking let through, see VehicleSim.EngineDragControl
+        public float GripUsage;              // combined demand over peak, friction ellipse; above 1 the tyre is saturated
 
         public ref TyreConfig Tyre(CarConfig cfg)
             => ref IsFront ? ref cfg.TyreFront : ref cfg.TyreRear;
@@ -83,7 +85,7 @@ namespace CarRace.Vehicle
             SlipRatio = SlipAngle = 0f;
             ForceLong = ForceLat = 0f;
             LaggedLong = LaggedLat = 0f;
-            TractionScale = BrakeScale = 1f;
+            TractionScale = BrakeScale = EngineDragScale = 1f;
         }
     }
 }
