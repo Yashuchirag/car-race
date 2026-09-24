@@ -18,7 +18,7 @@ car it is clearly quicker than instead of 0.9 s, gets those same 10 s to make pr
 before giving up, and may close on the car it is passing at up to 4 m/s while the
 sideways gap holds. The race criterion still passes on ten seeds, with no contacts.
 
-**Next action:** The Phase 1 feel test: drive the skidpad car and report how it feels (grip, understeer, braking, how it catches a slide). It runs on the keyboard; you are not planning to use a gamepad. Tuning follows from that feedback, on the Car Definition asset. Passing lanes, the
+**Next action:** Phase 1 is done: the car passes the feel test in Unity. Your choice next: finish Phase 0 (Git LFS and a packaged build that runs above 200 fps), put a generated circuit into Unity, or passing lanes (section 3, TODO). Passing lanes, the
 fix for the contacts that remain (below), are a TODO row in section 3 for later.
 
 ---
@@ -158,13 +158,13 @@ A row only becomes DONE when its verification command passes.
 | Closed-form expectations | DONE | `Analytic.cs` |
 | Five validation checks | DONE | All pass. Section 7. |
 | Telemetry CSV export | DONE | `--csv <path>` |
-| Unity MonoBehaviour wrapper | WIP | `CarController.cs`. Written and type-checked, not run in the editor. Applies the wrench as `AddForce` plus `AddTorque`, which is equivalent to per-wheel `AddForceAtPosition` and cheaper. |
-| `IGround` over `Physics.SphereCast` | WIP | `UnityGround.cs`. Written and type-checked, not run. Raycast fallback for a probe that starts already overlapping. |
-| ScriptableObject returning a `CarConfig` | WIP | `CarDefinition.cs`. Every number mirrored as a serialized field; a new asset defaults to the validated reference car. |
-| Cameras: chase, hood, cockpit | WIP | `CarCamera.cs`. Chase rig follows the velocity vector, not the car's facing, so a slide is visible. |
-| Driver input, keyboard and gamepad | WIP | `DriverInput.cs`. Old input manager, so a car drives with no input asset authored. |
+| Unity MonoBehaviour wrapper | DONE | `CarController.cs`. Runs in Unity 6.3 on the skidpad, 2026-09-24. Applies the wrench as `AddForce` plus `AddTorque`, which is equivalent to per-wheel `AddForceAtPosition` and cheaper. |
+| `IGround` over `Physics.SphereCast` | DONE | `UnityGround.cs`. Runs in Unity 6.3. Raycast fallback for a probe that starts already overlapping. |
+| ScriptableObject returning a `CarConfig` | DONE | `CarDefinition.cs`. Every number mirrored as a serialized field; a new asset defaults to the validated reference car. |
+| Cameras: chase, hood, cockpit | DONE | `CarCamera.cs`. Chase rig follows the velocity vector, not the car's facing, so a slide is visible. |
+| Driver input, keyboard and gamepad | DONE | `DriverInput.cs`. Old input manager, so a car drives with no input asset authored. | Keyboard driven in Unity; the gamepad mapping (XInput buttons and trigger axes) is written but never tried, since no pad is in use.
 | Manual shifting in the model | DONE | `Drivetrain.Shift`. Setting `Gear` directly skipped the shift time, so a manual upshift was free lap time. |
-| **Feel test on a gamepad** | BLOCKED | The real Phase 1 exit criterion. Needs Unity. Numbers passing is not the same as enjoyable. |
+| **Feel test** | DONE | 2026-09-24, on the keyboard, by you: acceleration, cornering, braking, handbrake slides and keyboard control all fine. The Phase 1 exit criterion. Not tried on a gamepad. |
 
 ### Phase 2, track pipeline
 
@@ -259,8 +259,7 @@ Unity/          the integration layer, written, never run    Phase 1, WIP
 
 ## 5. Blocked on you
 
-1. **Drive the car on a gamepad** once the skidpad scene exists. The Phase 1 feel test
-   is the one exit criterion that needs a person.
+1. **Choose the next piece of work.** Phase 1 is complete; section 1 lists the options.
 3. **Push after meaningful work.** `git push` now that `origin` is configured. The
    repo is private; making it public later is a one-line change, the reverse is
    not really possible.
