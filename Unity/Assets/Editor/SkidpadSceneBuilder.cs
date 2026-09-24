@@ -22,13 +22,13 @@ namespace CarRace.UnityGame.EditorTools
     public static class SkidpadSceneBuilder
     {
         const string ScenePath = "Assets/Scenes/Skidpad.unity";
-        const string DefinitionPath = "Assets/Cars/ReferenceCar.asset";
-        const string AsphaltPath = "Assets/Physics/Asphalt.asset";
+        internal const string DefinitionPath = "Assets/Cars/ReferenceCar.asset";
+        internal const string AsphaltPath = "Assets/Physics/Asphalt.asset";
         const string CheckerPath = "Assets/Materials/Checker.asset";
         const string GroundMaterialPath = "Assets/Materials/Ground.mat";
         const string BodyMaterialPath = "Assets/Materials/CarBody.mat";
         const string TyreMaterialPath = "Assets/Materials/Tyre.mat";
-        const string CarLayerName = "Car";
+        internal const string CarLayerName = "Car";
 
         [MenuItem("CarRace/Build Skidpad Scene")]
         public static void Build()
@@ -61,25 +61,8 @@ namespace CarRace.UnityGame.EditorTools
             ground.GetComponent<Renderer>().sharedMaterial = EnsureMaterial(
                 GroundMaterialPath, new Color(0.55f, 0.55f, 0.55f), EnsureChecker(), new Vector2(100f, 100f));
 
-            GameObject car = BuildCar(carLayer, definition);
-            var bodyMaterial = EnsureMaterial(BodyMaterialPath, new Color(0.8f, 0.1f, 0.08f), null, Vector2.one);
-            var tyreMaterial = EnsureMaterial(TyreMaterialPath, new Color(0.08f, 0.08f, 0.08f), null, Vector2.one);
-            foreach (var r in car.GetComponentsInChildren<Renderer>())
-                r.sharedMaterial = r.name == "Body" ? bodyMaterial : tyreMaterial;
-
-            var hud = car.AddComponent<DriveHud>();
-            var hudSettings = new SerializedObject(hud);
-            hudSettings.FindProperty("car").objectReferenceValue = car.GetComponent<CarController>();
-            hudSettings.FindProperty("driver").objectReferenceValue = car.GetComponent<DriverInput>();
-            hudSettings.ApplyModifiedPropertiesWithoutUndo();
-
-            var camera = Camera.main != null ? Camera.main.gameObject : new GameObject("Main Camera", typeof(Camera));
-            camera.transform.SetPositionAndRotation(new Vector3(0f, 2f, -6f), Quaternion.identity);
-            var follow = camera.AddComponent<CarCamera>();
-            var followSettings = new SerializedObject(follow);
-            followSettings.FindProperty("target").objectReferenceValue = car.transform;
-            followSettings.FindProperty("targetBody").objectReferenceValue = car.GetComponent<Rigidbody>();
-            followSettings.ApplyModifiedPropertiesWithoutUndo();
+            GameObject car = PlaceCar(carLayer, definition,
+                                      new Vector3(0f, definition.cgHeight, 0f), Quaternion.identity);
 
             Verify(car, ground, asphalt, definition);
 
@@ -100,26 +83,66 @@ namespace CarRace.UnityGame.EditorTools
             AssetDatabase.SaveAssets();
         }
 
+        /// <summary>
+        /// The drivable car, dressed and followed: built by BuildCar, placed with its origin at
+        /// <paramref name="position"/> (which must be the centre of mass, CgHeight above the
+        /// road), painted, given the DriveHud readout, and picked up by the scene's camera.
+        /// Shared with the track scenes so there is one car setup, not two to keep in step.
+        /// </summary>
+        static void Verify(GameObject car, GameObject ground, PhysicsMaterial asphalt, CarDefinition definition)
+        {
+            if (ground.GetComponent<Collider>().sharedMaterial != asphalt)
+                throw new System.InvalidOperationException("Ground has lost its Asphalt material.");
+            if (!EditorUtility.IsPersistent(ground.GetComponent<Renderer>().sharedMaterial))
+                throw new System.InvalidOperationException("Ground material is not saved as an asset.");
+        }
+
+        internal static GameObject PlaceCar(int carLayer, CarDefinition definition, Vector3 position, Quaternion rotation)
+        {
+            GameObject car = BuildCar(carLayer, definition);
+            car.transform.SetPositionAndRotation(position, rotation);
+
+            var bodyMaterial = EnsureMaterial(BodyMaterialPath, new Color(0.8f, 0.1f, 0.08f), null, Vector2.one);
+            var tyreMaterial = EnsureMaterial(TyreMaterialPath, new Color(0.08f, 0.08f, 0.08f), null, Vector2.one);
+            foreach (var r in car.GetComponentsInChildren<Renderer>())
+                r.sharedMaterial = r.name == "Body" ? bodyMaterial : tyreMaterial;
+
+            var hud = car.AddComponent<DriveHud>();
+            var hudSettings = new SerializedObject(hud);
+            hudSettings.FindProperty("car").objectReferenceValue = car.GetComponent<CarController>();
+            hudSettings.FindProperty("driver").objectReferenceValue = car.GetComponent<DriverInput>();
+            hudSettings.ApplyModifiedPropertiesWithoutUndo();
+
+            var camera = Camera.main != null ? Camera.main.gameObject : new GameObject("Main Camera", typeof(Camera));
+            camera.transform.SetPositionAndRotation(position + rotation * new Vector3(0f, 1.5f, -6f), rotation);
+            var follow = camera.AddComponent<CarCamera>();
+            var followSettings = new SerializedObject(follow);
+            followSettings.FindProperty("target").objectReferenceValue = car.transform;
+            followSettings.FindProperty("targetBody").objectReferenceValue = car.GetComponent<Rigidbody>();
+            followSettings.ApplyModifiedPropertiesWithoutUndo();
+
+            VerifyCar(car, definition);
+            return car;
+        }
+
         /// <summary>Checks the links the car cannot run without, so a broken build says so
         /// here rather than as a car that will not move.</summary>
-        static void Verify(GameObject car, GameObject ground, PhysicsMaterial asphalt, CarDefinition definition)
+        internal static void VerifyCar(GameObject car, CarDefinition definition)
         {
             var settings = new SerializedObject(car.GetComponent<CarController>());
             if (settings.FindProperty("definition").objectReferenceValue == null)
                 throw new System.InvalidOperationException("Car Controller has no Car Definition after building.");
             if (settings.FindProperty("driver").objectReferenceValue == null)
                 throw new System.InvalidOperationException("Car Controller has no Driver Input after building.");
-            if (ground.GetComponent<Collider>().sharedMaterial != asphalt)
-                throw new System.InvalidOperationException("Ground has lost its Asphalt material.");
             var box = car.GetComponent<BoxCollider>();
-            float boxBottom = car.transform.position.y + box.center.y - box.size.y * 0.5f;
-            if (boxBottom < 0.1f)
+            // Measured from the road under the car, which is CgHeight below the origin, not
+            // from y = 0: on a circuit the road can be a few hundred metres up.
+            float clearance = definition.cgHeight + box.center.y - box.size.y * 0.5f;
+            if (clearance < 0.1f)
                 throw new System.InvalidOperationException(
-                    $"Body collider reaches {boxBottom:0.00} m, into the ground; the car could not move.");
+                    $"Body collider clears the road by {clearance:0.00} m; it would drag and the car could not move.");
             if (car.GetComponent<DriveHud>() == null)
                 throw new System.InvalidOperationException("Car has no DriveHud.");
-            if (!EditorUtility.IsPersistent(ground.GetComponent<Renderer>().sharedMaterial))
-                throw new System.InvalidOperationException("Ground material is not saved as an asset.");
             if (!EditorUtility.IsPersistent(definition))
                 throw new System.InvalidOperationException("Car Definition is not saved as an asset.");
         }
@@ -221,7 +244,7 @@ namespace CarRace.UnityGame.EditorTools
         }
 
         /// <summary>A URP Lit material, made once and reused, so edits to it survive rebuilds.</summary>
-        static Material EnsureMaterial(string path, Color colour, Texture2D texture, Vector2 tiling)
+        internal static Material EnsureMaterial(string path, Color colour, Texture2D texture, Vector2 tiling)
         {
             var material = AssetDatabase.LoadAssetAtPath<Material>(path);
             if (material != null) return material;
@@ -241,7 +264,7 @@ namespace CarRace.UnityGame.EditorTools
             return AssetDatabase.LoadAssetAtPath<Material>(path);
         }
 
-        static PhysicsMaterial EnsureAsphalt()
+        internal static PhysicsMaterial EnsureAsphalt()
         {
             var asphalt = AssetDatabase.LoadAssetAtPath<PhysicsMaterial>(AsphaltPath);
             if (asphalt != null) return asphalt;
@@ -254,7 +277,7 @@ namespace CarRace.UnityGame.EditorTools
             return asphalt;
         }
 
-        static CarDefinition EnsureDefinition()
+        internal static CarDefinition EnsureDefinition()
         {
             var definition = AssetDatabase.LoadAssetAtPath<CarDefinition>(DefinitionPath);
             if (definition != null) return definition;
@@ -266,7 +289,7 @@ namespace CarRace.UnityGame.EditorTools
             return definition;
         }
 
-        static int EnsureLayer(string layerName)
+        internal static int EnsureLayer(string layerName)
         {
             int existing = LayerMask.NameToLayer(layerName);
             if (existing >= 0) return existing;
@@ -290,7 +313,7 @@ namespace CarRace.UnityGame.EditorTools
         /// and 1 fully pressed. Pads that differ need only the axis number changed here or
         /// in Project Settings, Input Manager.
         /// </summary>
-        static void EnsureTriggerAxes()
+        internal static void EnsureTriggerAxes()
         {
             var manager = new SerializedObject(AssetDatabase.LoadAllAssetsAtPath("ProjectSettings/InputManager.asset")[0]);
             var axes = manager.FindProperty("m_Axes");
@@ -323,7 +346,7 @@ namespace CarRace.UnityGame.EditorTools
             axis.FindPropertyRelative("joyNum").intValue = 0; // any pad
         }
 
-        static void AddToBuildSettings(string path)
+        internal static void AddToBuildSettings(string path)
         {
             var scenes = EditorBuildSettings.scenes;
             foreach (var s in scenes) if (s.path == path) return;

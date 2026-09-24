@@ -111,6 +111,27 @@ no track and no art:
 Watch the console on the first run. Three of the four scripts report their own
 misconfiguration, and all three failures look like a physics bug if you do not read it.
 
+## Driving a generated circuit
+
+`Assets/Editor/TrackSceneBuilder.cs` adds `CarRace, Build Track Scene`, with one entry per
+circuit. It reads the pipeline's JSON and builds the road from the centreline and its
+widths, a 15 m grass verge either side, the racing line painted on the road, and the car
+on that line at the start of the lap. The road follows the file's elevation (Spa climbs
+105 m); camber and banking are zero in every file, so it is flat across. Asphalt grips at
+1 and grass at 0.35, read by the wheels from each collider's physics material. Past the
+verge there is nothing: a car that leaves it falls, and `R` puts it back on the grid.
+
+The circuits copy in from the repo, with their licence, since `Tracks_Data/` is ODbL:
+
+```bash
+mkdir -p /mnt/d/Dev/CarRace/Assets/Tracks
+cp Tracks_Data/*.json /mnt/d/Dev/CarRace/Assets/Tracks/
+cp Tracks_Data/LICENSE /mnt/d/Dev/CarRace/Assets/Tracks/LICENSE.txt
+```
+
+Each builds to `Assets/Scenes/Track <name>.unity`. The skidpad and the tracks share one
+car setup (`SkidpadSceneBuilder.PlaceCar`), so a fix to the car reaches every scene.
+
 ## Analogue triggers
 
 Throttle and brake share one axis by default, which is the only thing the stock input
