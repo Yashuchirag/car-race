@@ -26,7 +26,7 @@ namespace CarRace.UnityGame
 
         [Tooltip("Share of the car's grip each AI driver uses, one per AI car. The harness races " +
                  "0.78 to 0.85; lower is slower and more forgiving.")]
-        [SerializeField] float[] aiPace = { 0.80f, 0.77f, 0.74f };
+        [SerializeField] float[] aiPace = { 0.85f, 0.82f, 0.79f };
 
         [Tooltip("The pace the AI assume you drive at, when they judge whether a pass on you can " +
                  "work. They cannot know your plan, and with none they would never try to pass.")]

@@ -87,7 +87,9 @@ so tuned car values survive. The steps below are what it does, for building it b
 Keyboard steering is assisted (`Steering Assist` on `DriverInput`, on by default): a key
 asks for a turn rate, a share of what the tyres can hold at that speed, and the assist
 turns the wheels for it, counter-steering when the car rotates more than asked or starts
-to slide. Untick it for a wheel, or a pad driven with care.
+to slide. `Throttle Assist` eases the power off while the car slides, between 3 and 8
+degrees of sideslip, because a key cannot feed the throttle in. Untick both for a wheel,
+or a pad driven with care.
 
 The exit criterion for Phase 1 is whether this is enjoyable on a gamepad, which needs
 no track and no art:
@@ -168,7 +170,7 @@ mkdir -p /mnt/d/Dev/CarRace/Assets/Scripts/Track
 cp Sim/CarRace.Track/*.cs Sim/CarRace.Harness/Analytic.cs /mnt/d/Dev/CarRace/Assets/Scripts/Track/
 ```
 
-Each AI car's pace (the share of grip it uses) is on `RaceDirector`, 0.80, 0.77 and 0.74
+Each AI car's pace (the share of grip it uses) is on `RaceDirector`, 0.85, 0.82 and 0.79
 by default; the harness races 0.78 to 0.85. The AI plan on flat ground, as in the harness,
 so crests and dips on Spa are not in their plan.
 

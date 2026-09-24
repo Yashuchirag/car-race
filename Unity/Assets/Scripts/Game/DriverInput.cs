@@ -57,6 +57,13 @@ namespace CarRace.UnityGame
         [SerializeField] float slipGain = 1f;
         [SerializeField] float slipDeadDegrees = 2f;
 
+        [Tooltip("Ease the throttle off while the car slides, as stability control does: full power " +
+                 "below the first sideslip angle, none by the second. A key cannot feed the throttle " +
+                 "in, and full power on the grass spun the car every time.")]
+        [SerializeField] bool throttleAssist = true;
+        [SerializeField] float throttleCutStartDegrees = 3f;
+        [SerializeField] float throttleCutEndDegrees = 8f;
+
         [Header("Gamepad buttons, XInput numbering")]
         [SerializeField] KeyCode handbrakeButton = KeyCode.JoystickButton0;   // A
         [SerializeField] KeyCode shiftUpButton = KeyCode.JoystickButton5;     // RB
@@ -70,7 +77,7 @@ namespace CarRace.UnityGame
         public bool RespawnRequested { get; private set; }
         public bool RestartRequested { get; private set; }
 
-        float _steer, _request;
+        float _steer, _request, _sideslipDegrees;
         float _maxSteerDegrees = 33f, _steerFalloffSpeed = 42f, _wheelbase = 2.65f;
 
         /// <summary>The car's steering geometry, which the assist needs to know how much lock
@@ -105,6 +112,11 @@ namespace CarRace.UnityGame
         /// </summary>
         public void Tick(float dt, in BodyState body)
         {
+            float speed = Vec3.Dot(body.Velocity, body.Forward);
+            float sideslip = body.Velocity.LengthSquared() < 1f ? 0f
+                           : MathF.Atan2(Vec3.Dot(body.Velocity, body.Right), MathF.Abs(speed));
+            _sideslipDegrees = MathF.Abs(sideslip) * (180f / MathF.PI);
+
             float raw = Input.GetAxisRaw("Horizontal");
             if (!steeringAssist) { _steer = raw; return; }
 
@@ -113,11 +125,8 @@ namespace CarRace.UnityGame
             float rate = 1f / MathF.Max(outward ? steerRampSeconds : steerReturnSeconds, 0.01f);
             _request += MathF.Max(-rate * dt, MathF.Min(rate * dt, raw - _request));
 
-            float speed = Vec3.Dot(body.Velocity, body.Forward);
             float v = MathF.Max(MathF.Abs(speed), 3f);
             float yawRate = Vec3.Dot(body.AngularVelocity, body.Up);
-            float sideslip = body.Velocity.LengthSquared() < 1f ? 0f
-                           : MathF.Atan2(Vec3.Dot(body.Velocity, body.Right), MathF.Abs(speed));
 
             float wantedYaw = _request * cornerReach * lateralGripMs2 / v;
             float wheel = MathF.Atan(_wheelbase * wantedYaw / v)
@@ -159,6 +168,9 @@ namespace CarRace.UnityGame
                 throttle = Mathf.Max(throttle, Mathf.Clamp01(Input.GetAxisRaw(throttleAxis)));
                 brake = Mathf.Max(brake, Mathf.Clamp01(Input.GetAxisRaw(brakeAxis)));
             }
+            if (throttleAssist)
+                throttle *= 1f - Mathf.Clamp01((_sideslipDegrees - throttleCutStartDegrees)
+                                               / Mathf.Max(throttleCutEndDegrees - throttleCutStartDegrees, 0.1f));
 
             return new VehicleInputs
             {
