@@ -33,10 +33,17 @@ namespace CarRace.UnityGame.EditorTools
 
             int carLayer = EnsureLayer(CarLayerName);
             EnsureTriggerAxes();
-            PhysicsMaterial asphalt = EnsureAsphalt();
-            CarDefinition definition = EnsureDefinition();
 
+            // The scene first, the assets after. Opening a scene in Single mode unloads every
+            // asset nothing references yet, and a Car Definition created before it was
+            // destroyed in between, so the car was saved pointing at nothing and refused to
+            // build. Saved and loaded back from disk, the references are to the real files.
             var scene = EditorSceneManager.NewScene(NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);
+            EnsureAsphalt();
+            EnsureDefinition();
+            AssetDatabase.SaveAssets();
+            var asphalt = AssetDatabase.LoadAssetAtPath<PhysicsMaterial>(AsphaltPath);
+            var definition = AssetDatabase.LoadAssetAtPath<CarDefinition>(DefinitionPath);
 
             // Ground: Unity's plane is 10 m, so 100x is a kilometre square, enough for a
             // skidpad circle and a flat-out run without falling off the edge.
@@ -55,6 +62,8 @@ namespace CarRace.UnityGame.EditorTools
             followSettings.FindProperty("targetBody").objectReferenceValue = car.GetComponent<Rigidbody>();
             followSettings.ApplyModifiedPropertiesWithoutUndo();
 
+            Verify(car, ground, asphalt, definition);
+
             Directory.CreateDirectory(Path.GetDirectoryName(ScenePath));
             EditorSceneManager.SaveScene(scene, ScenePath);
             AddToBuildSettings(ScenePath);
@@ -70,6 +79,21 @@ namespace CarRace.UnityGame.EditorTools
         {
             Build();
             AssetDatabase.SaveAssets();
+        }
+
+        /// <summary>Checks the links the car cannot run without, so a broken build says so
+        /// here rather than as a car that will not move.</summary>
+        static void Verify(GameObject car, GameObject ground, PhysicsMaterial asphalt, CarDefinition definition)
+        {
+            var settings = new SerializedObject(car.GetComponent<CarController>());
+            if (settings.FindProperty("definition").objectReferenceValue == null)
+                throw new System.InvalidOperationException("Car Controller has no Car Definition after building.");
+            if (settings.FindProperty("driver").objectReferenceValue == null)
+                throw new System.InvalidOperationException("Car Controller has no Driver Input after building.");
+            if (ground.GetComponent<Collider>().sharedMaterial != asphalt)
+                throw new System.InvalidOperationException("Ground has lost its Asphalt material.");
+            if (!EditorUtility.IsPersistent(definition))
+                throw new System.InvalidOperationException("Car Definition is not saved as an asset.");
         }
 
         static GameObject BuildCar(int carLayer, CarDefinition definition)
