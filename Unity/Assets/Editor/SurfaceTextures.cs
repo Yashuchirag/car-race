@@ -6,8 +6,8 @@ namespace CarRace.UnityGame.EditorTools
 {
     /// <summary>
     /// The surfaces' textures, set up and applied in one place so every scene gets the same:
-    /// for now grass, ambientCG's Grass005 (CC0), on the circuits' verges, the terrain out to
-    /// the horizon and the lobby's lawn. Import settings are written here too, since a normal
+    /// grass, ambientCG's Grass005 (CC0), on the circuits' verges, the terrain out to the
+    /// horizon and the lobby's lawn; asphalt, Poly Haven's Asphalt Track (CC0), on the road. Import settings are written here too, since a normal
     /// map imported as a colour texture shades wrongly and nothing says so.
     ///
     /// The verge meshes carry texture coordinates in metres, so a texture tiles at a real
@@ -20,6 +20,15 @@ namespace CarRace.UnityGame.EditorTools
         const string GrassNormal = GrassFolder + "/Grass005_2K-JPG_NormalGL.jpg";
         const string GrassOcclusion = GrassFolder + "/Grass005_2K-JPG_AmbientOcclusion.jpg";
         public const float GrassTileM = 3f;
+
+        const string AsphaltFolder = "Assets/Art/Ground/AsphaltTrack";
+        const string AsphaltColour = AsphaltFolder + "/asphalt_track_diff_2k.jpg";
+        const string AsphaltNormal = AsphaltFolder + "/asphalt_track_nor_gl_2k.jpg";
+        const string AsphaltOcclusion = AsphaltFolder + "/asphalt_track_ao_2k.jpg";
+        // Made from the roughness map by Tools/smoothness_map.py: URP reads smoothness from
+        // the metallic map's alpha. 0.12 to 0.29, a matte surface with some grain to its sheen.
+        const string AsphaltSmoothness = AsphaltFolder + "/asphalt_track_metallic_smoothness_2k.png";
+        const float AsphaltTileM = 2f;      // the texture's real size, 2 m square
         const float TerrainTileM = 4f;      // a little larger far away, where repeats show most
 
         /// <summary>Grass on a material whose mesh is in metres, or whose tiling is given.</summary>
@@ -35,6 +44,25 @@ namespace CarRace.UnityGame.EditorTools
             material.EnableKeyword("_NORMALMAP");
             material.EnableKeyword("_OCCLUSIONMAP");
             material.SetTextureScale("_BaseMap", tiling ?? Vector2.one / GrassTileM);
+            EditorUtility.SetDirty(material);
+        }
+
+        /// <summary>Asphalt on the road material, whose mesh is in metres.</summary>
+        public static void ApplyAsphalt(Material material)
+        {
+            material.SetColor("_BaseColor", Color.white);
+            material.SetTexture("_BaseMap", Texture(AsphaltColour, TextureKind.Colour));
+            material.SetTexture("_BumpMap", Texture(AsphaltNormal, TextureKind.Normal));
+            material.SetFloat("_BumpScale", 1f);
+            material.SetTexture("_OcclusionMap", Texture(AsphaltOcclusion, TextureKind.Data));
+            material.SetFloat("_OcclusionStrength", 1f);
+            material.SetTexture("_MetallicGlossMap", Texture(AsphaltSmoothness, TextureKind.Data));
+            material.SetFloat("_SmoothnessTextureChannel", 0f);   // the metallic map's alpha
+            material.SetFloat("_Smoothness", 1f);                 // a multiplier once a map is set
+            material.EnableKeyword("_NORMALMAP");
+            material.EnableKeyword("_OCCLUSIONMAP");
+            material.EnableKeyword("_METALLICSPECGLOSSMAP");
+            material.SetTextureScale("_BaseMap", Vector2.one / AsphaltTileM);
             EditorUtility.SetDirty(material);
         }
 

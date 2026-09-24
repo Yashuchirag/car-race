@@ -157,7 +157,11 @@ car setup (`SkidpadSceneBuilder.PlaceCar`), so a fix to the car reaches every sc
 Grass is ambientCG's Grass005 (CC0, 2K colour, normal and ambient occlusion, in
 `Assets/Art/Ground/Grass005`, Git LFS) on the verges, the terrain and the lobby lawn, one
 tile every 3 m (4 m on the terrain). The track builder's strips carry texture coordinates
-in metres, so any texture tiles at a real size. Credits in `Assets/Art/CREDITS.md`.
+in metres, so any texture tiles at a real size. The road is Poly Haven's Asphalt Track (CC0,
+2K colour, normal, ambient occlusion, and a smoothness map made from its roughness by
+`Tools/smoothness_map.py`, since URP reads smoothness from the metallic map's alpha), in
+`Assets/Art/Ground/AsphaltTrack`, one tile every 2 m, its real size. Credits in
+`Assets/Art/CREDITS.md`.
 
 ## Render settings
 

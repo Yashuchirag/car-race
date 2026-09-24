@@ -128,10 +128,7 @@ namespace CarRace.UnityGame.EditorTools
 
             var root = new GameObject(track.name);
             var roadMaterial = SkidpadSceneBuilder.EnsureMaterial(RoadMaterialPath, new Color(0.3f, 0.3f, 0.32f), null, Vector2.one);
-            // A little lighter than it was, set on every build so older projects get it too:
-            // at 0.22 the white lines and kerbs had too little to stand out against.
-            roadMaterial.SetColor("_BaseColor", new Color(0.3f, 0.3f, 0.32f));
-            EditorUtility.SetDirty(roadMaterial);
+            SurfaceTextures.ApplyAsphalt(roadMaterial);
             var grassMaterial = SkidpadSceneBuilder.EnsureMaterial(GrassMaterialPath, new Color(0.22f, 0.42f, 0.16f), null, Vector2.one);
             SurfaceTextures.ApplyGrass(grassMaterial);
 
