@@ -13,7 +13,7 @@ namespace CarRace.UnityGame
     /// camera follows a real race; vsync and any frame cap are off, so the number is what the
     /// machine can do. Records SampleSeconds of frames starting WarmupSeconds after load, then
     /// writes a report to the path after -benchmarkOut (default: benchmark.txt beside the
-    /// executable) and quits. Beside the report, a CSV with one row per frame: its time, the
+    /// executable) and quits. Times count from the race scene loading, not from the lobby. Beside the report, a CSV with one row per frame: its time, the
     /// physics steps it ran, garbage collections and managed memory, for finding what the
     /// slow frames have in common. In a development build it also records, per frame, the
     /// time spent in the profiler markers named in Markers, and lists every marker the player
@@ -80,24 +80,39 @@ namespace CarRace.UnityGame
             string[] args = Environment.GetCommandLineArgs();
             if (Array.IndexOf(args, "-benchmark") < 0) return;
 
-            // After the scene's Awake and before its Start, so the director sees the flag.
-            var director = FindAnyObjectByType<RaceDirector>();
-            if (director != null) director.AiDrivesPlayer = true;
-
-            // Switches for finding what costs what. A disabled component's Start never runs,
-            // so the recorder opens no file.
-            if (Array.IndexOf(args, "-noTelemetry") >= 0)
-                foreach (var recorder in FindObjectsByType<TelemetryRecorder>(FindObjectsSortMode.None)) recorder.enabled = false;
             Hud.Hidden = Array.IndexOf(args, "-noHud") >= 0;
 
             var go = new GameObject("Benchmark");
             DontDestroyOnLoad(go);
             var bench = go.AddComponent<Benchmark>();
+            // The game opens on the lobby, which goes straight on to the race under -benchmark;
+            // the race is set up, and the clock started, when its scene loads.
+            UnityEngine.SceneManagement.SceneManager.sceneLoaded += (_, __) => bench.RaceLoaded();
+            bench.RaceLoaded();
             int i = Array.IndexOf(args, "-benchmarkOut");
             bench._outPath = i >= 0 && i + 1 < args.Length
                 ? args[i + 1]
                 : Path.Combine(Path.GetDirectoryName(Application.dataPath) ?? ".", "benchmark.txt");
         }
+
+        /// <summary>
+        /// Called as a scene loads, after its Awake and before its Start, so the director sees
+        /// the flag in time. Only a race scene starts the measurement.
+        /// </summary>
+        void RaceLoaded()
+        {
+            var director = FindAnyObjectByType<RaceDirector>();
+            if (director == null) return;
+            director.AiDrivesPlayer = true;
+
+            // A disabled component's Start never runs, so the recorder opens no file.
+            if (Array.IndexOf(Environment.GetCommandLineArgs(), "-noTelemetry") >= 0)
+                foreach (var recorder in FindObjectsByType<TelemetryRecorder>(FindObjectsSortMode.None)) recorder.enabled = false;
+            _raceLoaded = true;
+            _elapsed = 0f;
+        }
+
+        bool _raceLoaded;
 
         void Awake()
         {
@@ -136,6 +151,7 @@ namespace CarRace.UnityGame
 
         void Update()
         {
+            if (!_raceLoaded) return;
             float dt = Time.unscaledDeltaTime;
             _elapsed += dt;
             int collections = GC.CollectionCount(0);

@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 namespace CarRace.UnityGame
 {
@@ -46,7 +47,10 @@ namespace CarRace.UnityGame
             _text.fontSize = Hud.Font(18);
             _button.fontSize = Hud.Font(18);
 
-            float width = Hud.Px(560f), height = Hud.Px(400f);
+            // Back to the lobby from a race, when the build has one.
+            bool lobby = SceneManager.GetActiveScene().name != "Lobby"
+                         && SceneUtility.GetBuildIndexByScenePath("Assets/Scenes/Lobby.unity") >= 0;
+            float width = Hud.Px(560f), height = Hud.Px(lobby ? 470f : 400f);
             var panel = new Rect((Screen.width - width) * 0.5f, (Screen.height - height) * 0.5f, width, height);
             GUI.Box(panel, GUIContent.none);
             GUI.Box(panel, GUIContent.none);   // twice: one box is too faint to read over
@@ -72,6 +76,13 @@ namespace CarRace.UnityGame
 
             GUI.Label(new Rect(panel.x, y, width, Hud.Px(28f)),
                       $"Running at {1f / Mathf.Max(_smoothedFrame, 1e-4f):0} fps        Esc: resume", _text);
+
+            if (lobby && GUI.Button(new Rect(panel.x + Hud.Px(20f), y + Hud.Px(44f), width - Hud.Px(40f), Hud.Px(48f)), "Back to lobby", _button))
+            {
+                _open = false;
+                Time.timeScale = 1f;
+                SceneManager.LoadScene("Lobby");
+            }
         }
     }
 }

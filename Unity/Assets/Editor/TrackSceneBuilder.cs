@@ -54,12 +54,12 @@ namespace CarRace.UnityGame.EditorTools
         const float BarrierFootM = 0.5f;
         const float VergeWidthM = 15f;
 
-        // The grid, as the harness lays it out (RaceRun.PlaceOnGrid): two abreast, rows 10 m
+        // The grid, laid out as the harness does (RaceRun.PlaceOnGrid) but around the road centre: two abreast, rows 10 m
         // apart, the front row 10 m behind the line. The AI fill the front slots, fastest on
         // pole, and the player starts at the back.
         const int AiCars = 3;
         const float RowGapM = 10f;
-        const float GridLateralM = 2f;
+        const float GridLateralM = 2.5f;   // from the road's centre
         static readonly Color[] AiColours =
         {
             new Color(0.1f, 0.3f, 0.85f), new Color(0.95f, 0.75f, 0.1f), new Color(0.15f, 0.65f, 0.25f),
@@ -177,7 +177,7 @@ namespace CarRace.UnityGame.EditorTools
             // The player in the last grid slot, pointing along the racing line, its origin
             // CgHeight above the road plus a few centimetres so it settles rather than starts
             // inside the surface on a slope.
-            var (start, facing) = GridSlot(AiCars, line, lineRight, track.sample_spacing_m, definition.cgHeight);
+            var (start, facing) = GridSlot(AiCars, centre, right, track.sample_spacing_m, definition.cgHeight);
             GameObject car = SkidpadSceneBuilder.PlaceCar(carLayer, definition, start, facing);
             // Lap timing: the centreline as the timer's measure of progress, start line at 0.
             var path = root.AddComponent<TrackPath>();
@@ -211,7 +211,7 @@ namespace CarRace.UnityGame.EditorTools
             {
                 GameObject ai = SkidpadSceneBuilder.BuildCar(carLayer, definition, withDriver: false);
                 ai.name = $"AI {slot + 1}";
-                var (position, rotation) = GridSlot(slot, line, lineRight, track.sample_spacing_m, definition.cgHeight);
+                var (position, rotation) = GridSlot(slot, centre, right, track.sample_spacing_m, definition.cgHeight);
                 ai.transform.SetPositionAndRotation(position, rotation);
                 var body = SkidpadSceneBuilder.EnsureMaterial($"Assets/Materials/AiBody{slot + 1}.mat", AiColours[slot % AiColours.Length], null, Vector2.one);
                 foreach (var r in ai.GetComponentsInChildren<Renderer>())
@@ -282,16 +282,21 @@ namespace CarRace.UnityGame.EditorTools
                       $"{Max(track.centerline.z) - floor:0} m of climb. {AiCars} AI on the grid ahead of you. Press Play; the AI go when you do.");
         }
 
-        /// <summary>Grid slot <paramref name="slot"/>, 0 being pole: on the racing line behind the
-        /// start, to one side of it, pointing along it, CgHeight plus a few centimetres up.</summary>
-        static (Vector3, Quaternion) GridSlot(int slot, Vector3[] line, Vector3[] lineRight, float spacing, float cgHeight)
+        /// <summary>
+        /// Grid slot <paramref name="slot"/>, 0 being pole: behind the start, either side of the
+        /// road's centre, pointing along it, CgHeight plus a few centimetres up. The harness
+        /// grids either side of the racing line, which on Monza's start straight runs near the
+        /// right-hand edge, and in Unity that put the right-hand cars partly on the grass. The
+        /// AI read their place from where they stand, so they need nothing else.
+        /// </summary>
+        static (Vector3, Quaternion) GridSlot(int slot, Vector3[] centre, Vector3[] right, float spacing, float cgHeight)
         {
-            int n = line.Length;
+            int n = centre.Length;
             float back = (slot / 2) * RowGapM + RowGapM;
             float lateral = slot % 2 == 0 ? -GridLateralM : GridLateralM;
             int index = ((-Mathf.RoundToInt(back / spacing)) % n + n) % n;
-            Vector3 position = line[index] + lineRight[index] * lateral + Vector3.up * (cgHeight + 0.05f);
-            Vector3 heading = line[(index + 1) % n] - line[(index - 1 + n) % n];
+            Vector3 position = centre[index] + right[index] * lateral + Vector3.up * (cgHeight + 0.05f);
+            Vector3 heading = centre[(index + 1) % n] - centre[(index - 1 + n) % n];
             heading.y = 0f;
             return (position, Quaternion.LookRotation(heading.normalized, Vector3.up));
         }

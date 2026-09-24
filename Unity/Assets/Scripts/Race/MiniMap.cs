@@ -64,8 +64,8 @@ namespace CarRace.UnityGame
             for (int i = 0; i < cars.Length; i++)
             {
                 Transform body = cars[i] != null ? cars[i].Find("Body") : null;
-                var renderer = body != null ? body.GetComponent<Renderer>() : null;
-                _dotColours[i] = i == 0 || renderer == null ? Color.white : renderer.sharedMaterial.GetColor("_BaseColor");
+                // As drawn, so a car repainted to avoid the player's colour shows as repainted.
+                _dotColours[i] = i == 0 || body == null ? Color.white : PlayerSetup.BodyColour(body);
             }
 
             _last = cars[0].position;

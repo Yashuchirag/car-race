@@ -191,11 +191,23 @@ lap counts only after passing both sector gates in order, so reversing over the 
 cutting across cannot complete one. The clock starts when the car first moves; a respawn
 abandons the lap in progress. The best lap is kept per circuit in PlayerPrefs.
 
+## Lobby
+
+A built game opens on the lobby (`Assets/Scenes/Lobby.unity`, built by `CarRace, Build Lobby
+Scene`, which puts it first in the build settings): the car turning on a platform under the
+circuits' sky, a Players panel (just you for now; LAN players will be listed there), eight
+body colours, and PLAY (or Enter), which loads Monza. The colour is kept between sessions
+and put on your car when a race loads (`PlayerSetup`); an AI car whose colour is too close
+to yours is repainted in one that is not. The Esc menu in a race has Back to lobby.
+`-carColour 4` picks a colour for one session, and `-lobbyScreenshot <file>` saves a picture
+of the lobby and quits. Under `-benchmark` the lobby goes straight to the race.
+
 ## Racing the AI
 
-Track scenes grid three AI cars ahead of you, laid out as the harness does it: two
-abreast, rows 10 m apart, the front row 10 m behind the line, fastest on pole, you at the
-back. `RaceDirector` on the circuit drives them with the same `RaceDriver` the headless
+Track scenes grid three AI cars ahead of you, laid out as the harness does it but either
+side of the road's centre (the harness uses the racing line, which on Monza's straight runs
+near the edge and put cars on the grass): two abreast 2.5 m either side, rows 10 m apart,
+the front row 10 m behind the line, fastest on pole, you at the back. `RaceDirector` on the circuit drives them with the same `RaceDriver` the headless
 race uses, through `CarController.Autopilot`, and shows every driver the whole field,
 you included, every 20 ms. An AI car stopped for 5 s is put back on its racing line where
 it was.

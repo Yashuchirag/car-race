@@ -26,7 +26,7 @@ namespace CarRace.UnityGame.EditorTools
         internal const string AsphaltPath = "Assets/Physics/Asphalt.asset";
         const string CheckerPath = "Assets/Materials/Checker.asset";
         const string GroundMaterialPath = "Assets/Materials/Ground.mat";
-        const string BodyMaterialPath = "Assets/Materials/CarBody.mat";
+        internal const string BodyMaterialPath = "Assets/Materials/CarBody.mat";
         internal const string TyreMaterialPath = "Assets/Materials/Tyre.mat";
         internal const string CarLayerName = "Car";
 

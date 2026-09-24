@@ -6,7 +6,7 @@ using UnityEngine;
 namespace CarRace.UnityGame.EditorTools
 {
     /// <summary>
-    /// A standalone Windows build of the Monza track scene, for measuring performance outside
+    /// A standalone Windows build of the lobby and the Monza track scene, for measuring performance outside
     /// the editor, which adds its own overhead. From the command line, with the editor closed:
     ///
     ///   Unity.exe -batchmode -quit -projectPath D:\Dev\CarRace
@@ -16,7 +16,8 @@ namespace CarRace.UnityGame.EditorTools
     /// </summary>
     public static class BuildTools
     {
-        const string Scene = "Assets/Scenes/Track Royal Park Speedway.unity";
+        // The lobby first, since a built game opens on the first scene; then the race.
+        static readonly string[] Scenes = { "Assets/Scenes/Lobby.unity", "Assets/Scenes/Track Royal Park Speedway.unity" };
         const string Output = "Builds/Windows/CarRace.exe";
         const string DevelopmentOutput = "Builds/WindowsDevelopment/CarRace.exe";
 
@@ -33,7 +34,7 @@ namespace CarRace.UnityGame.EditorTools
         {
             var options = new BuildPlayerOptions
             {
-                scenes = new[] { Scene },
+                scenes = Scenes,
                 locationPathName = output,
                 target = BuildTarget.StandaloneWindows64,
                 options = buildOptions,

@@ -146,12 +146,9 @@ namespace CarRace.UnityGame
         static readonly Color Behind = new Color(1f, 0.3f, 0.25f);
         const float BannerSeconds = 3f;
         const float PulseSeconds = 0.8f;
-        const float CornerPx = 9f;
 
         GUIStyle _headerStyle, _badgeStyle, _bigStyle, _deltaStyle, _labelStyle, _valueStyle,
-                 _sectorLabel, _sectorTime, _sectorDelta, _bannerStyle, _rounded;
-        Texture2D _roundedTexture;
-        int _roundedRadius;
+                 _sectorLabel, _sectorTime, _sectorDelta, _bannerStyle;
 
         void OnGUI()
         {
@@ -165,18 +162,18 @@ namespace CarRace.UnityGame
             int n = track.centre.Length;
             float current = _running ? _clock - _lapStart : 0f;
 
-            Rounded(new Rect(x, y, width, height), Panel);
+            Hud.Rounded(new Rect(x, y, width, height), Panel);
 
             // Header band: rounded on top, square below, a lighter stripe under it.
             float header = Hud.Px(34f);
-            Rounded(new Rect(x, y, width, header), Accent);
-            Fill(new Rect(x, y + header * 0.5f, width, header * 0.5f), Accent);
-            Fill(new Rect(x, y + header, width, Hud.Px(3f)), AccentLight);
+            Hud.Rounded(new Rect(x, y, width, header), Accent);
+            Hud.Fill(new Rect(x, y + header * 0.5f, width, header * 0.5f), Accent);
+            Hud.Fill(new Rect(x, y + header, width, Hud.Px(3f)), AccentLight);
             GUI.Label(new Rect(x + pad, y, width - 2f * pad, header), track.trackName.ToUpperInvariant(), _headerStyle);
             string lapText = $"LAP {_laps + 1}";
             float badgeWidth = Hud.Px(64f);
             var badge = new Rect(x + width - pad - badgeWidth, y + Hud.Px(6f), badgeWidth, header - Hud.Px(12f));
-            Rounded(badge, Color.white);
+            Hud.Rounded(badge, Color.white);
             GUI.Label(badge, lapText, _badgeStyle);
 
             // The lap being driven, large and shadowed, and the live gap to the best lap.
@@ -202,9 +199,9 @@ namespace CarRace.UnityGame
             for (int sct = 0; sct < 3; sct++)
             {
                 var bar = new Rect(x + pad + sct * (segment + gap), row, segment, barHeight);
-                Fill(bar, Pending);
+                Hud.Fill(bar, Pending);
                 float filled = Mathf.Clamp01(progress * 3f - sct);
-                if (filled > 0f) Fill(new Rect(bar.x, bar.y, bar.width * filled, bar.height), sct < _nextGate ? SectorColour(sct) : Color.white);
+                if (filled > 0f) Hud.Fill(new Rect(bar.x, bar.y, bar.width * filled, bar.height), sct < _nextGate ? SectorColour(sct) : Color.white);
             }
             row += barHeight + Hud.Px(10f);
 
@@ -224,10 +221,10 @@ namespace CarRace.UnityGame
                 if (pulse > 0f)
                 {
                     float grow = Hud.Px(4f) * pulse;
-                    Rounded(new Rect(block.x - grow, block.y - grow, block.width + 2f * grow, block.height + 2f * grow),
+                    Hud.Rounded(new Rect(block.x - grow, block.y - grow, block.width + 2f * grow, block.height + 2f * grow),
                             new Color(1f, 1f, 1f, 0.7f * pulse));
                 }
-                Rounded(block, done ? new Color(colour.r, colour.g, colour.b, 0.9f) : Block);
+                Hud.Rounded(block, done ? new Color(colour.r, colour.g, colour.b, 0.9f) : Block);
                 Color text = done && colour == Yellow ? new Color(0.1f, 0.08f, 0.02f) : Color.white;
                 _sectorLabel.normal.textColor = done ? text : Muted;
                 _sectorTime.normal.textColor = text;
@@ -247,7 +244,7 @@ namespace CarRace.UnityGame
                 float alpha = Mathf.Clamp01(left / 0.5f) * (0.75f + 0.25f * Mathf.Sin(_clock * 12f));
                 float bannerWidth = Hud.Px(420f), bannerHeight = Hud.Px(52f);
                 var banner = new Rect((Screen.width - bannerWidth) * 0.5f, Hud.Px(84f), bannerWidth, bannerHeight);
-                Rounded(banner, new Color(Purple.r, Purple.g, Purple.b, 0.92f * alpha));
+                Hud.Rounded(banner, new Color(Purple.r, Purple.g, Purple.b, 0.92f * alpha));
                 _bannerStyle.normal.textColor = new Color(1f, 1f, 1f, alpha);
                 GUI.Label(banner, _banner, _bannerStyle);
             }
@@ -279,36 +276,8 @@ namespace CarRace.UnityGame
             y += height;
         }
 
-        static void Fill(Rect rect, Color colour)
-        {
-            Color before = GUI.color;
-            GUI.color = colour;
-            GUI.DrawTexture(rect, Texture2D.whiteTexture);
-            GUI.color = before;
-        }
-
-        /// <summary>A rounded rectangle in a colour, from one small white texture sliced nine
-        /// ways so its corners keep their radius at any size.</summary>
-        void Rounded(Rect rect, Color colour)
-        {
-            if (Event.current.type != EventType.Repaint) return;
-            Color before = GUI.color;
-            GUI.color = colour;
-            _rounded.Draw(rect, false, false, false, false);
-            GUI.color = before;
-        }
-
         void Styles()
         {
-            int radius = Mathf.Max(2, Mathf.RoundToInt(Hud.Px(CornerPx)));
-            if (_rounded == null || radius != _roundedRadius)
-            {
-                if (_roundedTexture != null) Destroy(_roundedTexture);
-                _roundedTexture = RoundedTexture(radius);
-                _roundedRadius = radius;
-                _rounded = new GUIStyle { normal = { background = _roundedTexture }, border = new RectOffset(radius, radius, radius, radius) };
-            }
-
             _headerStyle ??= new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.BoldAndItalic, alignment = TextAnchor.MiddleLeft, normal = { textColor = Color.white } };
             _badgeStyle ??= new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, normal = { textColor = new Color(0.1f, 0.1f, 0.14f) } };
             _bigStyle ??= new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
@@ -331,29 +300,6 @@ namespace CarRace.UnityGame
             _bannerStyle.fontSize = Hud.Font(26);
         }
 
-        /// <summary>A white square with rounded corners, the edge faded over a pixel.</summary>
-        static Texture2D RoundedTexture(int radius)
-        {
-            int size = radius * 2 + 2;
-            var texture = new Texture2D(size, size, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp };
-            var pixels = new Color32[size * size];
-            for (int y = 0; y < size; y++)
-            for (int x = 0; x < size; x++)
-            {
-                float cx = Mathf.Clamp(x + 0.5f, radius, size - radius), cy = Mathf.Clamp(y + 0.5f, radius, size - radius);
-                float distance = Mathf.Sqrt((x + 0.5f - cx) * (x + 0.5f - cx) + (y + 0.5f - cy) * (y + 0.5f - cy));
-                byte alpha = (byte)(255f * Mathf.Clamp01(radius - distance + 0.5f));
-                pixels[y * size + x] = new Color32(255, 255, 255, alpha);
-            }
-            texture.SetPixels32(pixels);
-            texture.Apply();
-            return texture;
-        }
-
-        void OnDestroy()
-        {
-            if (_roundedTexture != null) Destroy(_roundedTexture);
-        }
 
         static string Format(float seconds)
         {
