@@ -170,6 +170,9 @@ table appears and fills in as the AI finish: position, grid, places gained, best
 fastest marked), race time, gap to the winner and contacts with other cars. Enter races
 again.
 
+`MiniMap` draws the whole circuit in the bottom left corner, north up, with the start line
+in red and a dot for every car: you larger and white, the AI in their body colours.
+
 The AI code copies in from `Sim/`, with the closed-form numbers its speed plan is built
 from:
 

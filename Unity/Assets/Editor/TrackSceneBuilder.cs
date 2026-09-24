@@ -216,6 +216,14 @@ namespace CarRace.UnityGame.EditorTools
             for (int i = 0; i < AiCars; i++) aiList.GetArrayElementAtIndex(i).objectReferenceValue = aiCars[i];
             directorSettings.ApplyModifiedPropertiesWithoutUndo();
 
+            // The circuit map in the corner, the player first.
+            var map = new SerializedObject(root.AddComponent<MiniMap>());
+            map.FindProperty("track").objectReferenceValue = path;
+            var mapCars = map.FindProperty("cars");
+            mapCars.arraySize = cars.Count;
+            for (int i = 0; i < cars.Count; i++) mapCars.GetArrayElementAtIndex(i).objectReferenceValue = cars[i].transform;
+            map.ApplyModifiedPropertiesWithoutUndo();
+
             foreach (CarController each in cars)
             {
                 var controller = new SerializedObject(each);
