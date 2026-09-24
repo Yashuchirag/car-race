@@ -91,6 +91,16 @@ namespace CarRace.UnityGame.EditorTools
             ["spa"] = 193.311f, ["suzuka"] = 169.529f, ["testcircuit"] = 62.260f,
         };
 
+        const string CatalogPath = "Assets/Settings/TrackCatalog.asset";
+
+        /// <summary>Each circuit's surroundings, as you chose them on 2026-09-24, following the
+        /// real locations, with a night neon city for the test circuit.</summary>
+        static readonly Dictionary<string, string> Themes = new Dictionary<string, string>
+        {
+            ["monza"] = "Countryside", ["spa"] = "Mountains", ["bahrain"] = "Desert",
+            ["suzuka"] = "Coast", ["silverstone"] = "City", ["testcircuit"] = "Night City",
+        };
+
         [Serializable] class Polyline { public float[] x, y, z, width_left, width_right; }
         [Serializable] class TrackFile { public string name; public float sample_spacing_m, length_m; public Polyline centerline, racing_line; }
 
@@ -275,9 +285,42 @@ namespace CarRace.UnityGame.EditorTools
             GraphicsSetup.SetUpSkyAndSun(UnityEngine.Object.FindAnyObjectByType<Light>());
             EditorSceneManager.SaveScene(scene, scenePath);
             SkidpadSceneBuilder.AddToBuildSettings(scenePath);
+            RecordInCatalog($"Track {track.name}", track.name, circuit, Length(centre), centre);
             Selection.activeGameObject = car;
             Debug.Log($"{track.name} built at {scenePath}: {n} samples, {Length(centre):0} m of road, " +
                       $"{Max(track.centerline.z) - floor:0} m of climb. {AiCars} AI on the grid ahead of you. Press Play; the AI go when you do.");
+        }
+
+        /// <summary>This circuit's card in the lobby: name, length, theme and outline.</summary>
+        static void RecordInCatalog(string scene, string name, string circuit, float lengthM, Vector3[] centre)
+        {
+            var catalog = AssetDatabase.LoadAssetAtPath<TrackCatalog>(CatalogPath);
+            if (catalog == null)
+            {
+                catalog = ScriptableObject.CreateInstance<TrackCatalog>();
+                Directory.CreateDirectory(Path.GetDirectoryName(CatalogPath));
+                AssetDatabase.CreateAsset(catalog, CatalogPath);
+            }
+
+            // Fitted into a unit square, keeping its shape, about 240 points.
+            float minX = float.MaxValue, maxX = float.MinValue, minZ = float.MaxValue, maxZ = float.MinValue;
+            foreach (Vector3 p in centre) { minX = Mathf.Min(minX, p.x); maxX = Mathf.Max(maxX, p.x); minZ = Mathf.Min(minZ, p.z); maxZ = Mathf.Max(maxZ, p.z); }
+            float span = Mathf.Max(maxX - minX, maxZ - minZ);
+            var offset = new Vector2((span - (maxX - minX)) * 0.5f, (span - (maxZ - minZ)) * 0.5f);
+            int step = Mathf.Max(1, centre.Length / 240);
+            var outline = new List<Vector2>();
+            for (int i = 0; i < centre.Length; i += step)
+                outline.Add((new Vector2(centre[i].x - minX, centre[i].z - minZ) + offset) / span);
+
+            var entry = catalog.entries.Find(e => e.scene == scene);
+            if (entry == null) catalog.entries.Add(entry = new TrackCatalog.Entry { scene = scene });
+            entry.displayName = name;
+            entry.theme = Themes.TryGetValue(circuit, out string theme) ? theme : "";
+            entry.lengthKm = lengthM / 1000f;
+            entry.outline = outline.ToArray();
+            catalog.entries.Sort((a, b) => string.CompareOrdinal(a.displayName, b.displayName));
+            EditorUtility.SetDirty(catalog);
+            AssetDatabase.SaveAssets();
         }
 
         /// <summary>

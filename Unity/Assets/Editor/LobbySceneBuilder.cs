@@ -70,7 +70,7 @@ namespace CarRace.UnityGame.EditorTools
 
             var menu = new SerializedObject(root.AddComponent<LobbyMenu>());
             menu.FindProperty("displayCar").objectReferenceValue = car.transform;
-            menu.FindProperty("raceScene").stringValue = "Track Royal Park Speedway";
+            menu.FindProperty("catalog").objectReferenceValue = AssetDatabase.LoadAssetAtPath<TrackCatalog>("Assets/Settings/TrackCatalog.asset");
             menu.ApplyModifiedPropertiesWithoutUndo();
 
             Directory.CreateDirectory(Path.GetDirectoryName(ScenePath));

@@ -208,7 +208,9 @@ abandons the lap in progress. The best lap is kept per circuit in PlayerPrefs.
 A built game opens on the lobby (`Assets/Scenes/Lobby.unity`, built by `CarRace, Build Lobby
 Scene`, which puts it first in the build settings): the car turning on a platform under the
 circuits' sky, a Players panel (just you for now; LAN players will be listed there), eight
-body colours, and PLAY (or Enter), which loads Monza. The colour is kept between sessions
+body colours, a Circuit panel with a card for each of the six circuits (outline, length and
+scenery theme, from `Assets/Settings/TrackCatalog.asset`, which the track builder fills), and
+PLAY (or Enter), which loads the chosen circuit. `-track "Track <name>"` picks one for a session. The colour is kept between sessions
 and put on your car when a race loads (`PlayerSetup`); an AI car whose colour is too close
 to yours is repainted in one that is not. The Esc menu in a race has Back to lobby.
 `-carColour 4` picks a colour for one session, and `-lobbyScreenshot <file>` saves a picture

@@ -1,12 +1,14 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
 namespace CarRace.UnityGame
 {
     /// <summary>
-    /// The front end: the game's title, a players panel, and a car panel with colour swatches
-    /// and a PLAY button that loads the race. The car turns on a platform behind the panels,
+    /// The front end: the game's title, a players panel, a circuit panel with a card for each
+    /// circuit in the build (its outline, name, length and surroundings), and a car panel with
+    /// colour swatches and a PLAY button that loads the chosen circuit. The car turns on a platform behind the panels,
     /// repainted as a colour is picked. The players panel lists only the local player for now;
     /// it is where LAN play will list everyone who has joined before the host starts the race.
     ///
@@ -16,7 +18,7 @@ namespace CarRace.UnityGame
     public sealed class LobbyMenu : MonoBehaviour
     {
         [SerializeField] Transform displayCar;
-        [SerializeField] string raceScene = "Track Royal Park Speedway";
+        [SerializeField] TrackCatalog catalog;
         [SerializeField] float turnDegreesPerSecond = 18f;
 
         static readonly Color Panel = new Color(0.05f, 0.06f, 0.1f, 0.86f);
@@ -25,7 +27,41 @@ namespace CarRace.UnityGame
         static readonly Color Muted = new Color(0.62f, 0.64f, 0.72f);
         static readonly Color Row = new Color(0.12f, 0.13f, 0.18f, 0.95f);
 
-        GUIStyle _title, _subtitle, _header, _text, _small, _play;
+        GUIStyle _title, _subtitle, _header, _text, _small, _play, _cardName;
+        readonly List<TrackCatalog.Entry> _circuits = new List<TrackCatalog.Entry>();
+        readonly Dictionary<string, Texture2D> _outlines = new Dictionary<string, Texture2D>();
+        int _outlinePixels;
+
+        const string TrackKey = "CarRace.Track";
+
+        /// <summary>The chosen circuit's scene, kept between sessions; the first on offer if
+        /// the saved one is no longer built.</summary>
+        string ChosenScene
+        {
+            get
+            {
+                string saved = PlayerPrefs.GetString(TrackKey, "");
+                return _circuits.Exists(c => c.scene == saved) ? saved : _circuits.Count > 0 ? _circuits[0].scene : "";
+            }
+            set
+            {
+                PlayerPrefs.SetString(TrackKey, value);
+                PlayerPrefs.Save();
+            }
+        }
+
+        void Awake()
+        {
+            // Only circuits that are in this build can be offered.
+            if (catalog == null) return;
+            foreach (var entry in catalog.entries)
+                if (SceneUtility.GetBuildIndexByScenePath($"Assets/Scenes/{entry.scene}.unity") >= 0) _circuits.Add(entry);
+        }
+
+        void OnDestroy()
+        {
+            foreach (var texture in _outlines.Values) Destroy(texture);
+        }
 
         void Start()
         {
@@ -44,7 +80,15 @@ namespace CarRace.UnityGame
             if (Input.GetKeyDown(KeyCode.Return)) Play();
         }
 
-        void Play() => SceneManager.LoadScene(raceScene);
+        void Play()
+        {
+            // -track "Track Royal Park Speedway" picks the circuit for one session, so the
+            // benchmark always races the same one.
+            string[] args = Environment.GetCommandLineArgs();
+            int i = Array.IndexOf(args, "-track");
+            string scene = i >= 0 && i + 1 < args.Length ? args[i + 1] : ChosenScene;
+            if (!string.IsNullOrEmpty(scene)) SceneManager.LoadScene(scene);
+        }
 
         System.Collections.IEnumerator ScreenshotAndQuit(string path)
         {
@@ -77,6 +121,8 @@ namespace CarRace.UnityGame
             _small.alignment = TextAnchor.UpperLeft;
             GUI.Label(new Rect(players.x + Hud.Px(16f), entry.yMax + Hud.Px(14f), players.width - Hud.Px(32f), Hud.Px(60f)),
                       "Local play. Players on your network will appear here once LAN racing is added.", _small);
+
+            CircuitPanel(new Rect(margin, Hud.Px(440f), Hud.Px(400f), Hud.Px(560f)));
 
             // Car, right: colour swatches, the colour's name and PLAY.
             float width = Hud.Px(460f), height = Hud.Px(380f);
@@ -125,6 +171,90 @@ namespace CarRace.UnityGame
             _small.alignment = TextAnchor.UpperLeft;
         }
 
+        /// <summary>A card per circuit, two across: its outline, name, length and surroundings.</summary>
+        void CircuitPanel(Rect panel)
+        {
+            PanelWithHeader(panel, "CIRCUIT");
+            if (_circuits.Count == 0)
+            {
+                GUI.Label(new Rect(panel.x + Hud.Px(16f), panel.y + Hud.Px(52f), panel.width - Hud.Px(32f), Hud.Px(60f)),
+                          "No circuits in this build. Build one with CarRace, Build Track Scene.", _small);
+                return;
+            }
+
+            float pad = Hud.Px(14f), gap = Hud.Px(12f);
+            float cardWidth = (panel.width - 2f * pad - gap) / 2f, cardHeight = Hud.Px(152f);
+            int outlinePixels = Mathf.RoundToInt(Hud.Px(96f));
+            if (outlinePixels != _outlinePixels)
+            {
+                foreach (var texture in _outlines.Values) Destroy(texture);
+                _outlines.Clear();
+                _outlinePixels = outlinePixels;
+            }
+
+            string chosen = ChosenScene;
+            for (int i = 0; i < _circuits.Count; i++)
+            {
+                var entry = _circuits[i];
+                var card = new Rect(panel.x + pad + (i % 2) * (cardWidth + gap),
+                                    panel.y + Hud.Px(52f) + (i / 2) * (cardHeight + gap), cardWidth, cardHeight);
+                bool selected = entry.scene == chosen;
+                bool hover = card.Contains(Event.current.mousePosition);
+                if (selected || hover)
+                {
+                    float ring = Hud.Px(selected ? 3f : 2f);
+                    Hud.Rounded(new Rect(card.x - ring, card.y - ring, card.width + 2f * ring, card.height + 2f * ring),
+                                selected ? Accent : new Color(1f, 1f, 1f, 0.35f));
+                }
+                Hud.Rounded(card, Row);
+
+                if (!_outlines.TryGetValue(entry.scene, out Texture2D outline))
+                    _outlines[entry.scene] = outline = OutlineTexture(entry.outline, outlinePixels);
+                GUI.DrawTexture(new Rect(card.center.x - outlinePixels * 0.5f, card.y + Hud.Px(8f), outlinePixels, outlinePixels), outline);
+
+                _cardName.normal.textColor = selected ? Color.white : new Color(0.85f, 0.86f, 0.9f);
+                GUI.Label(new Rect(card.x, card.y + Hud.Px(106f), card.width, Hud.Px(22f)), entry.displayName, _cardName);
+                _small.alignment = TextAnchor.MiddleCenter;
+                GUI.Label(new Rect(card.x, card.y + Hud.Px(126f), card.width, Hud.Px(20f)),
+                          $"{entry.lengthKm:0.0} km  ·  {entry.theme}", _small);
+                _small.alignment = TextAnchor.UpperLeft;
+
+                if (GUI.Button(card, GUIContent.none, GUIStyle.none)) ChosenScene = entry.scene;
+            }
+        }
+
+        /// <summary>A circuit's outline in white on a clear square, drawn as discs along it.</summary>
+        static Texture2D OutlineTexture(Vector2[] outline, int size)
+        {
+            var pixels = new Color32[size * size];
+            float radius = Mathf.Max(1.2f, size * 0.018f), margin = size * 0.08f, scale = size - 2f * margin;
+            int n = outline.Length;
+            for (int i = 0; i < n; i++)
+            {
+                Vector2 a = outline[i] * scale + Vector2.one * margin, b = outline[(i + 1) % n] * scale + Vector2.one * margin;
+                int steps = Mathf.Max(1, Mathf.CeilToInt(Vector2.Distance(a, b)));
+                for (int k = 0; k <= steps; k++)
+                {
+                    Vector2 c = Vector2.Lerp(a, b, k / (float)steps);
+                    int r = Mathf.CeilToInt(radius);
+                    for (int y = -r; y <= r; y++)
+                    for (int x = -r; x <= r; x++)
+                    {
+                        int px = Mathf.RoundToInt(c.x) + x, py = Mathf.RoundToInt(c.y) + y;
+                        if (px < 0 || py < 0 || px >= size || py >= size) continue;
+                        float d = Mathf.Sqrt(x * x + y * y);
+                        byte alpha = (byte)(255f * Mathf.Clamp01(radius + 0.5f - d));
+                        int at = py * size + px;
+                        if (alpha > pixels[at].a) pixels[at] = new Color32(255, 255, 255, alpha);
+                    }
+                }
+            }
+            var texture = new Texture2D(size, size, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp };
+            texture.SetPixels32(pixels);
+            texture.Apply();
+            return texture;
+        }
+
         void PanelWithHeader(Rect rect, string title)
         {
             Hud.Rounded(rect, Panel);
@@ -143,6 +273,8 @@ namespace CarRace.UnityGame
             _text ??= new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft, normal = { textColor = Color.white } };
             _small ??= new GUIStyle(GUI.skin.label) { wordWrap = true, normal = { textColor = Muted } };
             _play ??= new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.BoldAndItalic, alignment = TextAnchor.MiddleCenter, normal = { textColor = Color.white } };
+            _cardName ??= new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            _cardName.fontSize = Hud.Font(14);
             _title.fontSize = Hud.Font(72);
             _subtitle.fontSize = Hud.Font(20);
             _header.fontSize = Hud.Font(17);

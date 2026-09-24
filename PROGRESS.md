@@ -10,18 +10,15 @@ concrete action is. Everything below it is detail.
 
 ## 1. Resume here
 
-**Last updated:** 2026-09-24 (AI race in Unity confirmed, with the driving fixes)
+**Last updated:** 2026-09-24 (circuit choice in the lobby)
 
-**Last completed:** Overtaking, the "make the pass work" approach. A driver now tries a
-pass only when both cars' plans say it gets alongside within 10 s, sits 0.4 s behind a
-car it is clearly quicker than instead of 0.9 s, gets those same 10 s to make progress
-before giving up, and may close on the car it is passing at up to 4 m/s while the
-sideways gap holds. The race criterion still passes on ten seeds, with no contacts.
+**Last completed:** Circuit choice in the lobby. All six circuits are built into the game and
+offered as cards beside the colour picker (section 3).
 
-**Next action:** Your choice. Everything in Unity so far is confirmed by your drives. For
-the AI race, the natural next step is a race format: start countdown, a set lap count and a
-results screen. Otherwise: passing lanes (section 3, TODO), the Phase 0 remainder (Git LFS
-and a standalone build above 200 fps), or a first graphics pass (Phase 4).
+**Next action:** Scenery per circuit (section 3, TODO). Build the placement system (zones by
+distance from the centreline, kept clear of the road, heights from the terrain) and dress
+Monza's countryside first from Kenney's CC0 Nature and Racing kits, for your review before
+the other five themes.
 
 ---
 
@@ -216,7 +213,7 @@ physics has never driven a corner the track pipeline produced.
 | Grid off the grass | DONE | 2026-09-24, your report of two cars starting on the grass. Grid slots were 2 m either side of the racing line, which on Monza's start straight runs near the right edge; now 2.5 m either side of the road's centre, pointing along it. Every circuit leaves 2.5 to 3.5 m from each car's outer side to the edge; in a logged race all four cars start with 3.0 m to spare, no car leaves the road on lap one (widest 1.4 m inside the edge) and none stops. |
 | Grass texture | DONE | 2026-09-24, first of the surface textures, at your request. ambientCG Grass005 (CC0, licence checked on docs.ambientcg.com), 2K colour, normal (GL) and ambient occlusion, in `Assets/Art/Ground/Grass005` via LFS, credited in `Assets/Art/CREDITS.md`; chosen over Poly Haven's Leafy Grass (mostly leaf litter) and ambientCG Grass001, 004, 006, 008 as the most mown looking. `Unity/Assets/Editor/SurfaceTextures.cs` writes the import settings (normal map as normal, occlusion linear, 2048 cap, mipmaps, aniso 4) and applies the grass to the verge material, the terrain layer (4 m tile) and the lobby lawn (tiling given, a plane's UVs run 0 to 1). The track builder's strips now carry UVs in metres both ways, instead of stretching one texture across 15 m. The terrain's flat placeholder `grass_flat.png` is gone. Screenshots: blades visible on the verges, a lawn at mid distance, no stretching or obvious repeats; 246 fps average. One 124 ms hitch in that run, the open issue in section 6. |
 | Asphalt texture | DONE | 2026-09-24, at your request. Poly Haven Asphalt Track (CC0, by Dimitrios Savva, 2 m square), chosen over Poly Haven Asphalt 02 (cracked), 04 and 06 (too light), Pit Lane (browner) and ambientCG Asphalt 031 and 033 for being dark, fine and even like circuit tarmac. 2K colour, normal (GL) and ambient occlusion in `Assets/Art/Ground/AsphaltTrack` via LFS; its roughness (0.71 to 0.88) turned by the new `Tools/smoothness_map.py` into URP's metallic-smoothness map (alpha 1 - roughness). `SurfaceTextures.ApplyAsphalt` puts all four on the road material with the right keywords, tiled at 2 m. Screenshots: dark tarmac with grain, the edge lines, kerbs and guide bars standing out; 230 fps average, no hitch. |
-| Circuit choice in the lobby | WIP | 2026-09-24, your request: pick the circuit beside the colour. Started. |
+| Circuit choice in the lobby | DONE | 2026-09-24, your request: pick the circuit beside the colour. All six circuits are now built into the game (`BuildTools` takes the lobby plus every `Assets/Scenes/Track *.unity`). The track builder records each one in `Assets/Settings/TrackCatalog.asset` (`Scripts/Lobby/TrackCatalog.cs`: scene, name, theme, length and an outline texture drawn from the centreline). The lobby's Circuit panel shows a card per circuit with its outline, length and scenery theme; the choice is kept in PlayerPrefs (`CarRace.Track`) and falls back to the first circuit in the catalogue, the airfield. `-track "Track <name>"` picks one for a session. Checked: a lobby screenshot shows all six cards; a benchmark on the Ardennes circuit loads it, names it on the timing panel and races at 233 fps average. Waiting on your look. |
 | Scenery per circuit | TODO | 2026-09-24, your decisions: Monza countryside parkland, Spa mountains and forest, Bahrain desert, Suzuka coast, Silverstone city, test circuit night city with neon; stylised low-poly throughout from CC0 kits (Kenney, Quaternius). The grass and asphalt textures stay. |
 | HUD scales with resolution | DONE | 2026-09-24, your question whether the HUD suits 1080p, QHD and UHD. It was placed relative to the screen edges but sized in fixed pixels, so at UHD every panel and font took half the share of the screen it does at 1080p. `Hud` gives a scale of screen height over 1080 (never below 0.5); `DriveHud`, `LapTimer`, `RaceDirector` and `MiniMap` scale font sizes and rectangles by it, not `GUI.matrix`, which would blur text at 4K. The minimap redraws at the screen's own resolution and reallocates on a resize. 1080p is unchanged. Compiles against the real Unity DLLs and the stub. You checked it at the higher resolutions and it looks fine. |
 | Reverse on the brake key | DONE | 2026-09-24, from a stop against a wall you could not leave, and your suggestion. That run's telemetry showed no keys registering at all for 35 s (the Game view had most likely lost focus), but the real gap was that the keyboard had no reverse: S only braked, reverse was only on the manual shift key. `CarController.BrakeToReverse`, with the automatic gearbox: brake held for 0.3 s at a standstill or rolling back selects reverse, then brake drives backwards at 0.25 throttle (a full key spun the rear wheels at slip ratio -11, traction control only watches forward spin) and throttle brakes; throttle once stopped selects first. `DriverInput` steers plain ramped lock when reversing, since the turn-rate feedback pushes the wrong way backwards. Headless, the whole sequence runs: 61 km/h to reverse at 17 km/h and back to first. Compiles against real Unity and the stub (which gained `Mathf.Abs`). You drove it and confirmed it works. |
@@ -603,6 +600,10 @@ learned, so context is not lost between sessions.
 
 - Asphalt texture (Poly Haven Asphalt Track) on the road, with a smoothness map made from
   its roughness.
+
+- Scenery themes settled with you (section 3). Circuit choice added to the lobby: all six
+  circuits are in the build, each as a card with its outline, length and theme. Next is the
+  scenery system, with Monza's countryside first so you can judge the look.
 
 ### 2026-09-23, ninth session
 
