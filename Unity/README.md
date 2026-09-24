@@ -159,9 +159,16 @@ Track scenes grid three AI cars ahead of you, laid out as the harness does it: t
 abreast, rows 10 m apart, the front row 10 m behind the line, fastest on pole, you at the
 back. `RaceDirector` on the circuit drives them with the same `RaceDriver` the headless
 race uses, through `CarController.Autopilot`, and shows every driver the whole field,
-you included, every 20 ms. The AI hold on the grid until you move off. An AI car stopped
-for 5 s is put back on its racing line where it was. Your place shows at the top of the
-screen.
+you included, every 20 ms. An AI car stopped for 5 s is put back on its racing line where
+it was.
+
+A race starts with a 3, 2, 1, GO countdown, every car held on its brakes, and runs for
+`Race Laps` (3 by default, on `RaceDirector`). Laps, positions and finish times are kept
+by the harness's `RaceControl`, updated every physics step, with the clock starting at GO;
+your position and lap show at the top of the screen. When you take the flag a results
+table appears and fills in as the AI finish: position, grid, places gained, best lap (the
+fastest marked), race time, gap to the winner and contacts with other cars. Enter races
+again.
 
 The AI code copies in from `Sim/`, with the closed-form numbers its speed plan is built
 from:

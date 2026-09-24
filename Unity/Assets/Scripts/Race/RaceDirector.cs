@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using CarRace.Harness;
 using CarRace.Track;
 using CarRace.Vehicle;
@@ -12,11 +13,15 @@ namespace CarRace.UnityGame
     /// its driver for inputs through Autopilot; every ReactionSeconds this shows every driver
     /// the whole field, the player included, exactly as RaceRun does.
     ///
-    /// The AI hold their brakes on the grid until the player moves off, so the start is
-    /// yours to take. An AI car that has been stopped for StuckSeconds, pushed into a wall or
-    /// turned round in a crash, is put back on its racing line where it was.
+    /// The race: a 3, 2, 1, GO countdown with every car, the player's included, held on its
+    /// brakes; then raceLaps laps kept by the headless RaceControl, the same bookkeeping the
+    /// harness race is judged by, with the clock starting at GO. The grid is behind the line,
+    /// so every car starts on lap -1 and crossing the line begins lap one. When the player
+    /// takes the flag a results table appears and fills in as the AI finish; Enter restarts.
+    /// The AI keep driving after their flag, since a car parked on the racing line is a hazard.
     ///
-    /// Also shows the player's place in the field, by distance covered since the start.
+    /// An AI car that has been stopped for StuckSeconds, pushed into a wall or turned round in
+    /// a crash, is put back on its racing line where it was.
     /// </summary>
     public sealed class RaceDirector : MonoBehaviour
     {
@@ -32,21 +37,28 @@ namespace CarRace.UnityGame
                  "work. They cannot know your plan, and with none they would never try to pass.")]
         [SerializeField] float playerPace = 0.7f;
 
+        [SerializeField, Min(1)] int raceLaps = 3;
+
         const float ReactionSeconds = 0.02f;
         const float StuckSeconds = 5f;
+        const float CountdownSeconds = 3f;
+        const float GoShownSeconds = 1f;
 
         TrackData _track;
         RaceDriver[] _drivers;
         RaceDriver.Seen[] _field;
         float[] _playerPlan;
         float[] _stuckFor;
-        Rigidbody _playerBody;
         int _playerIndex;
         float _playerProgress;     // samples since the start line, negative on the grid
         Vector3 _playerLast;
         float _sinceReaction;
         bool _started;
-        GUIStyle _style;
+        float _countdown = CountdownSeconds;
+        float _raceTime;
+        RaceControl _control;
+        CarController[] _cars;     // RaceControl's order: the AI in grid order, then the player
+        GUIStyle _style, _bigStyle, _tableStyle;
 
         void Start()
         {
@@ -90,10 +102,24 @@ namespace CarRace.UnityGame
             limits.TractionMs2 *= playerPace;
             _playerPlan = SpeedPlan.Build(_track, limits);
 
-            _playerBody = player.GetComponent<Rigidbody>();
             _playerLast = player.transform.position;
             _playerIndex = track.Nearest(_playerLast, 0, back: 0, ahead: n - 1);
             _playerProgress = _playerIndex > n / 2 ? _playerIndex - n : _playerIndex;
+
+            // Held on the brakes, like the AI, until GO.
+            player.Autopilot = (body, dt) => new VehicleInputs { Brake = 1f };
+
+            _cars = new CarController[aiCars.Length + 1];
+            var names = new string[_cars.Length];
+            for (int i = 0; i < aiCars.Length; i++) { _cars[i] = aiCars[i]; names[i] = _drivers[i].Name; }
+            _cars[aiCars.Length] = player;
+            names[aiCars.Length] = "You";
+            _control = new RaceControl(names, raceLaps);
+            for (int i = 0; i < _cars.Length; i++)
+            {
+                int k = i;
+                _cars[i].gameObject.AddComponent<CarContacts>().Touched = () => _control.Entries[k].Contacts++;
+            }
         }
 
         /// <summary>The same limits the harness plans with (LapRun.PlanningLimits), from the
@@ -112,7 +138,24 @@ namespace CarRace.UnityGame
         {
             float dt = Time.fixedDeltaTime;
             TrackPlayer();
-            if (!_started && _playerBody.linearVelocity.magnitude > 1f) _started = true;
+            if (!_started)
+            {
+                _countdown -= dt;
+                if (_countdown > 0f) return;
+                _started = true;
+                player.Autopilot = null;
+            }
+
+            // Every step rather than every reaction interval, so lap times are to 5 ms.
+            _raceTime += dt;
+            int n = _track.Count;
+            for (int i = 0; i < aiCars.Length; i++)
+                _control.Update(i, _raceTime, _drivers[i].Path.Laps, _drivers[i].Path.ProgressM);
+            // Measured the way PathDriver.ProgressM measures the AI, so the two rank together.
+            int playerLaps = Mathf.FloorToInt(_playerProgress / n);
+            float playerProgressM = playerLaps * _track.LengthM + (_playerProgress - playerLaps * n) * _track.SampleSpacingM;
+            _control.Update(aiCars.Length, _raceTime, playerLaps, playerProgressM);
+            _control.Rank();
 
             _sinceReaction += dt;
             if (_sinceReaction < ReactionSeconds) return;
@@ -133,7 +176,7 @@ namespace CarRace.UnityGame
             {
                 _drivers[i].Observe(_track, _field, i, elapsed);
 
-                bool stopped = _started && _field[i].SpeedMs < 1f && _field[i].SpeedMs > -1f;
+                bool stopped = _field[i].SpeedMs < 1f && _field[i].SpeedMs > -1f;
                 _stuckFor[i] = stopped ? _stuckFor[i] + elapsed : 0f;
                 if (_stuckFor[i] < StuckSeconds) continue;
                 aiCars[i].Recover();
@@ -204,23 +247,85 @@ namespace CarRace.UnityGame
 
         static Vec3 ToNumerics(Vector3 v) => new Vec3(v.x, v.y, v.z);
 
+        void Update()
+        {
+            if (_control != null && PlayerEntry.Finished && Input.GetKeyDown(KeyCode.Return))
+                SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
+        }
+
+        RaceControl.Entry PlayerEntry => _control.Entries[aiCars.Length];
+
         void OnGUI()
         {
-            if (!enabled || _drivers == null) return;
+            if (!enabled || _control == null) return;
             _style ??= new GUIStyle(GUI.skin.label)
             {
-                fontSize = 40, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter,
+                fontSize = 30, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter,
+                normal = { textColor = Color.white }
+            };
+            _bigStyle ??= new GUIStyle(_style) { fontSize = 120 };
+            _tableStyle ??= new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 18, font = Font.CreateDynamicFontFromOSFont("Consolas", 18),
                 normal = { textColor = Color.white }
             };
 
-            int n = _track.Count;
-            int place = 1;
-            foreach (RaceDriver driver in _drivers)
-                if (driver.Path.Laps * n + driver.Path.Index > _playerProgress) place++;
-
-            var box = new Rect(Screen.width * 0.5f - 90f, 10f, 180f, 60f);
+            RaceControl.Entry me = PlayerEntry;
+            int lap = Mathf.Clamp(me.LapsComplete + 1, 1, raceLaps);
+            var box = new Rect(Screen.width * 0.5f - 160f, 10f, 320f, 56f);
             GUI.Box(box, GUIContent.none);
-            GUI.Label(box, $"P{place} / {_drivers.Length + 1}", _style);
+            GUI.Label(box, $"P{me.Position} / {_cars.Length}    Lap {lap} / {raceLaps}", _style);
+
+            if (!_started)
+            {
+                _bigStyle.normal.textColor = new Color(1f, 0.2f, 0.15f);
+                GUI.Label(new Rect(0f, Screen.height * 0.3f, Screen.width, 160f),
+                          Mathf.CeilToInt(_countdown).ToString(), _bigStyle);
+            }
+            else if (_raceTime < GoShownSeconds)
+            {
+                _bigStyle.normal.textColor = new Color(0.2f, 1f, 0.3f);
+                GUI.Label(new Rect(0f, Screen.height * 0.3f, Screen.width, 160f), "GO", _bigStyle);
+            }
+
+            if (me.Finished) Results();
+        }
+
+        /// <summary>The classification, as the harness prints it: finishers in the order they
+        /// took the flag, then everyone still running by distance.</summary>
+        void Results()
+        {
+            RaceControl.Entry[] order = _control.Classification();
+            float winner = order[0].Finished ? order[0].FinishedAtS : 0f;
+            float fastest = float.MaxValue;
+            foreach (RaceControl.Entry e in order) fastest = Mathf.Min(fastest, e.BestLapS);
+
+            var text = new System.Text.StringBuilder();
+            text.AppendLine($"{"Pos",-4}{"Driver",-8}{"Grid",5}{"+/-",5}{"Best lap",11}{"Race time",11}{"Gap",10}{"Hits",6}");
+            text.AppendLine(new string('-', 60));
+            foreach (RaceControl.Entry e in order)
+            {
+                int gained = e.Grid - e.Position;
+                string best = e.BestLapS < float.MaxValue ? Format(e.BestLapS) + (e.BestLapS == fastest ? "*" : " ") : "-";
+                string time = e.Finished ? Format(e.FinishedAtS) : $"lap {Mathf.Clamp(e.LapsComplete + 1, 1, raceLaps)}";
+                string gap = !e.Finished ? "running" : e.Position == 1 ? "-" : $"+{e.FinishedAtS - winner:0.000}";
+                text.AppendLine($"{e.Position,-4}{e.Name,-8}{e.Grid,5}{(gained == 0 ? "0" : gained.ToString("+0;-0")),5}{best,11}{time,11}{gap,10}{e.Contacts,6}");
+            }
+            text.AppendLine();
+            text.Append("* fastest lap        Enter: race again");
+
+            float width = 640f, height = 30f + 26f * (order.Length + 5);
+            var panel = new Rect(Screen.width * 0.5f - width * 0.5f, Screen.height * 0.5f - height * 0.5f, width, height);
+            GUI.Box(panel, GUIContent.none);
+            GUI.Box(panel, GUIContent.none);   // twice: one box is too faint to read a table over
+            GUI.Label(new Rect(panel.x, panel.y + 6f, width, 34f), "RESULTS", _style);
+            GUI.Label(new Rect(panel.x + 20f, panel.y + 46f, width - 40f, height - 50f), text.ToString(), _tableStyle);
+        }
+
+        static string Format(float seconds)
+        {
+            int minutes = (int)(seconds / 60f);
+            return $"{minutes}:{seconds - minutes * 60f:00.000}";
         }
     }
 }
