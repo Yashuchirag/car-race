@@ -144,6 +144,10 @@ namespace CarRace.UnityGame.EditorTools
             Wall("Barrier Left", root, leftOuter, right, +1f, barrierMaterial, barrierSurface, barrierLayer);
             Wall("Barrier Right", root, rightOuter, right, -1f, barrierMaterial, barrierSurface, barrierLayer);
 
+            // Ground out to the horizon, held under the road and verges.
+            GroundBuilder.Build(root, centre, track.centerline.width_left, track.centerline.width_right,
+                                VergeWidthM, $"Assets/Scenes/Track {track.name}/Ground.asset");
+
             // The racing line, painted 2 cm above the road with no collider: the line the AI
             // drives in the harness, so a lap here can be compared with the plan.
             var lineRight = RightOf(line);
