@@ -16,6 +16,7 @@ namespace UnityEngine
         public Vector3(float x, float y, float z) { this.x = x; this.y = y; this.z = z; }
 
         public static Vector3 zero => default;
+        public static float Dot(Vector3 a, Vector3 b) => throw new NotImplementedException();
         public static Vector3 one => default;
         public static Vector3 up => default;
         public static Vector3 right => default;

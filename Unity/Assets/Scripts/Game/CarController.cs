@@ -33,6 +33,11 @@ namespace CarRace.UnityGame
                  "which reads as a car that will not settle. Substepped inside each physics step.")]
         [SerializeField, Range(200, 1000)] int modelHz = 500;
 
+        [Tooltip("Below this height the car has left the world, and is put back on the grid. " +
+                 "Past the verges of a circuit there is no ground, and a car that went over the " +
+                 "edge once fell for half a minute before anyone pressed respawn.")]
+        [SerializeField] float fallLimitY = -30f;
+
         public VehicleSim Sim { get; private set; }
         public float SpeedKph => _body != null ? _body.linearVelocity.magnitude * 3.6f : 0f;
 
@@ -58,6 +63,8 @@ namespace CarRace.UnityGame
             Sim = new VehicleSim(_config);
             _body = GetComponent<Rigidbody>();
             if (driver == null) driver = GetComponent<DriverInput>();
+            if (driver != null)
+                driver.ConfigureSteering(_config.MaxSteerAngleDegrees, _config.SteerFalloffSpeed, _config.Wheelbase);
             _ground = new UnityGround(groundLayers, _body);
 
             ConfigureBody();
@@ -98,6 +105,10 @@ namespace CarRace.UnityGame
             Sim.AntiLockBrakes = antiLockBrakes;
             Sim.TractionControl = tractionControl;
 
+            if (transform.position.y < fallLimitY) Respawn();
+
+            if (driver != null)
+                driver.Tick(Time.fixedDeltaTime, Vector3.Dot(_body.linearVelocity, transform.forward));
             VehicleInputs inputs = driver != null ? driver.Read() : VehicleInputs.Coasting;
 
             if (driver != null)
