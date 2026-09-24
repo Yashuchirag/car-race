@@ -113,6 +113,12 @@ namespace CarRace.UnityGame.EditorTools
             hudSettings.FindProperty("driver").objectReferenceValue = car.GetComponent<DriverInput>();
             hudSettings.ApplyModifiedPropertiesWithoutUndo();
 
+            var recorder = car.AddComponent<TelemetryRecorder>();
+            var recorderSettings = new SerializedObject(recorder);
+            recorderSettings.FindProperty("car").objectReferenceValue = car.GetComponent<CarController>();
+            recorderSettings.FindProperty("driver").objectReferenceValue = car.GetComponent<DriverInput>();
+            recorderSettings.ApplyModifiedPropertiesWithoutUndo();
+
             var camera = Camera.main != null ? Camera.main.gameObject : new GameObject("Main Camera", typeof(Camera));
             camera.transform.SetPositionAndRotation(position + rotation * new Vector3(0f, 1.5f, -6f), rotation);
             var follow = camera.AddComponent<CarCamera>();
