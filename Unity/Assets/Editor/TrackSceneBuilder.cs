@@ -237,6 +237,7 @@ namespace CarRace.UnityGame.EditorTools
             // A lap spans kilometres; the default 1 km far plane cuts it off in the distance.
             var camera = Camera.main;
             if (camera != null) camera.farClipPlane = 5000f;
+            GraphicsSetup.AddPostProcessing(root, camera);
 
             if (road.GetComponent<MeshCollider>().sharedMaterial != asphalt)
                 throw new InvalidOperationException("Road has lost its Asphalt material.");

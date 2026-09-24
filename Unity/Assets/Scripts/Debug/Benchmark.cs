@@ -25,6 +25,8 @@ namespace CarRace.UnityGame
     {
         const float WarmupSeconds = 8f;     // the 3 s countdown, then the field spreads out
         const float SampleSeconds = 60f;
+        const float ScreenshotAtSeconds = 7f;   // in the warm-up, so its cost is not measured
+        bool _shot;
 
         readonly List<float> _frames = new List<float>(20000);
         // Numbers only while sampling, formatted at the end: building the CSV line by line
@@ -106,6 +108,11 @@ namespace CarRace.UnityGame
             _elapsed += dt;
             int collections = GC.CollectionCount(0);
             long memory = GC.GetTotalMemory(false);
+            if (!_shot && _elapsed >= ScreenshotAtSeconds)
+            {
+                _shot = true;
+                ScreenCapture.CaptureScreenshot(Path.ChangeExtension(_outPath, ".png"));
+            }
             if (_elapsed < WarmupSeconds)
             {
                 _fixedSteps = 0;

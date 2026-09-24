@@ -532,9 +532,11 @@ reads as expensive.
 | VFX and translucency | 1.2 ms |
 | Post and upscale | 2.0 ms |
 
-**Upscaling is mandatory.** DLSS at Quality renders about 720p internally and
-roughly doubles headroom; the RTX 2060 supports it. **Avoid frame generation**: it
-adds latency, and input feel beats smoothness in a driving game.
+**Upscaling: FSR 1 or STP, when needed.** Written for HDRP, which offers DLSS; URP does
+not, so on the URP this project uses the choices are FSR 1 and Unity 6's own STP. Measured
+on 2026-09-24, a frame at 1080p costs about 3.6 ms and is limited by the CPU, so there is
+nothing to upscale for yet; revisit once the art makes the GPU the limit. **Avoid frame
+generation**: it adds latency, and input feel beats smoothness in a driving game.
 
 **VRAM is the real ceiling.** Budget 4.5 GB of the 6 GB. Cap trackside textures at
 1K, hero car at 2K, use streaming settings aggressively.

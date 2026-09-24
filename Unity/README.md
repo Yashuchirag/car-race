@@ -148,6 +148,17 @@ cp Tracks_Data/LICENSE /mnt/d/Dev/CarRace/Assets/Tracks/LICENSE.txt
 Each builds to `Assets/Scenes/Track <name>.unity`. The skidpad and the tracks share one
 car setup (`SkidpadSceneBuilder.PlaceCar`), so a fix to the car reaches every scene.
 
+## Render settings
+
+`Assets/Editor/GraphicsSetup.cs` applies the render settings the graphics pass starts from:
+`CarRace, Apply Graphics Settings`. MSAA 4x, HDR colour grading, shadows to 150 m, and a
+post-processing profile (`Assets/Settings/TrackPostProcessing.asset`: ACES tone mapping,
+light bloom, slight vignette), created once and then left for editing. The track builder
+adds a global volume with it and turns post-processing on for the camera.
+
+`CarRace, Build Windows Player` builds the Monza scene to `Builds/Windows`; run it with
+`-benchmark` for a 60 s frame time report beside the executable (see `Benchmark.cs`).
+
 ## Lap timing
 
 Track scenes time laps: `TrackPath` on the circuit holds the centreline, start line at
