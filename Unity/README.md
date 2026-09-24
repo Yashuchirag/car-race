@@ -87,6 +87,7 @@ so tuned car values survive. The steps below are what it does, for building it b
 | Recover onto the track where you are (the start on the skidpad) | R | View |
 | Restart from the start | Backspace | Menu |
 | Cycle camera | C | Y |
+| Pause and settings (frame rate) | Esc | |
 
 Keyboard steering is assisted (`Steering Assist` on `DriverInput`, on by default): a key
 asks for a turn rate, a share of what the tyres can hold at that speed, and the assist
@@ -155,6 +156,11 @@ car setup (`SkidpadSceneBuilder.PlaceCar`), so a fix to the car reaches every sc
 post-processing profile (`Assets/Settings/TrackPostProcessing.asset`: ACES tone mapping,
 light bloom, slight vignette), created once and then left for editing. The track builder
 adds a global volume with it and turns post-processing on for the camera.
+
+Frame rate is the player's choice, in the Esc menu and kept between sessions: VSync (the
+default), 30, 60, 120 or 144 fps, or unlimited. `-frameRate 60` on the command line
+overrides it for one session. Physics runs at 200 Hz whatever the frame rate, and a frame
+catches up at most 0.1 s of it, so a slow machine slows briefly instead of freezing.
 
 `CarRace, Build Windows Player` builds the Monza scene to `Builds/Windows`; run it with
 `-benchmark` for a 60 s frame time report beside the executable (see `Benchmark.cs`), and

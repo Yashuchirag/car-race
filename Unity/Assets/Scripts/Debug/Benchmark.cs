@@ -74,8 +74,13 @@ namespace CarRace.UnityGame
 
         void Awake()
         {
-            QualitySettings.vSyncCount = 0;
-            Application.targetFrameRate = -1;
+            // Uncapped, to measure what the machine can do, unless -frameRate asks otherwise:
+            // then it measures that the cap holds.
+            if (!DisplaySettings.SetOnCommandLine)
+            {
+                QualitySettings.vSyncCount = 0;
+                Application.targetFrameRate = -1;
+            }
             if (!Debug.isDebugBuild) return;
             // Looked up by name across every category, since guessing a marker's category wrong
             // finds nothing. Each recorder sums its marker's samples within a frame, so a

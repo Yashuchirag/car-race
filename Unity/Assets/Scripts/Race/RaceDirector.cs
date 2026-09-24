@@ -322,7 +322,8 @@ namespace CarRace.UnityGame
 
         void Update()
         {
-            if (_control != null && PlayerEntry.Finished && Input.GetKeyDown(KeyCode.Return))
+            // Not while paused: the settings menu outlives the scene, and so would its pause.
+            if (_control != null && PlayerEntry.Finished && Time.timeScale > 0f && Input.GetKeyDown(KeyCode.Return))
                 SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
         }
 
