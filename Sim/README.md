@@ -158,9 +158,12 @@ physics engine's job, in Unity, where they are rigid bodies that already collide
 What this can answer is the question that comes first: do sixteen drivers get off a
 grid, round a lap and past each other without needing to touch.
 
-Not yet, is the answer. Eight cars is clean; sixteen leaves two contacts on the
-opening lap, and that is the exit criterion. The failure is recorded rather than
-tuned away: `PROGRESS.md` section 3 has the numbers and section 6 says why.
+Off the grid and round without touching, yes: sixteen cars over ten laps of Monza
+finish with no contacts at all, on ten different seeds, where the same race used to
+leave two on the opening lap. Past each other, not yet. A driver commits to a pass
+and holds it, but the safety bound will not let it close on a car in the next lane,
+so passes rarely complete, and with the fastest car gridded last it finishes last.
+`PROGRESS.md` section 6 says why and what fixing it would take.
 
 Drivers differ only in pace, which is the share of the car's grip they will use.
 Each one plans its own speeds at its own limits rather than scaling a shared plan,
@@ -219,6 +222,31 @@ because a driver who corners slower also has to brake earlier.
    grid spaced at exactly that distance, no car may exceed the speed of the one in
    front, so each lags the one ahead and sixteen deep the back of the field was doing
    7 km/h ten seconds in.
+7. **A pass decided afresh every 20 ms undoes itself.** A car counted as in the way
+   only within 2.2 m to the side, which is about as far as a pass moves the car, so a
+   car that had pulled out stopped being held up, steered back in, and was held up
+   again. Held-up cars swapped lanes every second, and that is what spun them. A pass
+   is now a commitment with its own reasons to end.
+8. **Comparing a plan with an actual speed is not comparing drivers.** Out of a corner
+   every driver runs well under its plan, so the slower driver behind was told it was
+   quicker than the faster one in front. It now compares pace, or a car in trouble.
+9. **A following cap applied only while below the car's speed is a switch.** The moment
+   it rose past the speed it vanished, the target jumped to the plan, and the car went
+   from full throttle to the brakes and back every two seconds through a corner.
+10. **The gap along the racing line is not the gap.** Two cars inside the line through
+    a chicane are closer than the line says, and whole samples add 2 m of rounding: it
+    read 5.9 m with the cars touching. Close up, positions decide.
+11. **A speed controller that integrates while pinned holds the throttle past its
+    target.** A full throttle climb stored a whole pedal of demand, which kept the car
+    accelerating 7 km/h over a follow cap in a chicane. This one was in `PathDriver`
+    and was there for single laps too, hidden by the margin a lap alone has.
+12. **A negative speed must never become a negative cap.** A negative cap means none,
+    so the car behind a stopped car that had rolled back a few centimetres was sent to
+    full throttle into it.
+13. **Two cars side by side are not in each other's way.** The safety bound treated a
+    car in the next lane like one in front, so a pair running side by side braked each
+    other every time either edged ahead, and sixteen deep that stopped the back of the
+    grid dead. It now holds alongside rather than dropping back.
 
 ## Next
 

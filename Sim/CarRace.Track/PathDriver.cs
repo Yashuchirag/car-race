@@ -99,6 +99,9 @@ namespace CarRace.Track
         /// <summary>Distance covered since the start, in metres, laps included.</summary>
         public float ProgressM => Laps * _track.LengthM + Index * _track.SampleSpacingM;
 
+        /// <summary>What the plan asks for at a sample, before any cap or offset.</summary>
+        public float PlanAt(int index) => _plan[_track.Wrap(index)];
+
         /// <summary>
         /// Puts the driver at a sample without counting a lap. A car on a grid behind the
         /// start line starts on lap -1, so that crossing the line is what begins its first
@@ -244,7 +247,15 @@ namespace CarRace.Track
                 ? SpeedCapMs : PlannedSpeedMs;
 
             float error = TargetSpeedMs - speed;
-            _speedIntegral = Clamp(_speedIntegral + error * dt * SpeedIntegralGain, -1f, 1f);
+
+            // No integrating while the pedal is already pinned the way the error pushes. A
+            // full throttle climb out of a corner otherwise stores up to a whole pedal of
+            // demand, which then held the throttle open for half a second after the car
+            // reached a lower target: 7 km/h over a follow cap in a chicane, and a touch.
+            float unclamped = error * SpeedGain + _speedIntegral;
+            bool pinned = (unclamped >= 1f && error > 0f) || (unclamped <= -1f && error < 0f);
+            if (!pinned)
+                _speedIntegral = Clamp(_speedIntegral + error * dt * SpeedIntegralGain, -1f, 1f);
             float demand = error * SpeedGain + _speedIntegral;
 
             if (demand >= 0f)

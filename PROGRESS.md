@@ -10,120 +10,62 @@ concrete action is. Everything below it is detail.
 
 ## 1. Resume here
 
-**Last updated:** 2026-09-23 (diagnosed why cars touch in traffic, no code changed)
+**Last updated:** 2026-09-23 (the Phase 3 race criterion passes)
 
-**Last completed:** The diagnosis the brief below asked for. Telemetry from a scratch
-copy of the race loop traced every contact in the testcircuit repro, and both lap-one
-contacts at Monza, to two causes in `RaceDriver`. Nothing is fixed yet, and the race
-exit criterion still fails.
+**Last completed:** Cars no longer touch in traffic. `--race monza --cars 16 --laps 10`
+finishes with no contacts on ten seeds, where it used to leave two on the opening lap,
+and the four second testcircuit repro that had six contacts is clean. What changed and
+what each change fixed is in the session log, section 8, and in `Sim/README.md` under
+"Bugs the race caught".
 
-**Next action:** Step 1 of the brief below, then cause 1, the overtaking decision in
-`RaceDriver.Observe`. Everything else in this file is still true.
-
-**In progress (WIP, seventh session):** step 1, race telemetry, is DONE: `--race ...
---csv <path>`. With it on, the repro prints identical contacts, laps and summary, and
-its rows agree with the scratch probe's. Step 2 is next and not started.
+**Next action:** A decision for you, because it trades safety against racing: whether
+to make passes complete now (below). If that can wait, go on to the Unity install.
 
 ---
 
-### Next: why cars touch in traffic (diagnosed, not fixed)
+### Where the race stands
 
-**Minimal repro. Four seconds, deterministic, verified identical across runs:**
+**Default grid, fastest car on pole.** Seeds 1 to 5, three laps, before and after:
 
-```bash
-dotnet run --project Sim/CarRace.Harness -c Release -- --race testcircuit --cars 8 --laps 3 --verbose
-#   6 contacts, 3 on lap one. Every single one of them involves AI 02.
-```
-
-**It is a density effect, and the threshold is sharp:**
-
-| circuit | clean up to | fails from |
+| scenario | contacts | spins |
 |---|---|---|
-| Monza | 8 cars | 10 cars (2 contacts, both on lap one) |
-| testcircuit | 6 cars | 8 cars (6 contacts, 3 on lap one) |
+| testcircuit, 8 cars | 14 before, 0 after | 66 before, 0 after |
+| Monza, 16 cars | 30 before, 0 after | 109 before, 0 after |
 
-Seed 1, the default, is one of the milder seeds. With 16 cars over 3 laps of Monza,
-seeds 2 to 5 give 5 to 9 contacts, 3 to 8 of them on lap one (`--seed 4` gives 9 and 8).
+Seeds 6 to 10, which no decision was based on, are clean as well, and so is the full ten
+lap race on seeds 1 to 10.
 
-**How it was found.** `--race` still has no `--csv`. A scratch copy of `RaceRun.Run`,
-kept outside the repo, logged every car every 20 ms and reproduced the harness's
-`CONTACT` lines exactly on both circuits, so its telemetry can be trusted. It was not
-committed, which is why step 1 below is to add the same logging properly.
+**Reverse grid, fastest car last.** Seeds 1 to 10, three laps, both circuits together:
 
-**Cause 1: the overtaking decision churns, and every change of mind is a lane change.**
-A car held up behind another re-decides every 20 ms whether to pass and on which side,
-with no memory of what it decided before. Behind AI 01, AI 02's target line went -2.8,
-0, -2.8, 0 in four seconds. At around 160 km/h behind AI 07 it went from +2.8 to 0 and
-then to -2.8 in about 0.8 s. Three things make it churn:
+| | contacts | spins | clean passes |
+|---|---|---|---|
+| before | 105 | 345 | 6 |
+| after | 2 | 37 | 16 |
 
-- The "in the way" test is a hard 2.2 m lateral threshold, which is about as far as
-  the pass itself moves the car. Once the car has pulled 2.2 m out, the car it is
-  passing stops counting, `_wantedOffset` resets to zero, and it steers back in behind,
-  where the car counts again. Measured: AI 07 dropped out at a lateral gap of 2.22 m
-  and came back at 2.12 m.
-- `quicker` compares the follower's plan speed with the leader's actual speed. Out of a
-  corner every car runs several m/s under its plan, so a slower driver judges itself
-  quicker. AI 02 (pace 0.835) went to pass AI 01 (pace 0.847) because its plan said
-  26.2 m/s and AI 01 was doing 24.7, while AI 01's own plan said 29.8.
-- `SideToPass` only sees cars 0 to 20 m ahead. The `MathF.Abs` round `Distance` does
-  nothing, because `Distance` is never negative, so a car alongside or just behind on
-  the chosen side is invisible. The first lap-one contact at Monza is exactly this: at
-  18.4 s AI 15 switched its pass from the left to the right and moved across AI 16,
-  which was 6 to 8 m behind on the right, in the braking zone for the first chicane.
+A clean pass is one car getting from 5 m behind another to 5 m ahead with neither
+sliding past 15 degrees within 2 s of it. Before the fix every place that changed on the
+default grid changed because somebody spun. These counts come from a scratch script
+reading `--csv` output, not from the harness.
 
-On the testcircuit the lane changes spin cars rather than hit them. AI 02's last swing
-back towards the inside of a fast right-hander, at about 130 km/h on full throttle,
-saturated its rear tyres. The path controller then turned the slide into a growing
-weave: sideslip -15, then +16, then a spin, with the steering at full lock each way,
-all inside about 2.5 s. Every spin that started an incident came after 1 to 7 of these
-flips in the preceding 4 s, always while held up behind someone. No car spun on clear
-road.
+### Still not right: passes rarely complete
 
-**The causal check.** Alone, with the same plan and grid slot, AI 02's worst sideslip
-all race is 6.7 degrees, and it takes the place where it spun at 1.6 degrees. With
-overtaking switched off (`OvertakeMargin = 1e6`, so nobody ever judges itself quicker),
-contacts over five seeds:
+On the default grid nobody needs to pass, so the race is a procession, and that is
+correct. With `--reverse-grid` it is not: the fastest driver starts last and finishes
+last. A driver now commits to a pass properly, but `SafetyCap` treats a car in the next
+lane, 2.2 to 4 m across, as one it may sit alongside but not close on, so a pass never
+gets from 6.5 m behind to alongside unless the other car slows.
 
-| seed | testcircuit, 8 cars, on / off | Monza, 16 cars, 3 laps, on / off |
-|---|---|---|
-| 1 | 6 / 0 | 4 / 1 |
-| 2 | 1 / 0 | 5 / 0 |
-| 3 | 2 / 0 | 6 / 0 |
-| 4 | 4 / 0 | 9 / 1 |
-| 5 | 1 / 0 | 6 / 1 |
+**Tried and backed out:** letting a car in the next lane be closed on at up to 4 m/s.
+Passes worked, 60 clean ones over ten reverse-grid races, but lanes merge where the road
+narrows. The room clamp squeezes both offsets together, and a car closing at 5 m/s found
+itself in the other car's lane: three contacts in every default testcircuit race. The
+allowance needs a look-ahead, so that it applies only while the road stays wide enough
+for both lanes over the stopping distance ahead, and the old bound applies otherwise.
+Not started.
 
-**Cause 2: rejoining the line in front of a car that is too close.** The Monza contact
-that survives with overtaking off is the same one on every seed: AI 01 and AI 02, the
-front row, at s = 716 m in the first chicane, about 24.7 s in. They go in side by side
-about 3 m apart. AI 02 comes out roughly 8 m ahead, the side-by-side rule lets go, and it
-moves back towards the racing line across AI 01's nose while braking. AI 01's safety cap
-still allowed 12.2 m/s against AI 02's 10.5 and falling. One reason is that the gap is a
-difference of racing line sample indices: it read about 10 m while the cars were 7.3 m
-apart, and the minimum gap leaves only 2.1 m of daylight, so an error that size uses
-all of it. That is hypothesis 3 of the previous brief.
-
-**The previous brief's hypotheses.** 1 is confirmed, with the lane change churn as what
-puts a car beyond its tyres. 3 is confirmed for cause 2. 2 and 4 were not tested on their
-own, and nothing in the telemetry called for them.
-
-**Found on the way, which make things worse but do not start them** (detail in section
-6): a car spun past 90 degrees looks almost straight to its own recovery logic and gets
-throttle while sliding backwards; the path controller has no yaw rate term; and a spun
-car's negative speed can switch off the safety cap of the car behind it.
-
-**Steps, in order:**
-
-1. DONE. Add per-car telemetry to `--race`: `--csv` with the `--lap` columns plus the
-   traffic decisions (blocked by, following, overtaking, wanted offset, line offset,
-   lateral from line, cap). Check it by confirming the repro still prints the same six
-   contacts.
-2. Cause 1. A pass needs to be a commitment rather than a verdict retaken every 20 ms:
-   keep the side until the car is ahead or the pass is clearly off, judge "quicker" on
-   like-for-like terms, and look alongside and behind on the chosen side as well as
-   ahead. Done when the testcircuit repro has no contacts.
-3. Cause 2. Measure the gap as distance on the road rather than index difference, and do
-   not rejoin the line in front of a car closer than the braking bound allows. Done when
-   `--race monza --cars 16 --laps 10` passes, on seeds 2 to 5 as well as seed 1.
+Also open, in section 6: 2 contacts and 37 spins left across ten reverse-grid races, a
+car spun past 90 degrees looks straight to its own recovery, and the path controller has
+no yaw rate term.
 
 ---
 
@@ -132,20 +74,15 @@ car's negative speed can switch off the safety cap of the car behind it.
 describes, and drive it. Expect a few compile errors on first import where the
 stub's signatures differ from the real engine, and fix the stub when you hit one.
 
-**Nothing is half-finished.** Three checks pass on a clean run:
+**Nothing is half-finished.** These pass on a clean run:
 
 ```bash
 Tools/.venv/bin/python Tools/verify_all.py                     # expect: 6 of 6 circuits pass
 dotnet run --project Sim/CarRace.Harness -c Release            # expect: All 5 checks pass
 dotnet run --project Sim/CarRace.Harness -c Release -- --lap all  # expect: 6 of 6 on track
 dotnet build Sim/CarRace.UnityCheck -c Release                 # expect: 0 Error(s)
-```
-
-One suite does **not** pass, on purpose rather than by neglect:
-
-```bash
 dotnet run --project Sim/CarRace.Harness -c Release -- --race monza --cars 16 --laps 10
-#   expect: 16 of 16 finish, 2 contacts on lap one, FAIL, exit code 1
+#   expect: 16 of 16 finished, 0 contacts, PASS
 ```
 
 The four WIP rows in section 3 are WIP because compiling is not running. Nothing
@@ -228,26 +165,22 @@ physics has never driven a corner the track pipeline produced.
 | Racing line offsets and a speed cap on the driver | DONE | `PathDriver.LineOffsetM`, `SpeedCapMs`. Offset lines also get a lower speed limit, because the inside of a corner is a tighter radius than the plan was written for. |
 | AI personalities and traffic awareness | DONE | `RaceDriver`. Pace spread, braking-distance safety bound, side-by-side separation, picking a side to pass. |
 | Race control: grid, laps, positions, classification | DONE | `RaceControl`. Grid behind the line so every car drives the same distance. |
-| Headless race | WIP | `--race` runs. **The exit criterion is not met.** See below. |
+| Headless race | DONE | `--race monza --cars 16 --laps 10`: 16 of 16 finish with no contacts, on seeds 1 to 10. Section 7. Passes rarely complete; section 1. |
 | Race telemetry | DONE | `--race ... --csv <path>`. One row per car every 20 ms: the `--lap` columns plus blocked by, following, overtaking, wanted and driven offset, and the cap. |
 | Catching a slide | WIP | Partial. `PathDriver` counter-steers and lifts above 12 degrees of sideslip, which stopped spun cars crawling for the rest of the race, but 11 crawl reports in a ten-lap race still show more than 25 degrees. |
 | Flags, penalties, pit stops | TODO | Not started. |
 
-**Where the race stands.** Sixteen cars, ten laps of Monza, in about 20 seconds of
-wall time. Everyone finishes, the grid order changes on merit, and lap times spread
-by a few seconds across the field. What does not pass is the criterion itself:
+**Where the race stands.** Sixteen cars, ten laps of Monza, in about 18 seconds of
+wall time. Everyone finishes, nobody touches, and lap times spread by pace, 2:32 to
+2:38. The finishing order is the grid order, which is right for a grid with the fastest
+car on pole and wrong for a reversed one, because passes rarely complete. Section 1 has
+the numbers before and after, and why passing is the next question.
 
 ```
-16 cars, 10 laps, Monza   4 contacts, 2 on lap one    FAIL
-16 cars,  3 laps, Monza   4 contacts, 2 on lap one    FAIL
- 8 cars,  3 laps, Monza   0 contacts                  PASS
-10 cars,  3 laps, testcircuit   4 contacts, 4 on lap one   FAIL
+16 cars, 10 laps, Monza         0 contacts    PASS, seeds 1 to 10
+16 cars,  3 laps, Monza         0 contacts    PASS, seeds 1 to 10
+ 8 cars,  3 laps, testcircuit   0 contacts    PASS, seeds 1 to 10
 ```
-
-Eight cars is clean; sixteen is not, and the test that matters is sixteen. The
-failure is a density effect with a sharp threshold, and it is deterministic. The
-brief in section 1 has the current evidence, the minimal four second repro, and what
-has already been ruled out.
 
 ### Phase 5, LAN multiplayer
 
@@ -352,10 +285,16 @@ Known, deliberate, and not blocking. Recorded so they are not rediscovered.
 
 **Racing a field**
 
-- Two contacts on the opening lap with sixteen cars, none with eight. Diagnosed in
-  section 1. Contact is counted and reported, never simulated: making two cars
-  bounce off each other is the physics engine's job, in Unity, where they are
-  already rigid bodies that collide.
+- Passes rarely complete, so a reversed grid stays reversed. Section 1 has why, what
+  was tried, and what a fix needs. Contact is counted and reported, never simulated:
+  making two cars bounce off each other is the physics engine's job, in Unity, where
+  they are already rigid bodies that collide.
+- The pass logic's numbers are first guesses and barely exercised, because so few
+  passes get far enough to test them: 8 s before giving up, 5 s before trying the same
+  car again, 10 m past before it counts as done, 10 m looked at behind.
+- Drivers know each other's pace, the way lap times would tell them, and that is what
+  decides who is quicker. A driver judging it from watching the car in front would be
+  more honest and far more work, and nothing yet needs it.
 - Spin recovery is partial. A car that loses it still ends up crawling, and being
   hit while crawling is what most of the remaining contacts are.
 - Recovery cannot see a spin past 90 degrees. `PathDriver.Sideslip`, and
@@ -368,13 +307,14 @@ Known, deliberate, and not blocking. Recorded so they are not rediscovered.
 - The path controller has no yaw rate term. Its heading and cross-track terms act on
   angles alone, and in the repro a rear slide at about 130 km/h grew through two
   reversals into a spin. That is the likely reason a lane change became a spin rather
-  than a wobble, though it was not tested on its own. Fixing cause 1 in section 1
-  removes the lane changes that set it off, which is why this comes second.
-- `Seen.SpeedMs` is speed along the car's own nose, so a spun car reports a negative
-  speed. Inside the minimum gap `Stoppable` then returns a negative number, `SafetyCap`
-  passes it on, and `EaseCap` reads any negative cap as no cap at all. Seen once, on
-  AI 03 at 40.7 s, which was already spinning and so changed nothing, but it is the
-  wrong answer in exactly the situation the cap exists for.
+  than a wobble, though it was not tested on its own. The lane changes that set it off
+  are fixed and the default grid has not spun since, but the 37 spins left across ten
+  reverse-grid races make this the first suspect for those.
+- The side-by-side rule still flickers for two cars hovering near its 8 m edge,
+  because close up the gap is the smaller of the racing line distance, which moves in
+  2 m steps, and the straight line. It moves the line they drive by a few centimetres.
+  Measuring along the road's direction instead removed the flicker and broke three other
+  rules, since it reads two cars side by side as no distance apart; see `Gap`.
 - Every car in the field is the same car. Different models per driver is a Phase 6
   question and needs more than one validated `CarConfig`.
 - The AI has no notion of defending a position, of tyres, or of fuel.
@@ -433,9 +373,14 @@ dotnet run --project Sim/CarRace.Harness -c Release -- --lap all
 dotnet run --project Sim/CarRace.Harness -c Release -- --net monza --cars 16 --seconds 30
 #   expect: "PASS", worst error under 0.5 m, exit code 0
 
-# a field of AI cars. Passes at eight cars, fails at sixteen; see section 3.
+# a field of AI cars. The second is the Phase 3 exit criterion; try other seeds with
+# --seed N, since seed 1 was one of the easier ones before the fix.
 dotnet run --project Sim/CarRace.Harness -c Release -- --race monza --cars 8 --laps 3
 #   expect: "8 of 8 finished, 0 contacts", exit code 0
+dotnet run --project Sim/CarRace.Harness -c Release -- --race monza --cars 16 --laps 10
+#   expect: "16 of 16 finished, 0 contacts", PASS, exit code 0, about 18 s
+dotnet run --project Sim/CarRace.Harness -c Release -- --race testcircuit --cars 8 --laps 3
+#   expect: "8 of 8 finished, 0 contacts", the old four second repro
 
 # diagnostics, when something is wrong
 dotnet run --project Sim/CarRace.Harness -c Release -- --trace    # launch, skidpad
@@ -476,6 +421,35 @@ learned, so context is not lost between sessions.
   work existed with no history and no backup.
 - Added this file, and a rule in `CLAUDE.md` section 5 to keep it current during
   work rather than at the end.
+
+### 2026-09-23, seventh session
+
+- Fixed the race. Sixteen cars finish ten laps of Monza with no contacts on seeds 1 to
+  10, and the testcircuit repro is clean. Added `--race --csv` first and checked it
+  changed nothing, then worked only from telemetry and a scratch benchmark that counted
+  contacts, spins, clean passes, line changes and how deep the start compresses, over
+  seeds 1 to 5, with 6 to 10 held back to check the result at the end.
+- Kept: a pass is a commitment; "quicker" compares pace, or spots a car in trouble;
+  choosing a side looks alongside and behind; the follow cap applies all the time rather
+  than only below the car's speed; close up, the gap is the straight line when that is
+  shorter; the speed controller in `PathDriver` stops integrating while pinned; a car
+  going backwards counts as stopped; and in the next lane a car is held alongside rather
+  than dropped behind. `Sim/README.md` has each one as a bug the race caught.
+- The `PathDriver` change reaches single laps too. They are 0.1 to 0.3% slower, all six
+  still on track, and every circuit keeps the same or more room to the edge: the old
+  controller was overshooting its plan by a few km/h into slow corners, alone as well.
+- Backed out, and written down so they are not tried blind again: letting a car close on
+  one in the next lane, which made passing work and then crashed where lanes merge, and
+  measuring the gap along the road's direction, which read two cars side by side as no
+  distance apart.
+- The lesson is that fixing one thing kept uncovering an older one it had been hiding.
+  The windup hid the side-by-side cap blips, the rounded index gap hid a rule that pushed
+  cars away from the one following them, and the old chaos hid the follow cap switching
+  on and off. Counting more than contacts is what caught each of these: the start
+  compression and the spin count moved long before any contact did.
+- Zero contacts is easy to get by never passing, and switching overtaking off did
+  exactly that during the diagnosis. That is why clean passes are counted. There had
+  never been one on the default grid before this session.
 
 ### 2026-09-23, sixth session
 

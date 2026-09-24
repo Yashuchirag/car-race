@@ -113,6 +113,8 @@ namespace CarRace.Harness
                             LateralM = drivers[i].Path.LateralFromLineM,
                             SpeedMs = Vector3.Dot(rigs[i].Body.State.Velocity,
                                                   rigs[i].Body.State.Forward),
+                            Pace = drivers[i].Pace,
+                            Position = rigs[i].Body.State.Position,
 
                             // A retired car is behind the barriers, not in the middle of the
                             // road. Leaving it in the field makes everyone queue behind a
