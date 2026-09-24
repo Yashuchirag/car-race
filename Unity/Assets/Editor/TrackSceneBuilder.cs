@@ -39,6 +39,15 @@ namespace CarRace.UnityGame.EditorTools
         const string BarrierMaterialPath = "Assets/Materials/Barrier.mat";
         const string ArrowMaterialPath = "Assets/Materials/DirectionArrow.mat";
         const int ArrowEverySamples = 25;   // 50 m at 2 m spacing
+        const string EdgeLineMaterialPath = "Assets/Materials/RoadLine.mat";
+        const string KerbRedMaterialPath = "Assets/Materials/KerbRed.mat";
+        const string KerbWhiteMaterialPath = "Assets/Materials/KerbWhite.mat";
+        const float EdgeLineWidthM = 0.2f;
+        const float EdgeLineInsetM = 0.25f;     // from the road's edge to the line's outer side
+        const float KerbWidthM = 1.2f;
+        const float KerbBelowRadiusM = 150f;    // corners tighter than this get kerbs
+        const int KerbRunOnSamples = 5;         // 10 m before and after
+        const float PaintLiftM = 0.02f;
         const string BarrierPhysicsPath = "Assets/Physics/Barrier.asset";
         const string BarrierLayerName = "Barrier";
         const float BarrierHeightM = 1.2f;
@@ -118,7 +127,11 @@ namespace CarRace.UnityGame.EditorTools
             Vector3[] right = RightOf(centre);
 
             var root = new GameObject(track.name);
-            var roadMaterial = SkidpadSceneBuilder.EnsureMaterial(RoadMaterialPath, new Color(0.22f, 0.22f, 0.24f), null, Vector2.one);
+            var roadMaterial = SkidpadSceneBuilder.EnsureMaterial(RoadMaterialPath, new Color(0.3f, 0.3f, 0.32f), null, Vector2.one);
+            // A little lighter than it was, set on every build so older projects get it too:
+            // at 0.22 the white lines and kerbs had too little to stand out against.
+            roadMaterial.SetColor("_BaseColor", new Color(0.3f, 0.3f, 0.32f));
+            EditorUtility.SetDirty(roadMaterial);
             var grassMaterial = SkidpadSceneBuilder.EnsureMaterial(GrassMaterialPath, new Color(0.22f, 0.42f, 0.16f), null, Vector2.one);
 
             // Road edges from the centreline and its widths. The verges start at the road edge
@@ -137,6 +150,7 @@ namespace CarRace.UnityGame.EditorTools
             }
 
             var road = Strip("Road", root, leftEdge, rightEdge, roadMaterial, asphalt);
+            RoadMarkings(root, centre, right, leftEdge, rightEdge, asphalt);
             Strip("Verge Left", root, leftOuter, leftEdge, grassMaterial, grass);
             Strip("Verge Right", root, rightEdge, rightOuter, grassMaterial, grass);
 
@@ -383,6 +397,118 @@ namespace CarRace.UnityGame.EditorTools
                 collider.sharedMaterial = surface;
             }
             return go;
+        }
+
+        /// <summary>
+        /// What makes the strip of tarmac read as a circuit: a solid white line just inside
+        /// each edge for the whole lap, a white start line across the road at sample 0, and
+        /// red and white kerbs outside both edges wherever the road bends tighter than
+        /// KerbBelowRadiusM, running on KerbRunOnSamples either side. The kerbs carry an
+        /// asphalt collider, so a car riding one keeps its grip instead of dropping onto the
+        /// grass beneath. The lines are paint: no collider.
+        /// </summary>
+        static void RoadMarkings(GameObject root, Vector3[] centre, Vector3[] right, Vector3[] leftEdge, Vector3[] rightEdge,
+                                 PhysicsMaterial asphalt)
+        {
+            int n = centre.Length;
+            Vector3 lift = Vector3.up * PaintLiftM;
+            var white = SkidpadSceneBuilder.EnsureMaterial(EdgeLineMaterialPath, new Color(0.92f, 0.92f, 0.92f), null, Vector2.one);
+
+            var outer = new Vector3[n];
+            var inner = new Vector3[n];
+            for (int i = 0; i < n; i++)
+            {
+                outer[i] = leftEdge[i] + right[i] * EdgeLineInsetM + lift;
+                inner[i] = leftEdge[i] + right[i] * (EdgeLineInsetM + EdgeLineWidthM) + lift;
+            }
+            Strip("Edge Line Left", root, outer, inner, white, null);
+            for (int i = 0; i < n; i++)
+            {
+                inner[i] = rightEdge[i] - right[i] * (EdgeLineInsetM + EdgeLineWidthM) + lift;
+                outer[i] = rightEdge[i] - right[i] * EdgeLineInsetM + lift;
+            }
+            Strip("Edge Line Right", root, inner, outer, white, null);
+
+            // The start line: half a metre deep, edge to edge, at sample 0.
+            Vector3 along = new Vector3(-right[0].z, 0f, right[0].x) * 0.25f;
+            var start = new Mesh { name = "Start Line" };
+            start.SetVertices(new List<Vector3>
+            {
+                leftEdge[0] - along + lift, rightEdge[0] - along + lift, leftEdge[0] + along + lift, rightEdge[0] + along + lift,
+            });
+            start.SetTriangles(FacingUp(start.vertices, new List<int> { 0, 2, 1, 1, 2, 3 }), 0);
+            start.RecalculateNormals();
+            var startLine = new GameObject("Start Line");
+            startLine.transform.SetParent(root.transform, false);
+            startLine.AddComponent<MeshFilter>().sharedMesh = start;
+            startLine.AddComponent<MeshRenderer>().sharedMaterial = white;
+
+            // Kerbs where the centreline's radius, over three samples either side, is tight.
+            var kerbed = new bool[n];
+            for (int i = 0; i < n; i++)
+            {
+                if (Radius(centre[(i - 3 + n) % n], centre[i], centre[(i + 3) % n]) >= KerbBelowRadiusM) continue;
+                for (int k = -KerbRunOnSamples; k <= KerbRunOnSamples; k++) kerbed[(i + k + n) % n] = true;
+            }
+            var red = SkidpadSceneBuilder.EnsureMaterial(KerbRedMaterialPath, new Color(0.8f, 0.08f, 0.06f), null, Vector2.one);
+            var kerbWhite = SkidpadSceneBuilder.EnsureMaterial(KerbWhiteMaterialPath, new Color(0.92f, 0.92f, 0.92f), null, Vector2.one);
+            Kerbs("Kerbs Left", root, kerbed, i => leftEdge[i] - right[i] * KerbWidthM + lift, i => leftEdge[i] + lift, red, kerbWhite, asphalt);
+            Kerbs("Kerbs Right", root, kerbed, i => rightEdge[i] + lift, i => rightEdge[i] + right[i] * KerbWidthM + lift, red, kerbWhite, asphalt);
+        }
+
+        /// <summary>A block of kerb per sample where kerbed, alternating red and white, left
+        /// then right in the direction of travel.</summary>
+        static void Kerbs(string name, GameObject parent, bool[] kerbed, Func<int, Vector3> left, Func<int, Vector3> right,
+                          Material red, Material white, PhysicsMaterial surface)
+        {
+            int n = kerbed.Length;
+            var vertices = new List<Vector3>();
+            var redTriangles = new List<int>();
+            var whiteTriangles = new List<int>();
+            for (int i = 0; i < n; i++)
+            {
+                int j = (i + 1) % n;
+                if (!kerbed[i] || !kerbed[j]) continue;
+                int a = vertices.Count;
+                vertices.Add(left(i)); vertices.Add(right(i)); vertices.Add(left(j)); vertices.Add(right(j));
+                (i % 2 == 0 ? redTriangles : whiteTriangles).AddRange(new[] { a, a + 2, a + 1, a + 1, a + 2, a + 3 });
+            }
+            if (vertices.Count == 0) return;
+
+            var mesh = new Mesh { name = name, indexFormat = UnityEngine.Rendering.IndexFormat.UInt32, subMeshCount = 2 };
+            mesh.SetVertices(vertices);
+            mesh.SetTriangles(FacingUp(vertices, redTriangles), 0);
+            mesh.SetTriangles(FacingUp(vertices, whiteTriangles), 1);
+            mesh.RecalculateNormals();
+            mesh.RecalculateBounds();
+
+            var go = new GameObject(name);
+            go.transform.SetParent(parent.transform, false);
+            go.AddComponent<MeshFilter>().sharedMesh = mesh;
+            go.AddComponent<MeshRenderer>().sharedMaterials = new[] { red, white };
+            var collider = go.AddComponent<MeshCollider>();
+            collider.sharedMesh = mesh;
+            collider.sharedMaterial = surface;
+        }
+
+        /// <summary>Triangles flipped if the first one faces down, as Strip does.</summary>
+        static List<int> FacingUp(IList<Vector3> vertices, List<int> triangles)
+        {
+            if (triangles.Count < 3) return triangles;
+            Vector3 normal = Vector3.Cross(vertices[triangles[1]] - vertices[triangles[0]],
+                                           vertices[triangles[2]] - vertices[triangles[0]]);
+            if (normal.y < 0f)
+                for (int t = 0; t < triangles.Count; t += 3)
+                    (triangles[t + 1], triangles[t + 2]) = (triangles[t + 2], triangles[t + 1]);
+            return triangles;
+        }
+
+        static float Radius(Vector3 a, Vector3 b, Vector3 c)
+        {
+            a.y = b.y = c.y = 0f;
+            float cross = Mathf.Abs((b.x - a.x) * (c.z - b.z) - (b.z - a.z) * (c.x - b.x));
+            if (cross < 1e-6f) return float.MaxValue;
+            return (a - b).magnitude * (b - c).magnitude * (c - a).magnitude / (2f * cross);
         }
 
         /// <summary>

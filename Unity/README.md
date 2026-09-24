@@ -127,7 +127,9 @@ misconfiguration, and all three failures look like a physics bug if you do not r
 
 `Assets/Editor/TrackSceneBuilder.cs` adds `CarRace, Build Track Scene`, with one entry per
 circuit. It reads the pipeline's JSON and builds the road from the centreline and its
-widths, a 15 m grass verge either side, the racing line as a braking guide, and a grid
+widths, a 15 m grass verge either side, white lines just inside both edges, a white start line,
+red and white kerbs (with tarmac grip) outside both edges wherever the road bends tighter
+than a 150 m radius, the racing line as a braking guide, and a grid
 behind the start line (see Racing the AI). The road follows the file's elevation (Spa climbs
 105 m); camber and banking are zero in every file, so it is flat across. Asphalt grips at
 1 and grass at 0.45, read by the wheels from each collider's physics material. A 1.2 m
@@ -171,6 +173,10 @@ catches up at most 0.1 s of it, so a slow machine slows briefly instead of freez
 `-aiLog` to have every AI car's state written to `ai.csv` in the harness race CSV's terms.
 
 ## Lap timing
+
+The timing panel in the top right shows the circuit and lap, the lap being driven in large
+figures, last, best and the AI reference, and three sector blocks: purple for a new best
+sector, yellow for slower than the best, green when there is no best yet, grey until done.
 
 Track scenes time laps: `TrackPath` on the circuit holds the centreline, start line at
 sample 0, and `LapTimer` on the car shows current, last and best lap, three sectors

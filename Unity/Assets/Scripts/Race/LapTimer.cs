@@ -28,7 +28,7 @@ namespace CarRace.UnityGame
         readonly float[] _splits = new float[3];
         readonly float[] _bestSectors = { float.MaxValue, float.MaxValue, float.MaxValue };
         float _lastLap = -1f, _bestLap = -1f;
-        GUIStyle _style, _warningStyle;
+        GUIStyle _warningStyle;
         float _wrongWayFor;
 
         const float WrongWaySeconds = 0.75f;
@@ -100,29 +100,75 @@ namespace CarRace.UnityGame
             }
         }
 
+        // The timing panel's colours, as broadcast timing graphics use them: purple a new best
+        // sector, yellow slower than the best, green when there is no best to compare with yet.
+        static readonly Color Panel = new Color(0.06f, 0.06f, 0.08f, 0.82f);
+        static readonly Color Header = new Color(0.02f, 0.02f, 0.03f, 0.9f);
+        static readonly Color Accent = new Color(0.9f, 0.15f, 0.1f);
+        static readonly Color Muted = new Color(0.65f, 0.65f, 0.7f);
+        static readonly Color Block = new Color(0.13f, 0.13f, 0.16f, 0.95f);
+        static readonly Color Pending = new Color(0.3f, 0.3f, 0.35f);
+        static readonly Color Purple = new Color(0.72f, 0.38f, 1f);
+        static readonly Color Green = new Color(0.25f, 0.85f, 0.35f);
+        static readonly Color Yellow = new Color(1f, 0.82f, 0.15f);
+
+        GUIStyle _headerStyle, _bigStyle, _labelStyle, _valueStyle, _sectorLabel, _sectorTime, _sectorDelta;
+
         void OnGUI()
         {
             if (!enabled || Hud.Hidden) return;
-            _style ??= new GUIStyle(GUI.skin.label) { normal = { textColor = Color.white } };
-            _style.fontSize = Hud.Font(18);
+            Styles();
 
+            float width = Hud.Px(330f), pad = Hud.Px(14f);
+            float x = Screen.width - width - Hud.Px(10f), y = Hud.Px(10f);
+            float height = Hud.Px(track.referenceLapSeconds > 0f ? 250f : 226f);
+
+            Fill(new Rect(x, y, width, height), Panel);
+            Fill(new Rect(x, y, Hud.Px(4f), height), Accent);
+
+            // Header: circuit and lap number.
+            float headerHeight = Hud.Px(30f);
+            Fill(new Rect(x + Hud.Px(4f), y, width - Hud.Px(4f), headerHeight), Header);
+            _headerStyle.alignment = TextAnchor.MiddleLeft;
+            GUI.Label(new Rect(x + pad, y, width - 2f * pad, headerHeight), track.trackName.ToUpperInvariant(), _headerStyle);
+            _headerStyle.alignment = TextAnchor.MiddleRight;
+            GUI.Label(new Rect(x + pad, y, width - 2f * pad, headerHeight), $"LAP {_laps + 1}", _headerStyle);
+
+            // The lap being driven, large.
             float current = _running ? _clock - _lapStart : 0f;
-            string text = $"{track.trackName}\nLap {_laps + 1}   {Format(current)}" +
-                          $"\nLast  {(_lastLap < 0f ? "-" : Format(_lastLap))}" +
-                          $"\nBest  {(_bestLap < 0f ? "-" : Format(_bestLap))}";
-            if (track.referenceLapSeconds > 0f)
-                text += $"\nAI ref {Format(track.referenceLapSeconds)}";
+            float row = y + headerHeight + Hud.Px(6f);
+            GUI.Label(new Rect(x + pad, row, width - 2f * pad, Hud.Px(46f)), Format(current), _bigStyle);
+            row += Hud.Px(52f);
 
+            Row(x, pad, width, ref row, "LAST", _lastLap < 0f ? "-" : Format(_lastLap), Color.white);
+            Row(x, pad, width, ref row, "BEST", _bestLap < 0f ? "-" : Format(_bestLap), _bestLap < 0f ? Color.white : Purple);
+            if (track.referenceLapSeconds > 0f)
+                Row(x, pad, width, ref row, "AI REF", Format(track.referenceLapSeconds), Muted);
+
+            // Sectors: a block each, a bar in its colour along the top.
+            row += Hud.Px(8f);
+            float gap = Hud.Px(6f), blockWidth = (width - 2f * pad - 2f * gap) / 3f, blockHeight = Hud.Px(56f);
             for (int s = 0; s < 3; s++)
             {
+                var block = new Rect(x + pad + s * (blockWidth + gap), row, blockWidth, blockHeight);
                 bool done = s < _nextGate;
-                text += $"\nS{s + 1}  " + (done ? $"{_splits[s],6:0.000}{Delta(_splits[s], _bestSectors[s])}" : "  -");
+                float best = _bestSectors[s];
+                Color colour = !done ? Pending
+                             : best == float.MaxValue ? Green
+                             : _splits[s] <= best ? Purple : Yellow;
+                Fill(block, Block);
+                Fill(new Rect(block.x, block.y, block.width, Hud.Px(4f)), colour);
+                GUI.Label(new Rect(block.x, block.y + Hud.Px(6f), block.width, Hud.Px(16f)), $"S{s + 1}", _sectorLabel);
+                _sectorTime.normal.textColor = done ? colour : Pending;
+                GUI.Label(new Rect(block.x, block.y + Hud.Px(20f), block.width, Hud.Px(20f)),
+                          done ? _splits[s].ToString("0.000") : "-", _sectorTime);
+                if (done && best != float.MaxValue)
+                {
+                    _sectorDelta.normal.textColor = colour;
+                    GUI.Label(new Rect(block.x, block.y + Hud.Px(38f), block.width, Hud.Px(16f)),
+                              (_splits[s] - best).ToString("+0.000;-0.000"), _sectorDelta);
+                }
             }
-
-            float width = Hud.Px(290f), height = Hud.Px(26f * (track.referenceLapSeconds > 0f ? 8 : 7) + 12f);
-            var box = new Rect(Screen.width - width - Hud.Px(10f), Hud.Px(10f), width, height);
-            GUI.Box(box, GUIContent.none);
-            GUI.Label(new Rect(box.x + Hud.Px(10f), box.y + Hud.Px(4f), width - Hud.Px(20f), height), text, _style);
 
             if (_wrongWayFor >= WrongWaySeconds)
             {
@@ -136,8 +182,40 @@ namespace CarRace.UnityGame
             }
         }
 
-        static string Delta(float value, float best)
-            => best == float.MaxValue || best == value ? "" : $"  {value - best:+0.000;-0.000}";
+        void Row(float x, float pad, float width, ref float y, string label, string value, Color colour)
+        {
+            float height = Hud.Px(24f);
+            GUI.Label(new Rect(x + pad, y, width - 2f * pad, height), label, _labelStyle);
+            _valueStyle.normal.textColor = colour;
+            GUI.Label(new Rect(x + pad, y, width - 2f * pad, height), value, _valueStyle);
+            y += height;
+        }
+
+        static void Fill(Rect rect, Color colour)
+        {
+            Color before = GUI.color;
+            GUI.color = colour;
+            GUI.DrawTexture(rect, Texture2D.whiteTexture);
+            GUI.color = before;
+        }
+
+        void Styles()
+        {
+            _headerStyle ??= new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, normal = { textColor = new Color(0.9f, 0.9f, 0.92f) } };
+            _bigStyle ??= new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft, normal = { textColor = Color.white } };
+            _labelStyle ??= new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft, normal = { textColor = Muted } };
+            _valueStyle ??= new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleRight };
+            _sectorLabel ??= new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, normal = { textColor = Muted } };
+            _sectorTime ??= new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            _sectorDelta ??= new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter };
+            _headerStyle.fontSize = Hud.Font(14);
+            _bigStyle.fontSize = Hud.Font(38);
+            _labelStyle.fontSize = Hud.Font(13);
+            _valueStyle.fontSize = Hud.Font(18);
+            _sectorLabel.fontSize = Hud.Font(12);
+            _sectorTime.fontSize = Hud.Font(16);
+            _sectorDelta.fontSize = Hud.Font(12);
+        }
 
         static string Format(float seconds)
         {
