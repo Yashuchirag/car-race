@@ -12,6 +12,9 @@ namespace CarRace.UnityGame
     /// moves off the grid, so lap one includes the standing start, as it does in a race. A
     /// respawn, which shows up as the car jumping more than 25 m in one physics step, abandons
     /// the lap in progress. The best lap is kept per circuit between sessions.
+    ///
+    /// Also shows WRONG WAY across the screen when the car has pointed back along the lap
+    /// for WrongWaySeconds, so that after a spin it is clear which way to turn.
     /// </summary>
     public sealed class LapTimer : MonoBehaviour
     {
@@ -25,7 +28,10 @@ namespace CarRace.UnityGame
         readonly float[] _splits = new float[3];
         readonly float[] _bestSectors = { float.MaxValue, float.MaxValue, float.MaxValue };
         float _lastLap = -1f, _bestLap = -1f;
-        GUIStyle _style;
+        GUIStyle _style, _warningStyle;
+        float _wrongWayFor;
+
+        const float WrongWaySeconds = 0.75f;
 
         string BestKey => $"CarRace.BestLap.{track.trackName}";
 
@@ -50,6 +56,13 @@ namespace CarRace.UnityGame
             }
             _lastPosition = position;
             _index = track.Nearest(position, _index);
+
+            Vector3 along = track.centre[(_index + 1) % n] - track.centre[(_index - 1 + n) % n];
+            Vector3 facing = car.transform.forward;
+            along.y = 0f;
+            facing.y = 0f;
+            bool backwards = Vector3.Dot(along.normalized, facing.normalized) < -0.2f;
+            _wrongWayFor = backwards ? _wrongWayFor + Time.fixedDeltaTime : 0f;
 
             if (!_running)
             {
@@ -109,6 +122,16 @@ namespace CarRace.UnityGame
             var box = new Rect(Screen.width - width - 10f, 10f, width, height);
             GUI.Box(box, GUIContent.none);
             GUI.Label(new Rect(box.x + 10f, box.y + 4f, width - 20f, height), text, _style);
+
+            if (_wrongWayFor >= WrongWaySeconds)
+            {
+                _warningStyle ??= new GUIStyle(GUI.skin.label)
+                {
+                    fontSize = 56, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter,
+                    normal = { textColor = new Color(1f, 0.15f, 0.1f) }
+                };
+                GUI.Label(new Rect(0f, Screen.height * 0.25f, Screen.width, 80f), "WRONG WAY", _warningStyle);
+            }
         }
 
         static string Delta(float value, float best)

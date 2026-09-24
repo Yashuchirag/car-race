@@ -121,7 +121,9 @@ on that line at the start of the lap. The road follows the file's elevation (Spa
 105 m); camber and banking are zero in every file, so it is flat across. Asphalt grips at
 1 and grass at 0.35, read by the wheels from each collider's physics material. A 1.2 m
 frictionless wall runs along the outside of each verge, on a `Barrier` layer the wheel
-probes ignore, so the car glances off it and cannot leave the circuit. `R` puts the car
+probes ignore, so the car glances off it and cannot leave the circuit. White arrows
+every 50 m down the middle of the road point the way the lap runs, and a red WRONG WAY
+warning appears when the car faces back along the lap for more than 0.75 s. `R` puts the car
 back on the grid.
 
 The circuits copy in from the repo, with their licence, since `Tracks_Data/` is ODbL:

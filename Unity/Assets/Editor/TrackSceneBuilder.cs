@@ -32,6 +32,8 @@ namespace CarRace.UnityGame.EditorTools
         const string GrassMaterialPath = "Assets/Materials/Grass.mat";
         const string LineMaterialPath = "Assets/Materials/RacingLine.mat";
         const string BarrierMaterialPath = "Assets/Materials/Barrier.mat";
+        const string ArrowMaterialPath = "Assets/Materials/DirectionArrow.mat";
+        const int ArrowEverySamples = 25;   // 50 m at 2 m spacing
         const string BarrierPhysicsPath = "Assets/Physics/Barrier.asset";
         const string BarrierLayerName = "Barrier";
         const float BarrierHeightM = 1.2f;
@@ -141,6 +143,11 @@ namespace CarRace.UnityGame.EditorTools
                 lineRightSide[i] = line[i] + lineRight[i] * (LineWidthM * 0.5f) + Vector3.up * 0.02f;
             }
             Strip("Racing Line", root, lineLeftSide, lineRightSide, lineMaterial, null);
+
+            // Arrowheads down the middle of the road, pointing the way the lap runs, so that
+            // after a spin the road itself says which way to go.
+            var arrowMaterial = SkidpadSceneBuilder.EnsureMaterial(ArrowMaterialPath, new Color(0.95f, 0.95f, 0.95f), null, Vector2.one);
+            Arrows(root, centre, right, arrowMaterial);
 
             // The car on the racing line at the start of the lap, pointing along it, its origin
             // CgHeight above the road plus a few centimetres so it settles rather than starts
@@ -278,6 +285,48 @@ namespace CarRace.UnityGame.EditorTools
                 collider.sharedMaterial = surface;
             }
             return go;
+        }
+
+        /// <summary>
+        /// A flat arrowhead every ArrowEverySamples along the centreline, 4 m long and 3 m
+        /// wide, pointing along the lap. Each corner takes its height from the sample nearest
+        /// it, so the arrow lies on a sloping road instead of cutting into it, and sits 8 cm up.
+        /// </summary>
+        static void Arrows(GameObject parent, Vector3[] centre, Vector3[] right, Material material)
+        {
+            int n = centre.Length;
+            var vertices = new List<Vector3>();
+            var triangles = new List<int>();
+            Vector3 lift = Vector3.up * 0.08f;
+            for (int i = ArrowEverySamples; i < n - 2; i += ArrowEverySamples)
+            {
+                Vector3 along = new Vector3(-right[i].z, 0f, right[i].x);   // right rotated back to forward
+                Vector3 tip = centre[i] + along * 2f;
+                tip.y = centre[i + 1].y;
+                Vector3 baseCentre = centre[i] - along * 2f;
+                baseCentre.y = centre[i - 1].y;
+                int first = vertices.Count;
+                vertices.Add(tip + lift);
+                vertices.Add(baseCentre - right[i] * 1.5f + lift);
+                vertices.Add(baseCentre + right[i] * 1.5f + lift);
+                triangles.AddRange(new[] { first, first + 1, first + 2 });
+            }
+
+            // Face up, whichever way the arithmetic came out in a left-handed engine.
+            Vector3 normal = Vector3.Cross(vertices[1] - vertices[0], vertices[2] - vertices[0]);
+            if (normal.y < 0f)
+                for (int t = 0; t < triangles.Count; t += 3)
+                    (triangles[t + 1], triangles[t + 2]) = (triangles[t + 2], triangles[t + 1]);
+
+            var mesh = new Mesh { name = "Direction Arrows" };
+            mesh.SetVertices(vertices);
+            mesh.SetTriangles(triangles, 0);
+            mesh.RecalculateNormals();
+            mesh.RecalculateBounds();
+            var go = new GameObject("Direction Arrows");
+            go.transform.SetParent(parent.transform, false);
+            go.AddComponent<MeshFilter>().sharedMesh = mesh;
+            go.AddComponent<MeshRenderer>().sharedMaterial = material;
         }
 
         /// <summary>
