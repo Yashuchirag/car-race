@@ -172,6 +172,7 @@ A row only becomes DONE when its verification command passes.
 | **Feel test** | DONE | 2026-09-24, on the keyboard, by you: acceleration, cornering, braking, handbrake slides and keyboard control all fine. The Phase 1 exit criterion. Not tried on a gamepad. |
 | Keyboard stability above 120 km/h | DONE | 2026-09-24, from your report that the car is hard to hold above 120 km/h. Telemetry: at 175 km/h a key tap turned the wheels 8 degrees where the corner needs half of one, and the car stayed in a 15 degree slide after the keys were released. Replayed headlessly, the model is right (a 1 to 2 degree pulse recovers, 3 or more lifted does not) and the assist was wrong. `DriverInput` now asks for a turn rate (1.2 times grip over speed) and counter-steers on yaw rate error and on sideslip past 2 degrees. Headless keyboard scenarios: old assist spun 7 of 10, new 0 of 10, held key corners at 0.77 to 0.91 g. Compiles against real Unity and the stub. You drove it and confirmed it is much better; the telemetry agrees: on the tarmac above 120 km/h, sideslip past 5 degrees 4% of the time, slides caught near 8 degrees. Not done: throttle is still all or nothing on the keyboard. |
 | Getting back from the grass | WIP | 2026-09-24, from your report that once on the grass and against the wall it is hard to get back. Telemetry: 21 trips off the road in one Monza run, most ending at the wall. Two causes. Full throttle on the grass spun the car, 100 to 180 degrees; headless, both assists spin there. Fixed: `DriverInput` fades the throttle out between 3 and 8 degrees of sideslip, grass spins drop to 11 to 22 degrees and the tarmac results are unchanged. Not fixed: pinned against the frictionless wall at 140 km/h with the key held, the car reached 0.12 g where open grass gives 0.31, because the wall holds the rear. You chose walls that scrub speed and slightly grippier grass: the barrier now has friction 0.3 (was 0) and grass grips at 0.45 (was 0.35), which headless turns the car 30% harder on the grass (0.40 g) with no spins. The builder now writes both materials on every build, since it used to create them only when missing. Waiting on your drive. |
+| Braking at high speed | WIP | 2026-09-24, from your request for stronger braking at speed without more sliding. Headless the car already brakes at the tyres' full grip, 1.29 g from 250 km/h, and ABS holds 18% slip where the tyre gives 99.4% of its peak (the peak is at 24% and flat), so neither brakes nor ABS had anything left. In Unity your clean stops averaged about 1.0 g, swinging 0.83 to 1.45 g every half second: the car was bouncing, and at 218 km/h it left the ground on a Monza crest. Cause: the pipeline joined its 25 m elevation samples with straight lines, a slope kink every 25 m, worth up to 4.6 g vertically at 216 km/h at Monza and 7.3 g at Suzuka. `Tools/trackgen/elevation.py` now uses a periodic cubic spline plus a 25 m Gaussian: worst 0.5 g at Monza, 0.9 Silverstone, 0.6 Spa, 1.6 Suzuka (its bridge), climbs within a metre. Rebuilt the five real circuits from the cache; only `z` changed, 6 of 6 pass `verify_all.py`. More downforce (ClA 0.40/0.60 from 0.12/0.20) would add 6 to 8% braking at 190 to 250 km/h and is held back as an option. Waiting on your drive. |
 
 ### Phase 2, track pipeline
 
@@ -497,6 +498,11 @@ learned, so context is not lost between sessions.
   in the model, with every check, lap and race still passing. Full throttle on the grass
   spun the car; the keyboard assist now eases the throttle off in a slide. For the wall you
   chose friction 0.3 on the barrier and grass at 0.45 instead of 0.35.
+
+- You asked for stronger braking at speed. The brakes and ABS were already at the tyres'
+  limit headlessly; in Unity the car was bouncing over kinks in the elevation profile, one
+  every 25 m where the pipeline joined its samples with straight lines. Smoothed with a
+  spline, and the five real circuits rebuilt.
 
 ### 2026-09-23, ninth session
 
