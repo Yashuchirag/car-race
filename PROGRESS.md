@@ -20,9 +20,8 @@ sideways gap holds. The race criterion still passes on ten seeds, with no contac
 
 **Next action:** AI opponents in Unity is WIP (section 3, Phase 3): three AI cars from the
 headless `RaceDriver` on the track scene, you gridded behind them. Lap timing, recovery and
-the direction cues still wait on your drive. So does the new keyboard steering assist
-(section 3, Phase 1), from your report that the car is hard to hold above 120 km/h.
-Passing lanes remain a TODO row for later.
+the direction cues still wait on your word. The new keyboard steering assist is
+confirmed. Passing lanes remain a TODO row for later.
 
 ---
 
@@ -170,7 +169,7 @@ A row only becomes DONE when its verification command passes.
 | Driver input, keyboard and gamepad | DONE | `DriverInput.cs`. Old input manager, so a car drives with no input asset authored. | Keyboard driven in Unity; the gamepad mapping (XInput buttons and trigger axes) is written but never tried, since no pad is in use.
 | Manual shifting in the model | DONE | `Drivetrain.Shift`. Setting `Gear` directly skipped the shift time, so a manual upshift was free lap time. |
 | **Feel test** | DONE | 2026-09-24, on the keyboard, by you: acceleration, cornering, braking, handbrake slides and keyboard control all fine. The Phase 1 exit criterion. Not tried on a gamepad. |
-| Keyboard stability above 120 km/h | WIP | 2026-09-24, from your report that the car is hard to hold above 120 km/h. Telemetry: at 175 km/h a key tap turned the wheels 8 degrees where the corner needs half of one, and the car stayed in a 15 degree slide after the keys were released. Replayed headlessly, the model is right (a 1 to 2 degree pulse recovers, 3 or more lifted does not) and the assist was wrong. `DriverInput` now asks for a turn rate (1.2 times grip over speed) and counter-steers on yaw rate error and on sideslip past 2 degrees. Headless keyboard scenarios: old assist spun 7 of 10, new 0 of 10, held key corners at 0.77 to 0.91 g. Compiles against real Unity and the stub. Waiting on your drive. Not done: throttle is still all or nothing on the keyboard. |
+| Keyboard stability above 120 km/h | DONE | 2026-09-24, from your report that the car is hard to hold above 120 km/h. Telemetry: at 175 km/h a key tap turned the wheels 8 degrees where the corner needs half of one, and the car stayed in a 15 degree slide after the keys were released. Replayed headlessly, the model is right (a 1 to 2 degree pulse recovers, 3 or more lifted does not) and the assist was wrong. `DriverInput` now asks for a turn rate (1.2 times grip over speed) and counter-steers on yaw rate error and on sideslip past 2 degrees. Headless keyboard scenarios: old assist spun 7 of 10, new 0 of 10, held key corners at 0.77 to 0.91 g. Compiles against real Unity and the stub. You drove it and confirmed it is much better; the telemetry agrees: on the tarmac above 120 km/h, sideslip past 5 degrees 4% of the time, slides caught near 8 degrees. Not done: throttle is still all or nothing on the keyboard. |
 
 ### Phase 2, track pipeline
 
