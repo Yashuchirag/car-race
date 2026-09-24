@@ -102,7 +102,7 @@ namespace CarRace.UnityGame
 
         void OnGUI()
         {
-            if (!enabled) return;
+            if (!enabled || Hud.Hidden) return;
             _style ??= new GUIStyle(GUI.skin.label) { normal = { textColor = Color.white } };
             _style.fontSize = Hud.Font(18);
 

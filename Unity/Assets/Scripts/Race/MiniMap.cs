@@ -167,7 +167,7 @@ namespace CarRace.UnityGame
 
         void OnGUI()
         {
-            if (!enabled || _map == null) return;
+            if (!enabled || _map == null || Hud.Hidden) return;
             float margin = Hud.Px(10f);
             var rect = new Rect(margin, Screen.height - _px - margin, _px, _px);
             GUI.DrawTexture(rect, _map);

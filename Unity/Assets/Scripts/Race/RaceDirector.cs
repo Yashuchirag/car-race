@@ -273,7 +273,7 @@ namespace CarRace.UnityGame
 
         void OnGUI()
         {
-            if (!enabled || _control == null) return;
+            if (!enabled || _control == null || Hud.Hidden) return;
             _style ??= new GUIStyle(GUI.skin.label)
             {
                 fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter,

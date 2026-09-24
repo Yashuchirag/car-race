@@ -28,7 +28,10 @@ namespace CarRace.UnityGame
 
         void Start()
         {
-            if (!record || car == null || car.Sim == null) { enabled = false; return; }
+            // Editor and development builds only. In a release build it stalled the game for
+            // 90 ms half a minute into a race, measured by the benchmark with and without it,
+            // and a player has no use for the file.
+            if (!record || !Debug.isDebugBuild || car == null || car.Sim == null) { enabled = false; return; }
             _body = car.GetComponent<Rigidbody>();
 
             string folder = Path.Combine(Path.GetDirectoryName(Application.dataPath), "Telemetry");

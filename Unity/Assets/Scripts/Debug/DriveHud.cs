@@ -22,7 +22,7 @@ namespace CarRace.UnityGame
 
         void OnGUI()
         {
-            if (car == null || car.Sim == null) return;
+            if (Hud.Hidden || car == null || car.Sim == null) return;
             _style ??= new GUIStyle(GUI.skin.label) { normal = { textColor = Color.white } };
             _style.fontSize = Hud.Font(18);
 

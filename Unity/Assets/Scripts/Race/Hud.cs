@@ -21,5 +21,8 @@ namespace CarRace.UnityGame
         public static float Px(float pixels) => pixels * Scale;
 
         public static int Font(int size) => Mathf.Max(1, Mathf.RoundToInt(size * Scale));
+
+        /// <summary>Hides every readout, for measuring what drawing them costs (-noHud).</summary>
+        public static bool Hidden;
     }
 }

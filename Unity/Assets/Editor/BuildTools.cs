@@ -18,16 +18,25 @@ namespace CarRace.UnityGame.EditorTools
     {
         const string Scene = "Assets/Scenes/Track Royal Park Speedway.unity";
         const string Output = "Builds/Windows/CarRace.exe";
+        const string DevelopmentOutput = "Builds/WindowsDevelopment/CarRace.exe";
 
         [MenuItem("CarRace/Build Windows Player")]
-        public static void BuildWindows()
+        public static void BuildWindows() => Build(Output, BuildOptions.None);
+
+        /// <summary>A development build, whose profiler markers the benchmark can read to split a
+        /// frame into physics, scripts and rendering. Slower than the release build, so use it
+        /// for where the time goes, not for how much there is.</summary>
+        [MenuItem("CarRace/Build Windows Development Player")]
+        public static void BuildWindowsDevelopment() => Build(DevelopmentOutput, BuildOptions.Development);
+
+        static void Build(string output, BuildOptions buildOptions)
         {
             var options = new BuildPlayerOptions
             {
                 scenes = new[] { Scene },
-                locationPathName = Output,
+                locationPathName = output,
                 target = BuildTarget.StandaloneWindows64,
-                options = BuildOptions.None,
+                options = buildOptions,
             };
             BuildReport report = BuildPipeline.BuildPlayer(options);
             BuildSummary summary = report.summary;
