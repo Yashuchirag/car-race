@@ -34,8 +34,10 @@ namespace CarRace.UnityGame.EditorTools
             floor.name = "Ground";
             floor.transform.SetParent(root.transform, false);
             floor.transform.localScale = new Vector3(200f, 1f, 200f);
-            floor.GetComponent<Renderer>().sharedMaterial =
-                SkidpadSceneBuilder.EnsureMaterial(FloorMaterialPath, new Color(0.22f, 0.4f, 0.17f), null, Vector2.one);
+            var lawn = SkidpadSceneBuilder.EnsureMaterial(FloorMaterialPath, new Color(0.22f, 0.4f, 0.17f), null, Vector2.one);
+            // A plane's texture coordinates run 0 to 1 over its 2 km, so the tiling is given.
+            SurfaceTextures.ApplyGrass(lawn, Vector2.one * (2000f / SurfaceTextures.GrassTileM));
+            floor.GetComponent<Renderer>().sharedMaterial = lawn;
             var platform = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             platform.name = "Platform";
             platform.transform.SetParent(root.transform, false);

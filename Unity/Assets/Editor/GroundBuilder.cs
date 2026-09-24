@@ -18,7 +18,7 @@ namespace CarRace.UnityGame.EditorTools
     /// across, and the corridor reaches past the barrier by more than a cell, so the slope
     /// between a held cell and a free one always falls outside the barrier.
     ///
-    /// No collider: the barriers keep every car off it.
+    /// No collider: the barriers keep every car off it. Grass from SurfaceTextures.
     /// </summary>
     public static class GroundBuilder
     {
@@ -31,9 +31,7 @@ namespace CarRace.UnityGame.EditorTools
         const int CoarseEverySamples = 10;   // centreline samples used for it, 20 m apart
 
         const string LayerPath = "Assets/Materials/GroundGrass.terrainlayer";
-        const string TexturePath = "Assets/Art/Ground/grass_flat.png";
         const string MaterialPath = "Assets/Materials/Terrain.mat";
-        static readonly Color GrassColour = new Color(0.22f, 0.42f, 0.16f);   // the verges' colour
 
         public static Terrain Build(GameObject parent, Vector3[] centre, float[] widthLeft, float[] widthRight,
                                     float vergeWidthM, string dataPath)
@@ -129,31 +127,17 @@ namespace CarRace.UnityGame.EditorTools
             return terrain;
         }
 
-        /// <summary>One grass layer, a flat colour until there are textures to paint with.</summary>
+        /// <summary>One grass layer, textured by SurfaceTextures.</summary>
         static TerrainLayer EnsureLayer()
         {
             var layer = AssetDatabase.LoadAssetAtPath<TerrainLayer>(LayerPath);
-            if (layer != null) return layer;
-
-            if (AssetDatabase.LoadAssetAtPath<Texture2D>(TexturePath) == null)
+            if (layer == null)
             {
-                var pixels = new Color32[16];
-                for (int i = 0; i < pixels.Length; i++) pixels[i] = GrassColour;
-                var texture = new Texture2D(4, 4, TextureFormat.RGBA32, false);
-                texture.SetPixels32(pixels);
-                Directory.CreateDirectory(Path.GetDirectoryName(TexturePath));
-                File.WriteAllBytes(TexturePath, texture.EncodeToPNG());
-                Object.DestroyImmediate(texture);
-                AssetDatabase.ImportAsset(TexturePath);
+                layer = new TerrainLayer();
+                Directory.CreateDirectory(Path.GetDirectoryName(LayerPath));
+                AssetDatabase.CreateAsset(layer, LayerPath);
             }
-
-            layer = new TerrainLayer
-            {
-                diffuseTexture = AssetDatabase.LoadAssetAtPath<Texture2D>(TexturePath),
-                tileSize = new Vector2(10f, 10f),
-            };
-            Directory.CreateDirectory(Path.GetDirectoryName(LayerPath));
-            AssetDatabase.CreateAsset(layer, LayerPath);
+            SurfaceTextures.ApplyGrass(layer);
             return layer;
         }
 

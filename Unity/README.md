@@ -151,6 +151,14 @@ cp Tracks_Data/LICENSE /mnt/d/Dev/CarRace/Assets/Tracks/LICENSE.txt
 Each builds to `Assets/Scenes/Track <name>.unity`. The skidpad and the tracks share one
 car setup (`SkidpadSceneBuilder.PlaceCar`), so a fix to the car reaches every scene.
 
+## Surface textures
+
+`Assets/Editor/SurfaceTextures.cs` sets up and applies the surfaces' textures in one place.
+Grass is ambientCG's Grass005 (CC0, 2K colour, normal and ambient occlusion, in
+`Assets/Art/Ground/Grass005`, Git LFS) on the verges, the terrain and the lobby lawn, one
+tile every 3 m (4 m on the terrain). The track builder's strips carry texture coordinates
+in metres, so any texture tiles at a real size. Credits in `Assets/Art/CREDITS.md`.
+
 ## Render settings
 
 `Assets/Editor/GraphicsSetup.cs` applies the render settings the graphics pass starts from:

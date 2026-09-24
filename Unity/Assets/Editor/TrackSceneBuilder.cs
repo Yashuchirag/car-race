@@ -133,6 +133,7 @@ namespace CarRace.UnityGame.EditorTools
             roadMaterial.SetColor("_BaseColor", new Color(0.3f, 0.3f, 0.32f));
             EditorUtility.SetDirty(roadMaterial);
             var grassMaterial = SkidpadSceneBuilder.EnsureMaterial(GrassMaterialPath, new Color(0.22f, 0.42f, 0.16f), null, Vector2.one);
+            SurfaceTextures.ApplyGrass(grassMaterial);
 
             // Road edges from the centreline and its widths. The verges start at the road edge
             // and run VergeWidthM further out, at the same height as the edge they meet.
@@ -361,11 +362,13 @@ namespace CarRace.UnityGame.EditorTools
             float along = 0f;
             for (int i = 0; i < n; i++)
             {
+                // Texture coordinates in metres both ways, so a texture tiles at a real size
+                // (SurfaceTextures sets the scale) instead of stretching across the strip.
                 if (i > 0) along += Vector3.Distance(left[i], left[i - 1]);
                 vertices[2 * i] = left[i];
                 vertices[2 * i + 1] = right[i];
-                uv[2 * i] = new Vector2(0f, along * 0.1f);
-                uv[2 * i + 1] = new Vector2(1f, along * 0.1f);
+                uv[2 * i] = new Vector2(0f, along);
+                uv[2 * i + 1] = new Vector2(Vector3.Distance(left[i], right[i]), along);
             }
 
             var triangles = new List<int>(n * 6);
