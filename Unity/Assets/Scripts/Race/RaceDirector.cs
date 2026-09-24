@@ -39,6 +39,11 @@ namespace CarRace.UnityGame
 
         [SerializeField, Min(1)] int raceLaps = 3;
 
+        /// <summary>Set before Start to have the player's car driven by an AI too, at the
+        /// fastest AI pace: the benchmark's way of racing a full field with nobody at the keys.</summary>
+        [System.NonSerialized] public bool AiDrivesPlayer;
+        RaceDriver _playerDriver;
+
         const float ReactionSeconds = 0.02f;
         const float StuckSeconds = 5f;
         const float CountdownSeconds = 3f;
@@ -109,6 +114,16 @@ namespace CarRace.UnityGame
             // Held on the brakes, like the AI, until GO.
             player.Autopilot = (body, dt) => new VehicleInputs { Brake = 1f };
 
+            if (AiDrivesPlayer)
+            {
+                float pace = aiPace.Length > 0 ? aiPace[0] : 0.85f;
+                _playerDriver = new RaceDriver("You", _track, playerConfig, PlanningLimits(playerConfig), pace);
+                Vec3 at = ToNumerics(player.transform.position);
+                int index = NearestOnLine(at);
+                _playerDriver.Path.StartAt(index, index > n / 2 ? -1 : 0);
+                _playerDriver.Path.LineOffsetM = _track.LateralOffset(_track.Line, index, at);
+            }
+
             _cars = new CarController[aiCars.Length + 1];
             var names = new string[_cars.Length];
             for (int i = 0; i < aiCars.Length; i++) { _cars[i] = aiCars[i]; names[i] = _drivers[i].Name; }
@@ -143,7 +158,7 @@ namespace CarRace.UnityGame
                 _countdown -= dt;
                 if (_countdown > 0f) return;
                 _started = true;
-                player.Autopilot = null;
+                player.Autopilot = _playerDriver != null ? (body, t) => _playerDriver.Drive(body, t) : null;
             }
 
             // Every step rather than every reaction interval, so lap times are to 5 ms.
@@ -172,6 +187,7 @@ namespace CarRace.UnityGame
                                          _track.LateralOffset(_track.Line, _playerIndex, playerPosition),
                                          _playerPlan);
 
+            _playerDriver?.Observe(_track, _field, aiCars.Length, elapsed);
             for (int i = 0; i < aiCars.Length; i++)
             {
                 _drivers[i].Observe(_track, _field, i, elapsed);
