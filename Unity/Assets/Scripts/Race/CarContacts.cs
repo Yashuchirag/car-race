@@ -17,7 +17,12 @@ namespace CarRace.UnityGame
 
         void OnCollisionEnter(Collision collision)
         {
-            if (collision.rigidbody == null || collision.rigidbody.GetComponent<CarController>() == null) return;
+            if (collision.rigidbody == null || collision.rigidbody.GetComponent<CarController>() == null)
+            {
+                SlowStep.Log($"CONTACT {name} with {collision.collider.name} at {collision.relativeVelocity.magnitude * 3.6f:0} km/h");   // DIAGNOSTIC, temporary
+                return;
+            }
+            SlowStep.Log($"CONTACT {name} with car {collision.rigidbody.name} at {collision.relativeVelocity.magnitude * 3.6f:0} km/h");   // DIAGNOSTIC, temporary
             if (Time.time - _last < OnceEverySeconds) return;
             _last = Time.time;
             Touched?.Invoke();

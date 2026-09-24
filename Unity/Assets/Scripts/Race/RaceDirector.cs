@@ -151,6 +151,7 @@ namespace CarRace.UnityGame
 
         void FixedUpdate()
         {
+            long diagnosticStart = SlowStep.Now;   // DIAGNOSTIC, temporary
             float dt = Time.fixedDeltaTime;
             TrackPlayer();
             if (!_started)
@@ -171,6 +172,9 @@ namespace CarRace.UnityGame
             float playerProgressM = playerLaps * _track.LengthM + (_playerProgress - playerLaps * n) * _track.SampleSpacingM;
             _control.Update(aiCars.Length, _raceTime, playerLaps, playerProgressM);
             _control.Rank();
+            if (SlowStep.Slow(diagnosticStart, out double bookMs))   // DIAGNOSTIC, temporary
+                SlowStep.Log($"RaceDirector tracking and bookkeeping {bookMs:0.0} ms");
+            long diagnosticObserve = SlowStep.Now;
 
             _sinceReaction += dt;
             if (_sinceReaction < ReactionSeconds) return;
@@ -193,10 +197,28 @@ namespace CarRace.UnityGame
                 _drivers[i].Observe(_track, _field, i, elapsed);
 
                 bool stopped = _field[i].SpeedMs < 1f && _field[i].SpeedMs > -1f;
+                if (stopped && _stuckFor[i] == 0f)   // DIAGNOSTIC, temporary
+                {
+                    PathDriver p = _drivers[i].Path;
+                    SlowStep.Log($"STOPPED {aiCars[i].name} at {aiCars[i].transform.position}, s = {p.Index * _track.SampleSpacingM:0} m, " +
+                                 $"cap {p.SpeedCapMs * 3.6f:0} km/h, planned {p.PlannedSpeedMs * 3.6f:0}, off line {p.LateralFromLineM:0.0} m, " +
+                                 $"blocked by {_drivers[i].BlockedBy} at {_drivers[i].BlockedGapM:0.0} m, following {_drivers[i].IsFollowing}, " +
+                                 $"gear {aiCars[i].Sim.Drivetrain.Gear}, up {aiCars[i].transform.up.y:0.00}");
+                }
                 _stuckFor[i] = stopped ? _stuckFor[i] + elapsed : 0f;
                 if (_stuckFor[i] < StuckSeconds) continue;
+                SlowStep.Log($"RaceDirector recovering stuck {aiCars[i].name}");   // DIAGNOSTIC, temporary
+                long diagnosticRecover = SlowStep.Now;
                 aiCars[i].Recover();
+                SlowStep.Slow(diagnosticRecover, out double recoverMs);
+                SlowStep.Log($"RaceDirector Recover() took {recoverMs:0.0} ms");
                 _stuckFor[i] = 0f;
+            }
+            if (SlowStep.Slow(diagnosticObserve, out double observeMs))   // DIAGNOSTIC, temporary
+            {
+                string passing = "";
+                foreach (RaceDriver d in _drivers) passing += $" {d.Name}: overtaking {d.IsOvertaking}, blocked by {d.BlockedBy};";
+                SlowStep.Log($"RaceDirector observe {observeMs:0.0} ms;{passing}");
             }
         }
 

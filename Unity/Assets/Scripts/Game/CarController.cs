@@ -125,6 +125,7 @@ namespace CarRace.UnityGame
 
         void FixedUpdate()
         {
+            long diagnosticStart = SlowStep.Now;   // DIAGNOSTIC, temporary
             Sim.AutomaticGearbox = automaticGearbox;
             Sim.AntiLockBrakes = antiLockBrakes;
             Sim.TractionControl = tractionControl;
@@ -148,6 +149,9 @@ namespace CarRace.UnityGame
                 driver.ConsumeRequests();
             }
 
+            long diagnosticModel = SlowStep.Now;   // DIAGNOSTIC, temporary
+            if (SlowStep.Slow(diagnosticStart, out double inputMs))
+                SlowStep.Log($"{name} inputs {inputMs:0.0} ms (autopilot {(Autopilot != null)}) at {SpeedKph:0} km/h");
             float dt = Time.fixedDeltaTime;
             if (brakeToReverse && automaticGearbox && Autopilot == null && driver != null)
                 inputs = BrakeToReverse(inputs, dt);
@@ -182,6 +186,8 @@ namespace CarRace.UnityGame
             _body.AddTorque(Bridge.ToUnity(torque / substeps), ForceMode.Force);
 
             TrackWheelSpin(dt);
+            if (SlowStep.Slow(diagnosticModel, out double modelMs))   // DIAGNOSTIC, temporary
+                SlowStep.Log($"{name} model and forces {modelMs:0.0} ms, {substeps} substeps, {SpeedKph:0} km/h, y {transform.position.y:0.0}");
         }
 
         const float StoppedMs = 0.5f;
@@ -278,12 +284,20 @@ namespace CarRace.UnityGame
 
         void PlaceAt(Vector3 position, Quaternion rotation)
         {
+            long t0 = SlowStep.Now;   // DIAGNOSTIC, temporary: every statement timed
             _body.linearVelocity = Vector3.zero;
             _body.angularVelocity = Vector3.zero;
+            SlowStep.Slow(t0, out double a); long t1 = SlowStep.Now;
             _body.position = position;
+            SlowStep.Slow(t1, out double b); long t2 = SlowStep.Now;
             _body.rotation = rotation;
+            SlowStep.Slow(t2, out double c); long t3 = SlowStep.Now;
             transform.SetPositionAndRotation(position, rotation);
+            SlowStep.Slow(t3, out double d); long t4 = SlowStep.Now;
             Sim.Reset();
+            SlowStep.Slow(t4, out double e);
+            SlowStep.Log($"{name} PlaceAt: velocities {a:0.00} ms, position {b:0.00}, rotation {c:0.00}, transform {d:0.00}, " +
+                         $"model reset {e:0.00}; from {_body.position} to {position}, collision {_body.collisionDetectionMode}");
             for (int i = 0; i < 4; i++) _spinDegrees[i] = 0f;
         }
     }

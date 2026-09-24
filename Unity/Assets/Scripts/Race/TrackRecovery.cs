@@ -28,6 +28,13 @@ namespace CarRace.UnityGame
 
         void FixedUpdate()
         {
+            long diagnosticStart = SlowStep.Now;   // DIAGNOSTIC, temporary
+            TimedFixedUpdate();
+            if (SlowStep.Slow(diagnosticStart, out double ms)) SlowStep.Log($"TrackRecovery {ms:0.0} ms");
+        }
+
+        void TimedFixedUpdate()
+        {
             Vector3 position = car.transform.position;
             // A jump of this size is a restart to the grid; search the whole lap once.
             if ((position - _lastPosition).sqrMagnitude > 25f * 25f)
