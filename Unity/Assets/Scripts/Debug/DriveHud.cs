@@ -22,7 +22,9 @@ namespace CarRace.UnityGame
 
         void OnGUI()
         {
-            if (Hud.Hidden || car == null || car.Sim == null) return;
+            // Development readout: the editor and development builds only. Players have the
+            // dashboard dials for speed, gear and revs.
+            if (!Debug.isDebugBuild || Hud.Hidden || car == null || car.Sim == null) return;
             _style ??= new GUIStyle(GUI.skin.label) { normal = { textColor = Color.white } };
             _style.fontSize = Hud.Font(18);
 
