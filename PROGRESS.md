@@ -10,62 +10,81 @@ concrete action is. Everything below it is detail.
 
 ## 1. Resume here
 
-**Last updated:** 2026-09-23 (the Phase 3 race criterion passes)
+**Last updated:** 2026-09-23 (passes complete, where the physics allows one)
 
-**Last completed:** Cars no longer touch in traffic. `--race monza --cars 16 --laps 10`
-finishes with no contacts on ten seeds, where it used to leave two on the opening lap,
-and the four second testcircuit repro that had six contacts is clean. What changed and
-what each change fixed is in the session log, section 8, and in `Sim/README.md` under
-"Bugs the race caught".
+**Last completed:** Overtaking, the "make the pass work" approach. A driver now tries a
+pass only when both cars' plans say it gets alongside within 10 s, sits 0.4 s behind a
+car it is clearly quicker than instead of 0.9 s, gets those same 10 s to make progress
+before giving up, and may close on the car it is passing at up to 4 m/s while the
+sideways gap holds. The race criterion still passes on ten seeds, with no contacts.
 
-**Next action:** A decision for you, because it trades safety against racing: whether
-to make passes complete now (below). If that can wait, go on to the Unity install.
+**Next action:** A decision for you. The contacts that remain come from the lane model
+itself (below), and the fix for those is proper passing lines, the design in section 12
+of IMPLEMENTATION_REPORT.md. If that can wait, go on to the Unity install.
 
 ---
 
 ### Where the race stands
 
-**Default grid, fastest car on pole.** Seeds 1 to 5, three laps, before and after:
+**Default grid, fastest car on pole.** Seeds 1 to 5, three laps, before and after the
+traffic fix:
 
 | scenario | contacts | spins |
 |---|---|---|
 | testcircuit, 8 cars | 14 before, 0 after | 66 before, 0 after |
 | Monza, 16 cars | 30 before, 0 after | 109 before, 0 after |
 
-Seeds 6 to 10, which no decision was based on, are clean as well, and so is the full ten
-lap race on seeds 1 to 10.
+Seeds 6 to 10 are clean as well, still so after the overtaking work, and so is the full
+ten lap race on seeds 1 to 10.
 
-**Reverse grid, fastest car last.** Seeds 1 to 10, three laps, both circuits together:
+**Fastest last** (`--fastest-last`: pace order, except that the fastest car starts at the
+back). This is the test for passing. Seeds 1 to 10, three laps, both circuits together:
+
+| | pass attempts | completed | contacts | spins | where the fastest car finishes |
+|---|---|---|---|---|---|
+| before | 545 | 0 | 0 | 3 | last, or one place up |
+| after | 197 | 16 | 1 | 5 | usually two places up |
+
+**Reverse grid.** Seeds 1 to 10, three laps, both circuits together:
 
 | | contacts | spins | clean passes |
 |---|---|---|---|
-| before | 105 | 345 | 6 |
-| after | 2 | 37 | 16 |
+| before the traffic fix | 105 | 345 | 6 |
+| after it | 2 | 37 | 16 |
+| after overtaking | 2 | 5 | 1 |
+
+A reversed grid is not a passing test. Every car starts behind one barely slower than
+itself, and plan against plan a neighbour on a sixteen car grid gains about a metre in
+ten seconds, so nobody should try, and now nobody does. That is why its clean passes fell
+while its spins went from 37 to 5.
 
 A clean pass is one car getting from 5 m behind another to 5 m ahead with neither
-sliding past 15 degrees within 2 s of it. Before the fix every place that changed on the
-default grid changed because somebody spun. These counts come from a scratch script
+sliding past 15 degrees within 2 s of it. These counts come from a scratch script
 reading `--csv` output, not from the harness.
 
-### Still not right: passes rarely complete
+### What is left
 
-On the default grid nobody needs to pass, so the race is a procession, and that is
-correct. With `--reverse-grid` it is not: the fastest driver starts last and finishes
-last. A driver now commits to a pass properly, but `SafetyCap` treats a car in the next
-lane, 2.2 to 4 m across, as one it may sit alongside but not close on, so a pass never
-gets from 6.5 m behind to alongside unless the other car slows.
+**Contacts from the lane model.** The three left across forty non-default races are all
+squeezes. Lanes are offsets from the racing line, which sweeps across the road through
+every corner, so the car on the side it sweeps towards is pushed into the other car
+faster than the other can move away. Two guards were tried and backed out: a look-ahead
+on the room at the side made fastest-last worse, 1 contact to 5, and keeping cars in the
+same lane out of the side-by-side rule removed one contact at the start and added three
+elsewhere. Guards moving contacts around rather than removing them is the sign that the
+fix is structural: passing lines fixed on the road, not hung off the racing line.
 
-**Tried and backed out:** letting a car in the next lane be closed on at up to 4 m/s.
-Passes worked, 60 clean ones over ten reverse-grid races, but lanes merge where the road
-narrows. The room clamp squeezes both offsets together, and a car closing at 5 m/s found
-itself in the other car's lane: three contacts in every default testcircuit race. The
-allowance needs a look-ahead, so that it applies only while the road stays wide enough
-for both lanes over the stopping distance ahead, and the old bound applies otherwise.
-Not started.
+**Neighbours cannot pass each other.** The cars are identical and there is no slipstream,
+so between adjacent drivers of a sixteen car field the plans differ by about a metre every
+ten seconds. Real spec racing looks much the same. Changing it needs slipstream in the
+physics, or a wider pace spread in the field.
 
-Also open, in section 6: 2 contacts and 37 spins left across ten reverse-grid races, a
-car spun past 90 degrees looks straight to its own recovery, and the path controller has
-no yaw rate term.
+**One mechanism outside the lane model.** In a braking zone into a corner the speed cap
+may only come down as fast as the tyres allow while cornering (`EaseCap`), so a passer
+whose target brakes hard there can arrive too fast. That rule is what stops mid-corner
+lifts from spinning cars, so loosening it is a trade, not a fix.
+
+Also open, in section 6: a car spun past 90 degrees looks straight to its own recovery,
+and the path controller has no yaw rate term.
 
 ---
 
@@ -83,6 +102,8 @@ dotnet run --project Sim/CarRace.Harness -c Release -- --lap all  # expect: 6 of
 dotnet build Sim/CarRace.UnityCheck -c Release                 # expect: 0 Error(s)
 dotnet run --project Sim/CarRace.Harness -c Release -- --race monza --cars 16 --laps 10
 #   expect: 16 of 16 finished, 0 contacts, PASS
+dotnet run --project Sim/CarRace.Harness -c Release -- --race testcircuit --cars 8 --laps 3 --fastest-last
+#   expect: 0 contacts, PASS, and AI 08 finishing ahead of its grid slot
 ```
 
 The four WIP rows in section 3 are WIP because compiling is not running. Nothing
@@ -165,7 +186,8 @@ physics has never driven a corner the track pipeline produced.
 | Racing line offsets and a speed cap on the driver | DONE | `PathDriver.LineOffsetM`, `SpeedCapMs`. Offset lines also get a lower speed limit, because the inside of a corner is a tighter radius than the plan was written for. |
 | AI personalities and traffic awareness | DONE | `RaceDriver`. Pace spread, braking-distance safety bound, side-by-side separation, picking a side to pass. |
 | Race control: grid, laps, positions, classification | DONE | `RaceControl`. Grid behind the line so every car drives the same distance. |
-| Headless race | DONE | `--race monza --cars 16 --laps 10`: 16 of 16 finish with no contacts, on seeds 1 to 10. Section 7. Passes rarely complete; section 1. |
+| Headless race | DONE | `--race monza --cars 16 --laps 10`: 16 of 16 finish with no contacts, on seeds 1 to 10. Section 7. |
+| Overtaking | DONE | Passes that complete where the plans say one can: `--fastest-last` puts the fastest car at the back, and it now gains places. 1 contact in 20 such races remains, from the lane model; section 1. |
 | Race telemetry | DONE | `--race ... --csv <path>`. One row per car every 20 ms: the `--lap` columns plus blocked by, following, overtaking, wanted and driven offset, and the cap. |
 | Catching a slide | WIP | Partial. `PathDriver` counter-steers and lifts above 12 degrees of sideslip, which stopped spun cars crawling for the rest of the race, but 11 crawl reports in a ten-lap race still show more than 25 degrees. |
 | Flags, penalties, pit stops | TODO | Not started. |
@@ -173,8 +195,9 @@ physics has never driven a corner the track pipeline produced.
 **Where the race stands.** Sixteen cars, ten laps of Monza, in about 18 seconds of
 wall time. Everyone finishes, nobody touches, and lap times spread by pace, 2:32 to
 2:38. The finishing order is the grid order, which is right for a grid with the fastest
-car on pole and wrong for a reversed one, because passes rarely complete. Section 1 has
-the numbers before and after, and why passing is the next question.
+car on pole. Started last, the fastest car now passes the much slower cars and stops
+behind ones nearly as quick, which is as far as identical cars without slipstream go.
+Section 1 has the numbers.
 
 ```
 16 cars, 10 laps, Monza         0 contacts    PASS, seeds 1 to 10
@@ -285,16 +308,24 @@ Known, deliberate, and not blocking. Recorded so they are not rediscovered.
 
 **Racing a field**
 
-- Passes rarely complete, so a reversed grid stays reversed. Section 1 has why, what
-  was tried, and what a fix needs. Contact is counted and reported, never simulated:
-  making two cars bounce off each other is the physics engine's job, in Unity, where
-  they are already rigid bodies that collide.
-- The pass logic's numbers are first guesses and barely exercised, because so few
-  passes get far enough to test them: 8 s before giving up, 5 s before trying the same
-  car again, 10 m past before it counts as done, 10 m looked at behind.
-- Drivers know each other's pace, the way lap times would tell them, and that is what
-  decides who is quicker. A driver judging it from watching the car in front would be
-  more honest and far more work, and nothing yet needs it.
+- A few contacts remain in passing and in running side by side, three across forty
+  non-default races, all squeezes from the lane model. Section 1 has what was tried and
+  why the fix is passing lines. Contact is counted and reported, never simulated: making
+  two cars bounce off each other is the physics engine's job, in Unity, where they are
+  already rigid bodies that collide.
+- The pass logic's numbers are reasoned rather than tuned, and exercised on two circuits
+  only: 10 s both to predict a pass and to give it before giving up, a 0.4 s gap behind
+  a car that is 1% slower over a lap, 4 m/s of closing with 2.7 m of sideways room, 5 s
+  before trying the same car again, 10 m past before it counts as done, 10 m looked at
+  behind.
+- Drivers know each other's speed plans, the way lap times would tell them, and that is
+  what decides whether a pass can work. A driver judging it from watching the car in
+  front would be more honest and far more work, and nothing yet needs it.
+- The side-by-side rule counts a car directly behind in the same lane as alongside once
+  it is within 8 m, and pushes the car in front sideways, away from it. The 0.4 s attack
+  gap makes that happen more, and it caused a contact at the start of one reverse-grid
+  race. Leaving such cars out of the rule fixed that one and added three elsewhere, so it
+  was backed out. It belongs with the passing lines.
 - Spin recovery is partial. A car that loses it still ends up crawling, and being
   hit while crawling is what most of the remaining contacts are.
 - Recovery cannot see a spin past 90 degrees. `PathDriver.Sideslip`, and
@@ -308,8 +339,8 @@ Known, deliberate, and not blocking. Recorded so they are not rediscovered.
   angles alone, and in the repro a rear slide at about 130 km/h grew through two
   reversals into a spin. That is the likely reason a lane change became a spin rather
   than a wobble, though it was not tested on its own. The lane changes that set it off
-  are fixed and the default grid has not spun since, but the 37 spins left across ten
-  reverse-grid races make this the first suspect for those.
+  are fixed and the default grid has not spun since, but the ten spins left across
+  forty non-default races make this the first suspect for those.
 - The side-by-side rule still flickers for two cars hovering near its 8 m edge,
   because close up the gap is the smaller of the racing line distance, which moves in
   2 m steps, and the straight line. It moves the line they drive by a few centimetres.
@@ -381,6 +412,8 @@ dotnet run --project Sim/CarRace.Harness -c Release -- --race monza --cars 16 --
 #   expect: "16 of 16 finished, 0 contacts", PASS, exit code 0, about 18 s
 dotnet run --project Sim/CarRace.Harness -c Release -- --race testcircuit --cars 8 --laps 3
 #   expect: "8 of 8 finished, 0 contacts", the old four second repro
+dotnet run --project Sim/CarRace.Harness -c Release -- --race testcircuit --cars 8 --laps 3 --fastest-last
+#   expect: 0 contacts, PASS, and AI 08, the fastest car, started last, finishing ahead of 8th
 
 # diagnostics, when something is wrong
 dotnet run --project Sim/CarRace.Harness -c Release -- --trace    # launch, skidpad
@@ -421,6 +454,32 @@ learned, so context is not lost between sessions.
   work existed with no history and no backup.
 - Added this file, and a rule in `CLAUDE.md` section 5 to keep it current during
   work rather than at the end.
+
+### 2026-09-23, eighth session
+
+- Overtaking, the "make the pass work" approach, chosen from three after measuring why
+  passes failed: 400 attempts in four reverse-grid races and not one completed, passers
+  on average slower than their targets, and held below their own plan by a cap for about
+  half of each attempt.
+- Built as planned: a pass is tried only when both cars' plans say it gets alongside
+  within 10 s, it may close on the car it is passing at up to 4 m/s while the sideways gap
+  holds, and it is given up when it stops gaining. Two things were not in the plan and
+  turned out to be needed. A driver 1% quicker over a lap follows at 0.4 s instead of
+  0.9 s, because from thirty metres back no pass can start at all. And the give-up clock
+  has to be as long as the prediction, because a quicker driver's gain arrives in the
+  next braking zone, not out of the corner where the pass begins.
+- Added `--fastest-last`. A reversed grid cannot test passing: plan against plan, a
+  neighbour on a sixteen car grid gains about a metre in ten seconds, so the correct
+  number of attempts there is roughly none, and that is what it now makes.
+- Result over ten seeds of fastest-last: 545 attempts and no completed pass before, 197
+  and 16 after, with the fastest car usually gaining two places. The default grid is
+  still spotless, and the reverse grid kept its 2 contacts while its spins went from 37
+  to 5. One contact appeared in fastest-last, from a pass.
+- Two guards for the remaining contacts were tried and backed out, a look-ahead on the
+  room at the side and leaving in-line cars out of the side-by-side rule, because both
+  moved contacts rather than removing them. The lesson is to recognise that pattern
+  sooner: when every guard shifts the failure somewhere else, the cause is the model,
+  here lanes hung off a racing line that sweeps across the road.
 
 ### 2026-09-23, seventh session
 

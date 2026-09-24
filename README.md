@@ -145,7 +145,7 @@ dotnet run --project Sim/CarRace.Harness -c Release -- --lap all
 dotnet run --project Sim/CarRace.Harness -c Release -- --lap monza --verbose
 
 # a field of AI cars. Sixteen cars finish ten laps of Monza without touching, which is
-# the Phase 3 exit criterion. Passes rarely complete yet; PROGRESS.md section 6 says why.
+# the Phase 3 exit criterion. --fastest-last tests passing; PROGRESS.md section 1 has numbers.
 dotnet run --project Sim/CarRace.Harness -c Release -- --race monza --cars 8 --laps 3
 dotnet run --project Sim/CarRace.Harness -c Release -- --race monza --cars 16 --laps 10 --verbose
 

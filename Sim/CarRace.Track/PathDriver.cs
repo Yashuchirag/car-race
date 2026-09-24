@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 using CarRace.Vehicle;
 
@@ -101,6 +102,9 @@ namespace CarRace.Track
 
         /// <summary>What the plan asks for at a sample, before any cap or offset.</summary>
         public float PlanAt(int index) => _plan[_track.Wrap(index)];
+
+        /// <summary>The whole plan, read only, for a driver weighing its plan against this one.</summary>
+        public IReadOnlyList<float> Plan => _plan;
 
         /// <summary>
         /// Puts the driver at a sample without counting a lap. A car on a grid behind the

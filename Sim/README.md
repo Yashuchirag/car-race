@@ -27,6 +27,7 @@ dotnet run --project Sim/CarRace.Harness -c Release -- --race monza --cars 8 --l
 dotnet run --project Sim/CarRace.Harness -c Release -- --race monza --cars 16 --laps 10 --verbose
 dotnet run --project Sim/CarRace.Harness -c Release -- --race testcircuit --cars 8 --csv race.csv
 dotnet run --project Sim/CarRace.Harness -c Release -- --race monza --reverse-grid
+dotnet run --project Sim/CarRace.Harness -c Release -- --race monza --fastest-last
 ```
 
 Exit code is 0 when all five checks pass, and 0 from `--lap` when the car gets
@@ -160,10 +161,11 @@ grid, round a lap and past each other without needing to touch.
 
 Off the grid and round without touching, yes: sixteen cars over ten laps of Monza
 finish with no contacts at all, on ten different seeds, where the same race used to
-leave two on the opening lap. Past each other, not yet. A driver commits to a pass
-and holds it, but the safety bound will not let it close on a car in the next lane,
-so passes rarely complete, and with the fastest car gridded last it finishes last.
-`PROGRESS.md` section 6 says why and what fixing it would take.
+leave two on the opening lap. Past each other, where the physics allows it: started
+last with `--fastest-last`, the fastest car passes the much slower cars and stops behind
+ones nearly as quick, since the cars are identical and there is no slipstream. A few
+contacts remain in passing, because lanes are offsets of a racing line that sweeps
+across the road; `PROGRESS.md` section 1 says why and what fixing it would take.
 
 Drivers differ only in pace, which is the share of the car's grip they will use.
 Each one plans its own speeds at its own limits rather than scaling a shared plan,
@@ -247,6 +249,20 @@ because a driver who corners slower also has to brake earlier.
     car in the next lane like one in front, so a pair running side by side braked each
     other every time either edged ahead, and sixteen deep that stopped the back of the
     grid dead. It now holds alongside rather than dropping back.
+14. **Asking whether a driver is quicker is not asking whether a pass can work.** Pace
+    alone sent drivers after cars they would gain a metre on in ten seconds: 400
+    attempts in four races, and no pass. It now drives both plans over the road ahead
+    and goes only if it would gain the gap.
+15. **No pass starts from 0.9 s back.** That is thirty metres at speed, and even the
+    fastest driver gains at most seventeen on the slowest in ten seconds. A driver
+    clearly quicker over a lap now follows at 0.4 s.
+16. **A pass given up sooner than it was predicted over never reaches its braking
+    zone.** Out of a corner two cars accelerate much alike, and the quicker one gains
+    braking into the next. Three seconds without progress killed every pass on the way.
+17. **A pass that may not close on the car it is passing never gets past its rear
+    wheels.** It may now close by up to 4 m/s, but only while the sideways gap holds,
+    because the racing line sweeping across the road squeezes the passer into the car
+    beside it.
 
 ## Next
 

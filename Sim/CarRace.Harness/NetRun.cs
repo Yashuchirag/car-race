@@ -97,7 +97,7 @@ namespace CarRace.Harness
                             LateralM = drivers[i].Path.LateralFromLineM,
                             SpeedMs = Vector3.Dot(rigs[i].Body.State.Velocity,
                                                   rigs[i].Body.State.Forward),
-                            Pace = drivers[i].Pace,
+                            Plan = drivers[i].Path.Plan,
                             Position = rigs[i].Body.State.Position,
                         };
                     for (int i = 0; i < cars; i++) drivers[i].Observe(track, field, i, 10 * Dt);

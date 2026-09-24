@@ -29,7 +29,7 @@ namespace CarRace.Harness
 
         public static int Run(CarConfig config, string circuit, int cars, int raceLaps,
                               int seed, bool reverseGrid, bool verbose = false,
-                              string csvPath = null)
+                              string csvPath = null, bool fastestLast = false)
         {
             TrackData track;
             try
@@ -58,7 +58,12 @@ namespace CarRace.Harness
                 float rank = cars > 1 ? (float)i / (cars - 1) : 0f;
                 float pace = 0.85f - 0.07f * rank + (float)(random.NextDouble() - 0.5) * 0.012f;
 
-                int grid = reverseGrid ? cars - 1 - i : i;
+                // Fastest last on its own is the test for passing: a reversed grid is not,
+                // because every car starts behind one barely slower than itself, and with
+                // identical cars and no slipstream nobody can get past a neighbour.
+                int grid = reverseGrid ? cars - 1 - i
+                         : fastestLast ? (i == 0 ? cars - 1 : i - 1)
+                         : i;
                 names[grid] = $"AI {grid + 1:00}";
                 drivers[grid] = new RaceDriver(names[grid], track, config, limits, pace);
                 rigs[grid] = new Rig(config);
@@ -82,7 +87,8 @@ namespace CarRace.Harness
 
             Console.WriteLine($"=== Race: {track.Name} ===");
             Console.WriteLine($"  {cars} cars, {raceLaps} laps, pace {slowest:0.000} to {fastest:0.000}"
-                            + $"{(reverseGrid ? ", fastest gridded last" : "")}");
+                            + $"{(reverseGrid ? ", fastest gridded last" : "")}"
+                            + $"{(fastestLast ? ", fastest gridded last, the rest in pace order" : "")}");
             Console.WriteLine($"  grid is behind the line, so every car drives the same distance\n");
 
             System.IO.StreamWriter csv = null;
@@ -113,7 +119,7 @@ namespace CarRace.Harness
                             LateralM = drivers[i].Path.LateralFromLineM,
                             SpeedMs = Vector3.Dot(rigs[i].Body.State.Velocity,
                                                   rigs[i].Body.State.Forward),
-                            Pace = drivers[i].Pace,
+                            Plan = drivers[i].Path.Plan,
                             Position = rigs[i].Body.State.Position,
 
                             // A retired car is behind the barriers, not in the middle of the

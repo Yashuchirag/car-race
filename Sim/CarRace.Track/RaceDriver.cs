@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 using CarRace.Vehicle;
 
@@ -22,8 +23,9 @@ namespace CarRace.Track
             public float LateralM;   // its offset from that line, positive to the right
             public float SpeedMs;
 
-            /// <summary>Its driver's pace, known to the others the way lap times are.</summary>
-            public float Pace;
+            /// <summary>Its driver's speed plan, known to the others the way lap times are.
+            /// Whether a pass can work is a question about both plans over the road ahead.</summary>
+            public IReadOnlyList<float> Plan;
 
             /// <summary>Where it is in the world. Close up, positions measure the gap between two
             /// cars better than their places on the racing line do; see Gap.</summary>
@@ -49,6 +51,20 @@ namespace CarRace.Track
         public float FollowSeconds = 0.9f;
 
         /// <summary>
+        /// How close it sits behind a car it is clearly quicker than, as seconds of gap, and
+        /// how much quicker is clearly: this share of the other car's lap time, plan against
+        /// plan over the whole lap.
+        ///
+        /// From FollowSeconds back no pass can start: that is thirty metres at racing speed,
+        /// and even the fastest driver in the field gains at most seventeen on the slowest
+        /// in ten seconds. Judged over a whole lap rather than the road just ahead, so that
+        /// the verdict cannot change from one corner to the next and yank the follow gap,
+        /// and the cap with it, back and forth.
+        /// </summary>
+        public float AttackSeconds = 0.4f;
+        public float AttackAdvantage = 0.01f;
+
+        /// <summary>
         /// Closest it will sit to the car in front, centre to centre: a 4.4 m car plus two
         /// metres of daylight. Deliberately close, because this is only the floor. What
         /// actually keeps cars apart at speed is the braking bound below, which is a physical
@@ -68,9 +84,18 @@ namespace CarRace.Track
         /// <summary>Half the car's width plus what it wants between itself and the grass.</summary>
         public float HalfWidthM = 1.25f;
 
-        /// <summary>How much more pace it needs than the car in front before it tries to pass.
-        /// About two places on a sixteen car grid.</summary>
-        public float PaceMargin = 0.01f;
+        /// <summary>
+        /// How far ahead it looks to decide whether a pass can work, in seconds of the other
+        /// car's plan: both plans are driven over that stretch, and the pass is on only if
+        /// this car gains at least the gap it has to close. The same stretch is also how long
+        /// a pass may go without a new best before it is given up.
+        ///
+        /// One number for both on purpose. The gain is not spread evenly: out of a corner the
+        /// two cars accelerate much alike, and a quicker driver's advantage arrives in the
+        /// next braking zone. Giving up after a shorter spell than the one the prediction was
+        /// made over killed every pass before it reached the place it was going to work.
+        /// </summary>
+        public float PassHorizonSeconds = 10f;
 
         /// <summary>A car doing less than this share of both what the plan asks for where it is
         /// and what the car behind it is doing has a problem, and is passed whoever is
@@ -78,12 +103,25 @@ namespace CarRace.Track
         /// a healthy car still does 80% of its plan or more.</summary>
         public float TroubleShare = 0.45f;
 
-        /// <summary>How long a pass may go on without getting by before it is given up, how
-        /// long before it tries the same car again, and how far past it has to be before it
-        /// counts as done.</summary>
-        public float PassGiveUpSeconds = 8f;
+        /// <summary>How long before it tries the same car again after giving up, and how far
+        /// past it has to be before a pass counts as done.</summary>
         public float PassRetrySeconds = 5f;
         public float PassedM = 10f;
+
+        /// <summary>
+        /// How much faster than the car it is passing it may close on that car in the next
+        /// lane, and how much sideways room that needs: this much now, and still this much
+        /// SideLookaheadSeconds from now at the rate the gap is changing. Short of that it
+        /// only holds alongside, the way it treats every other car in the next lane.
+        ///
+        /// Letting any car in the next lane be closed on, with no such check, made passing
+        /// work and then crashed where lanes merge. Offsets hang off the racing line, which
+        /// sweeps across the road through a corner and squeezes the car on that side
+        /// towards the other faster than the other can move away.
+        /// </summary>
+        public float PassingClosingMs = 4f;
+        public float SecureSideM = 2.7f;
+        public float SideLookaheadSeconds = 0.5f;
 
         /// <summary>How far behind it looks before moving across to pass.</summary>
         public float LookBehindM = 10f;
@@ -126,9 +164,14 @@ namespace CarRace.Track
 
         int _passing = -1;          // the car it is passing, or -1
         float _passSide;            // +1 passing on the right, -1 on the left
-        float _passSeconds;
+        float _passBestM;           // that car's smallest lead so far, negative once passed
+        float _passStalled;         // seconds since that last improved
+        float _passSideSeen = -1f;  // sideways gap to it at the last look, -1 before one
+        bool _passSecure;           // room to close on it this interval
         int _gaveUpOn = -1;
         float _retryIn;
+        readonly Dictionary<IReadOnlyList<float>, float> _lapSeconds =
+            new Dictionary<IReadOnlyList<float>, float>();
 
         readonly float _brakingMs2;
         readonly float _lateralMs2;
@@ -188,13 +231,17 @@ namespace CarRace.Track
             IsFollowing = false;
             BlockedBy = blocker;
             BlockedGapM = blocker >= 0 ? ahead : 0f;
+            _passSecure = _passing >= 0 && SideHolding(self, field[_passing], dt);
             Path.SpeedCapMs = SafetyCap(track, field, me, self);
             if (_retryIn > 0f) _retryIn -= dt;
 
             if (blocker >= 0)
             {
                 Seen front = field[blocker];
-                float wanted = MathF.Max(MinimumGapM, FollowSeconds * self.SpeedMs);
+                bool attacking = front.Plan != null
+                    && 1f - LapSeconds(Path.Plan, track) / LapSeconds(front.Plan, track) >= AttackAdvantage;
+                float wanted = MathF.Max(MinimumGapM,
+                                         (attacking ? AttackSeconds : FollowSeconds) * self.SpeedMs);
 
                 // Hold a distance, do not match a speed. Matching the speed of the car ahead
                 // keeps whatever gap it happens to have at that moment, including none, and
@@ -229,14 +276,17 @@ namespace CarRace.Track
                 // sits at exactly the range where it has decided not to try, and the whole
                 // field files round nose to tail with identical lap times.
                 bool retrying = blocker == _gaveUpOn && _retryIn > 0f;
-                if (_passing < 0 && !retrying && ahead < wanted + 10f && Quicker(self, front))
+                if (_passing < 0 && !retrying && ahead < wanted + 10f
+                    && WorthPassing(track, self, front, ahead))
                 {
                     float side = SideToPass(track, field, me);
                     if (side != 0f)
                     {
                         _passing = blocker;
                         _passSide = side;
-                        _passSeconds = 0f;
+                        _passBestM = ahead;
+                        _passStalled = 0f;
+                        _passSideSeen = -1f;
                     }
                 }
             }
@@ -386,14 +436,24 @@ namespace CarRace.Track
                 float gap = Gap(track, self, field[i]);
                 if (gap <= 0f || gap > horizon) continue;
 
+                bool nextLane = side > InTheWayM;
+
                 // In the next lane rather than its own, a car it may sit alongside but not close
                 // on: inside the minimum gap the bound asks for that car's speed, where in its
                 // own lane it asks for less to open the gap back up. Asking for less in the next
                 // lane made two cars running side by side brake each other every time either
                 // edged ahead, and sixteen deep that stopped the back of the grid dead.
-                if (side > InTheWayM) gap = MathF.Max(gap, MinimumGapM);
+                if (nextLane) gap = MathF.Max(gap, MinimumGapM);
 
                 float stoppable = Stoppable(field[i].SpeedMs, gap, braking, MinimumGapM);
+
+                // Except the car it is passing, while the sideways gap to it is holding: that
+                // one it may close on, by up to PassingClosingMs, or no pass would ever get
+                // further than its rear wheels.
+                if (i == _passing && _passSecure && nextLane)
+                    stoppable = MathF.Max(stoppable,
+                                          MathF.Max(field[i].SpeedMs, 0f) + PassingClosingMs);
+
                 if (cap < 0f || stoppable < cap) cap = stoppable;
             }
 
@@ -449,7 +509,6 @@ namespace CarRace.Track
         {
             Seen self = field[me];
             Seen other = field[_passing];
-            _passSeconds += dt;
 
             float itsLead = Distance(track, self.Index, other.Index);
             float myLead = Distance(track, other.Index, self.Index);
@@ -461,7 +520,18 @@ namespace CarRace.Track
                 return 0f;
             }
 
-            if (!past && (itsLead > 60f || _passSeconds > PassGiveUpSeconds))
+            // Gaining means a new best by at least half a metre. The lead moves in whole
+            // samples, so a gap that is not really changing flickers by 2 m either way, and
+            // only a new best can reset the clock; the flicker alone never does.
+            float lead = past ? -myLead : itsLead;
+            if (lead < _passBestM - 0.5f)
+            {
+                _passBestM = lead;
+                _passStalled = 0f;
+            }
+            else _passStalled += dt;
+
+            if (!past && (itsLead > 60f || _passStalled > PassHorizonSeconds))
             {
                 _gaveUpOn = _passing;
                 _retryIn = PassRetrySeconds;
@@ -475,20 +545,64 @@ namespace CarRace.Track
         }
 
         /// <summary>
-        /// Whether a car is worth passing: its driver is clearly slower, which lap times would
-        /// show, or it is in trouble, doing far less than both the plan asks for where it is
-        /// and what this car is doing.
+        /// Whether a pass can work. Either the car ahead is in trouble, doing far less than
+        /// both the plan asks for where it is and what this car is doing; or, driving both
+        /// cars' plans over the road ahead for PassHorizonSeconds, this one gains at least the
+        /// gap it has to close.
         ///
-        /// This used to compare this driver's plan with the other car's actual speed, which
-        /// is neither. Out of a corner every driver runs well under its plan, so slower
-        /// drivers were told they were quicker and pulled out to pass cars they could never
-        /// get past. Both halves of the trouble test are needed: against the plan alone,
+        /// Plan against plan, like for like. The first version compared this driver's plan
+        /// with the other car's actual speed, and since every driver runs well under its plan
+        /// out of a corner, slower drivers were told they were quicker. The second compared
+        /// pace alone, which is the right question asked too loosely: drivers set off after
+        /// cars they would gain a few metres a lap on, and 400 attempts in four races ended
+        /// with no pass. Both halves of the trouble test are needed: against the plan alone,
         /// every car on a standing start is in trouble, and against this car's speed alone,
         /// so is a car braking for a corner that this one has not reached yet.
         /// </summary>
-        bool Quicker(Seen self, Seen other)
-            => Pace > other.Pace + PaceMargin
-            || other.SpeedMs < TroubleShare * MathF.Min(Path.PlanAt(other.Index), self.SpeedMs);
+        bool WorthPassing(TrackData track, in Seen self, in Seen other, float gapM)
+        {
+            if (other.SpeedMs < TroubleShare * MathF.Min(Path.PlanAt(other.Index), self.SpeedMs))
+                return true;
+            if (other.Plan == null) return false;
+
+            float ds = track.SampleSpacingM;
+            float mine = 0f, theirs = 0f, covered = 0f;
+            for (int k = 0; theirs < PassHorizonSeconds && k < track.Count; k++)
+            {
+                int i = track.Wrap(other.Index + k);
+                theirs += ds / MathF.Max(other.Plan[i], 1f);
+                mine += ds / MathF.Max(Path.PlanAt(i), 1f);
+                covered += ds;
+            }
+
+            // The time it saves over the same stretch, as distance at the other car's speed there.
+            return (theirs - mine) * covered / theirs >= gapM;
+        }
+
+        /// <summary>A plan's lap time driven perfectly. Plans never change, so each is summed once.</summary>
+        float LapSeconds(IReadOnlyList<float> plan, TrackData track)
+        {
+            if (_lapSeconds.TryGetValue(plan, out float seconds)) return seconds;
+
+            seconds = 0f;
+            for (int i = 0; i < plan.Count; i++)
+                seconds += track.SampleSpacingM / MathF.Max(plan[i], 1f);
+            _lapSeconds[plan] = seconds;
+            return seconds;
+        }
+
+        /// <summary>
+        /// Whether the sideways gap to the car it is passing is holding: at least SecureSideM
+        /// now, and still that much SideLookaheadSeconds from now at the rate it is changing.
+        /// A squeeze shows up as the rate before it shows up as the gap.
+        /// </summary>
+        bool SideHolding(in Seen self, in Seen other, float dt)
+        {
+            float side = MathF.Abs(other.LateralM - self.LateralM);
+            float rate = _passSideSeen >= 0f ? (side - _passSideSeen) / dt : 0f;
+            _passSideSeen = side;
+            return side + MathF.Min(rate, 0f) * SideLookaheadSeconds >= SecureSideM;
+        }
 
         /// <summary>
         /// How far <paramref name="other"/> is ahead of <paramref name="self"/>, for any
