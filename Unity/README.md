@@ -174,9 +174,15 @@ catches up at most 0.1 s of it, so a slow machine slows briefly instead of freez
 
 ## Lap timing
 
-The timing panel in the top right shows the circuit and lap, the lap being driven in large
-figures, last, best and the AI reference, and three sector blocks: purple for a new best
-sector, yellow for slower than the best, green when there is no best yet, grey until done.
+The timing panel in the top right, in the manner of broadcast graphics: a red header with
+the circuit and a lap badge, the lap being driven in large figures, a live delta to the
+best lap of the session at the same point of the lap (green ahead, red behind, from the
+second lap), a lap progress bar in three sector segments, last, best and AI reference, and
+sector blocks that fill purple for a new best, yellow for slower, green with no best yet,
+pulsing as each finishes. A new best lap flashes a purple banner for 3 s.
+
+`-benchmarkSeconds` lengthens the benchmark, and `-screenshotAt 150,210` takes screenshots at
+several moments, for looking at the game later in a race.
 
 Track scenes time laps: `TrackPath` on the circuit holds the centreline, start line at
 sample 0, and `LapTimer` on the car shows current, last and best lap, three sectors

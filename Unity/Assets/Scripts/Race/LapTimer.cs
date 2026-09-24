@@ -31,6 +31,15 @@ namespace CarRace.UnityGame
         GUIStyle _warningStyle;
         float _wrongWayFor;
 
+        // For the live delta: the lap time at each centreline sample on this lap, and on the
+        // best lap of this session. Overwritten on every pass, so the grid, which lap one
+        // drives through at its start and its end, holds the end.
+        float[] _trace, _bestTrace;
+        float _bestTraceLap = float.MaxValue;
+        readonly float[] _sectorDoneAt = { -10f, -10f, -10f };
+        float _bannerUntil = -1f;
+        string _banner = "";
+
         const float WrongWaySeconds = 0.75f;
 
         string BestKey => $"CarRace.BestLap.{track.trackName}";
@@ -40,6 +49,8 @@ namespace CarRace.UnityGame
             if (car == null || track == null || track.centre.Length < 3) { enabled = false; return; }
             _bestLap = PlayerPrefs.GetFloat(BestKey, -1f);
             _lastPosition = car.position;
+            _trace = new float[track.centre.Length];
+            System.Array.Fill(_trace, float.NaN);
         }
 
         void FixedUpdate()
@@ -53,6 +64,7 @@ namespace CarRace.UnityGame
                 _index = track.Nearest(position, 0, back: 0, ahead: n - 1);
                 _running = false;
                 _nextGate = 0;
+                System.Array.Fill(_trace, float.NaN);
             }
             _lastPosition = position;
             _index = track.Nearest(position, _index);
@@ -77,20 +89,36 @@ namespace CarRace.UnityGame
             {
                 _splits[0] = lap;
                 _nextGate = 1;
+                _sectorDoneAt[0] = _clock;
             }
             else if (_nextGate == 1 && _index >= 2 * n / 3)
             {
                 _splits[1] = lap - _splits[0];
                 _nextGate = 2;
+                _sectorDoneAt[1] = _clock;
             }
             else if (_nextGate == 2 && _index < n / 3)
             {
                 _splits[2] = lap - _splits[0] - _splits[1];
+                _sectorDoneAt[2] = _clock;
+                if (lap < _bestTraceLap)
+                {
+                    // Measured from the line. Lap one starts on the grid behind it, so its
+                    // trace reads the seconds to the line everywhere; without this, the lap
+                    // after it would show that much gained all the way round.
+                    float atLine = float.IsNaN(_trace[0]) ? 0f : _trace[0];
+                    _bestTrace = new float[_trace.Length];
+                    for (int i = 0; i < _trace.Length; i++) _bestTrace[i] = _trace[i] - atLine;
+                    _bestTraceLap = lap;
+                }
+                System.Array.Fill(_trace, float.NaN);
                 for (int s = 0; s < 3; s++) _bestSectors[s] = Mathf.Min(_bestSectors[s], _splits[s]);
                 _lastLap = lap;
                 _laps++;
                 if (_bestLap < 0f || lap < _bestLap)
                 {
+                    _banner = $"NEW BEST LAP   {Format(lap)}";
+                    _bannerUntil = _clock + BannerSeconds;
                     _bestLap = lap;
                     PlayerPrefs.SetFloat(BestKey, lap);
                     PlayerPrefs.Save();
@@ -98,76 +126,130 @@ namespace CarRace.UnityGame
                 _lapStart = _clock;
                 _nextGate = 0;
             }
+
+            // After the gates, so the step that ends a lap records the new lap's 0.
+            _trace[_index] = _clock - _lapStart;
         }
 
-        // The timing panel's colours, as broadcast timing graphics use them: purple a new best
-        // sector, yellow slower than the best, green when there is no best to compare with yet.
-        static readonly Color Panel = new Color(0.06f, 0.06f, 0.08f, 0.82f);
-        static readonly Color Header = new Color(0.02f, 0.02f, 0.03f, 0.9f);
-        static readonly Color Accent = new Color(0.9f, 0.15f, 0.1f);
-        static readonly Color Muted = new Color(0.65f, 0.65f, 0.7f);
-        static readonly Color Block = new Color(0.13f, 0.13f, 0.16f, 0.95f);
-        static readonly Color Pending = new Color(0.3f, 0.3f, 0.35f);
-        static readonly Color Purple = new Color(0.72f, 0.38f, 1f);
-        static readonly Color Green = new Color(0.25f, 0.85f, 0.35f);
-        static readonly Color Yellow = new Color(1f, 0.82f, 0.15f);
+        // The timing panel, in the manner of broadcast graphics: purple a new best sector or
+        // lap, yellow slower than the best, green when there is no best to compare with yet.
+        static readonly Color Panel = new Color(0.05f, 0.06f, 0.1f, 0.88f);
+        static readonly Color Accent = new Color(0.9f, 0.12f, 0.1f);
+        static readonly Color AccentLight = new Color(1f, 0.55f, 0.1f);
+        static readonly Color Muted = new Color(0.62f, 0.64f, 0.72f);
+        static readonly Color Block = new Color(0.12f, 0.13f, 0.18f, 0.95f);
+        static readonly Color Pending = new Color(0.28f, 0.29f, 0.35f);
+        static readonly Color Purple = new Color(0.66f, 0.32f, 1f);
+        static readonly Color Green = new Color(0.2f, 0.8f, 0.35f);
+        static readonly Color Yellow = new Color(1f, 0.78f, 0.1f);
+        static readonly Color Ahead = new Color(0.25f, 0.9f, 0.4f);
+        static readonly Color Behind = new Color(1f, 0.3f, 0.25f);
+        const float BannerSeconds = 3f;
+        const float PulseSeconds = 0.8f;
+        const float CornerPx = 9f;
 
-        GUIStyle _headerStyle, _bigStyle, _labelStyle, _valueStyle, _sectorLabel, _sectorTime, _sectorDelta;
+        GUIStyle _headerStyle, _badgeStyle, _bigStyle, _deltaStyle, _labelStyle, _valueStyle,
+                 _sectorLabel, _sectorTime, _sectorDelta, _bannerStyle, _rounded;
+        Texture2D _roundedTexture;
+        int _roundedRadius;
 
         void OnGUI()
         {
             if (!enabled || Hud.Hidden) return;
             Styles();
 
-            float width = Hud.Px(330f), pad = Hud.Px(14f);
-            float x = Screen.width - width - Hud.Px(10f), y = Hud.Px(10f);
-            float height = Hud.Px(track.referenceLapSeconds > 0f ? 250f : 226f);
-
-            Fill(new Rect(x, y, width, height), Panel);
-            Fill(new Rect(x, y, Hud.Px(4f), height), Accent);
-
-            // Header: circuit and lap number.
-            float headerHeight = Hud.Px(30f);
-            Fill(new Rect(x + Hud.Px(4f), y, width - Hud.Px(4f), headerHeight), Header);
-            _headerStyle.alignment = TextAnchor.MiddleLeft;
-            GUI.Label(new Rect(x + pad, y, width - 2f * pad, headerHeight), track.trackName.ToUpperInvariant(), _headerStyle);
-            _headerStyle.alignment = TextAnchor.MiddleRight;
-            GUI.Label(new Rect(x + pad, y, width - 2f * pad, headerHeight), $"LAP {_laps + 1}", _headerStyle);
-
-            // The lap being driven, large.
+            float width = Hud.Px(360f), pad = Hud.Px(16f);
+            float x = Screen.width - width - Hud.Px(12f), y = Hud.Px(12f);
+            bool reference = track.referenceLapSeconds > 0f;
+            float height = Hud.Px(reference ? 318f : 294f);
+            int n = track.centre.Length;
             float current = _running ? _clock - _lapStart : 0f;
-            float row = y + headerHeight + Hud.Px(6f);
-            GUI.Label(new Rect(x + pad, row, width - 2f * pad, Hud.Px(46f)), Format(current), _bigStyle);
-            row += Hud.Px(52f);
 
-            Row(x, pad, width, ref row, "LAST", _lastLap < 0f ? "-" : Format(_lastLap), Color.white);
-            Row(x, pad, width, ref row, "BEST", _bestLap < 0f ? "-" : Format(_bestLap), _bestLap < 0f ? Color.white : Purple);
-            if (track.referenceLapSeconds > 0f)
-                Row(x, pad, width, ref row, "AI REF", Format(track.referenceLapSeconds), Muted);
+            Rounded(new Rect(x, y, width, height), Panel);
 
-            // Sectors: a block each, a bar in its colour along the top.
-            row += Hud.Px(8f);
-            float gap = Hud.Px(6f), blockWidth = (width - 2f * pad - 2f * gap) / 3f, blockHeight = Hud.Px(56f);
-            for (int s = 0; s < 3; s++)
+            // Header band: rounded on top, square below, a lighter stripe under it.
+            float header = Hud.Px(34f);
+            Rounded(new Rect(x, y, width, header), Accent);
+            Fill(new Rect(x, y + header * 0.5f, width, header * 0.5f), Accent);
+            Fill(new Rect(x, y + header, width, Hud.Px(3f)), AccentLight);
+            GUI.Label(new Rect(x + pad, y, width - 2f * pad, header), track.trackName.ToUpperInvariant(), _headerStyle);
+            string lapText = $"LAP {_laps + 1}";
+            float badgeWidth = Hud.Px(64f);
+            var badge = new Rect(x + width - pad - badgeWidth, y + Hud.Px(6f), badgeWidth, header - Hud.Px(12f));
+            Rounded(badge, Color.white);
+            GUI.Label(badge, lapText, _badgeStyle);
+
+            // The lap being driven, large and shadowed, and the live gap to the best lap.
+            float row = y + header + Hud.Px(10f);
+            var timeRect = new Rect(x + pad, row, width - 2f * pad, Hud.Px(50f));
+            _bigStyle.normal.textColor = new Color(0f, 0f, 0f, 0.6f);
+            GUI.Label(new Rect(timeRect.x + Hud.Px(2f), timeRect.y + Hud.Px(2f), timeRect.width, timeRect.height), Format(current), _bigStyle);
+            _bigStyle.normal.textColor = Color.white;
+            GUI.Label(timeRect, Format(current), _bigStyle);
+
+            if (_running && _bestTrace != null && !float.IsNaN(_bestTrace[_index]))
             {
-                var block = new Rect(x + pad + s * (blockWidth + gap), row, blockWidth, blockHeight);
-                bool done = s < _nextGate;
-                float best = _bestSectors[s];
-                Color colour = !done ? Pending
-                             : best == float.MaxValue ? Green
-                             : _splits[s] <= best ? Purple : Yellow;
-                Fill(block, Block);
-                Fill(new Rect(block.x, block.y, block.width, Hud.Px(4f)), colour);
-                GUI.Label(new Rect(block.x, block.y + Hud.Px(6f), block.width, Hud.Px(16f)), $"S{s + 1}", _sectorLabel);
-                _sectorTime.normal.textColor = done ? colour : Pending;
-                GUI.Label(new Rect(block.x, block.y + Hud.Px(20f), block.width, Hud.Px(20f)),
-                          done ? _splits[s].ToString("0.000") : "-", _sectorTime);
-                if (done && best != float.MaxValue)
+                float delta = current - _bestTrace[_index];
+                _deltaStyle.normal.textColor = delta <= 0f ? Ahead : Behind;
+                GUI.Label(timeRect, (delta <= 0f ? "\u25BC " : "\u25B2 ") + delta.ToString("+0.000;-0.000"), _deltaStyle);
+            }
+            row += Hud.Px(56f);
+
+            // Lap progress, a segment per sector, each in its sector's colour once done.
+            float barHeight = Hud.Px(6f), gap = Hud.Px(4f);
+            float segment = (width - 2f * pad - 2f * gap) / 3f;
+            float progress = !_running || (_nextGate == 0 && _index >= 2 * n / 3) ? 0f : (float)_index / n;
+            for (int sct = 0; sct < 3; sct++)
+            {
+                var bar = new Rect(x + pad + sct * (segment + gap), row, segment, barHeight);
+                Fill(bar, Pending);
+                float filled = Mathf.Clamp01(progress * 3f - sct);
+                if (filled > 0f) Fill(new Rect(bar.x, bar.y, bar.width * filled, bar.height), sct < _nextGate ? SectorColour(sct) : Color.white);
+            }
+            row += barHeight + Hud.Px(10f);
+
+            Row(x, pad, width, ref row, "LAST", _lastLap < 0f ? "-" : Format(_lastLap), _lastLap > 0f && _lastLap <= _bestLap ? Purple : Color.white);
+            Row(x, pad, width, ref row, "BEST", _bestLap < 0f ? "-" : Format(_bestLap), _bestLap < 0f ? Color.white : Purple);
+            if (reference) Row(x, pad, width, ref row, "AI REF", Format(track.referenceLapSeconds), Muted);
+
+            // Sector blocks: filled in their colour once done, with a short pulse as they finish.
+            row += Hud.Px(10f);
+            float blockWidth = (width - 2f * pad - 2f * gap) / 3f, blockHeight = Hud.Px(64f);
+            for (int sct = 0; sct < 3; sct++)
+            {
+                var block = new Rect(x + pad + sct * (blockWidth + gap), row, blockWidth, blockHeight);
+                bool done = sct < _nextGate;
+                Color colour = done ? SectorColour(sct) : Block;
+                float pulse = done ? Mathf.Clamp01(1f - (_clock - _sectorDoneAt[sct]) / PulseSeconds) : 0f;
+                if (pulse > 0f)
                 {
-                    _sectorDelta.normal.textColor = colour;
-                    GUI.Label(new Rect(block.x, block.y + Hud.Px(38f), block.width, Hud.Px(16f)),
-                              (_splits[s] - best).ToString("+0.000;-0.000"), _sectorDelta);
+                    float grow = Hud.Px(4f) * pulse;
+                    Rounded(new Rect(block.x - grow, block.y - grow, block.width + 2f * grow, block.height + 2f * grow),
+                            new Color(1f, 1f, 1f, 0.7f * pulse));
                 }
+                Rounded(block, done ? new Color(colour.r, colour.g, colour.b, 0.9f) : Block);
+                Color text = done && colour == Yellow ? new Color(0.1f, 0.08f, 0.02f) : Color.white;
+                _sectorLabel.normal.textColor = done ? text : Muted;
+                _sectorTime.normal.textColor = text;
+                _sectorDelta.normal.textColor = text;
+                GUI.Label(new Rect(block.x, block.y + Hud.Px(4f), block.width, Hud.Px(16f)), $"SECTOR {sct + 1}", _sectorLabel);
+                GUI.Label(new Rect(block.x, block.y + Hud.Px(20f), block.width, Hud.Px(24f)),
+                          done ? _splits[sct].ToString("0.000") : "-", _sectorTime);
+                if (done && _bestSectors[sct] != float.MaxValue)
+                    GUI.Label(new Rect(block.x, block.y + Hud.Px(43f), block.width, Hud.Px(16f)),
+                              (_splits[sct] - _bestSectors[sct]).ToString("+0.000;-0.000"), _sectorDelta);
+            }
+
+            // A new best lap: a purple banner under the position box, flashing for a few seconds.
+            if (_clock < _bannerUntil)
+            {
+                float left = _bannerUntil - _clock;
+                float alpha = Mathf.Clamp01(left / 0.5f) * (0.75f + 0.25f * Mathf.Sin(_clock * 12f));
+                float bannerWidth = Hud.Px(420f), bannerHeight = Hud.Px(52f);
+                var banner = new Rect((Screen.width - bannerWidth) * 0.5f, Hud.Px(84f), bannerWidth, bannerHeight);
+                Rounded(banner, new Color(Purple.r, Purple.g, Purple.b, 0.92f * alpha));
+                _bannerStyle.normal.textColor = new Color(1f, 1f, 1f, alpha);
+                GUI.Label(banner, _banner, _bannerStyle);
             }
 
             if (_wrongWayFor >= WrongWaySeconds)
@@ -182,9 +264,15 @@ namespace CarRace.UnityGame
             }
         }
 
+        Color SectorColour(int sector)
+        {
+            float best = _bestSectors[sector];
+            return best == float.MaxValue ? Green : _splits[sector] <= best ? Purple : Yellow;
+        }
+
         void Row(float x, float pad, float width, ref float y, string label, string value, Color colour)
         {
-            float height = Hud.Px(24f);
+            float height = Hud.Px(25f);
             GUI.Label(new Rect(x + pad, y, width - 2f * pad, height), label, _labelStyle);
             _valueStyle.normal.textColor = colour;
             GUI.Label(new Rect(x + pad, y, width - 2f * pad, height), value, _valueStyle);
@@ -199,22 +287,72 @@ namespace CarRace.UnityGame
             GUI.color = before;
         }
 
+        /// <summary>A rounded rectangle in a colour, from one small white texture sliced nine
+        /// ways so its corners keep their radius at any size.</summary>
+        void Rounded(Rect rect, Color colour)
+        {
+            if (Event.current.type != EventType.Repaint) return;
+            Color before = GUI.color;
+            GUI.color = colour;
+            _rounded.Draw(rect, false, false, false, false);
+            GUI.color = before;
+        }
+
         void Styles()
         {
-            _headerStyle ??= new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, normal = { textColor = new Color(0.9f, 0.9f, 0.92f) } };
-            _bigStyle ??= new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft, normal = { textColor = Color.white } };
+            int radius = Mathf.Max(2, Mathf.RoundToInt(Hud.Px(CornerPx)));
+            if (_rounded == null || radius != _roundedRadius)
+            {
+                if (_roundedTexture != null) Destroy(_roundedTexture);
+                _roundedTexture = RoundedTexture(radius);
+                _roundedRadius = radius;
+                _rounded = new GUIStyle { normal = { background = _roundedTexture }, border = new RectOffset(radius, radius, radius, radius) };
+            }
+
+            _headerStyle ??= new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.BoldAndItalic, alignment = TextAnchor.MiddleLeft, normal = { textColor = Color.white } };
+            _badgeStyle ??= new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, normal = { textColor = new Color(0.1f, 0.1f, 0.14f) } };
+            _bigStyle ??= new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
+            _deltaStyle ??= new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleRight };
             _labelStyle ??= new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft, normal = { textColor = Muted } };
-            _valueStyle ??= new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleRight };
-            _sectorLabel ??= new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, normal = { textColor = Muted } };
+            _valueStyle ??= new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleRight };
+            _sectorLabel ??= new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             _sectorTime ??= new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             _sectorDelta ??= new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter };
-            _headerStyle.fontSize = Hud.Font(14);
-            _bigStyle.fontSize = Hud.Font(38);
+            _bannerStyle ??= new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.BoldAndItalic, alignment = TextAnchor.MiddleCenter };
+            _headerStyle.fontSize = Hud.Font(15);
+            _badgeStyle.fontSize = Hud.Font(13);
+            _bigStyle.fontSize = Hud.Font(44);
+            _deltaStyle.fontSize = Hud.Font(20);
             _labelStyle.fontSize = Hud.Font(13);
             _valueStyle.fontSize = Hud.Font(18);
-            _sectorLabel.fontSize = Hud.Font(12);
-            _sectorTime.fontSize = Hud.Font(16);
+            _sectorLabel.fontSize = Hud.Font(10);
+            _sectorTime.fontSize = Hud.Font(18);
             _sectorDelta.fontSize = Hud.Font(12);
+            _bannerStyle.fontSize = Hud.Font(26);
+        }
+
+        /// <summary>A white square with rounded corners, the edge faded over a pixel.</summary>
+        static Texture2D RoundedTexture(int radius)
+        {
+            int size = radius * 2 + 2;
+            var texture = new Texture2D(size, size, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp };
+            var pixels = new Color32[size * size];
+            for (int y = 0; y < size; y++)
+            for (int x = 0; x < size; x++)
+            {
+                float cx = Mathf.Clamp(x + 0.5f, radius, size - radius), cy = Mathf.Clamp(y + 0.5f, radius, size - radius);
+                float distance = Mathf.Sqrt((x + 0.5f - cx) * (x + 0.5f - cx) + (y + 0.5f - cy) * (y + 0.5f - cy));
+                byte alpha = (byte)(255f * Mathf.Clamp01(radius - distance + 0.5f));
+                pixels[y * size + x] = new Color32(255, 255, 255, alpha);
+            }
+            texture.SetPixels32(pixels);
+            texture.Apply();
+            return texture;
+        }
+
+        void OnDestroy()
+        {
+            if (_roundedTexture != null) Destroy(_roundedTexture);
         }
 
         static string Format(float seconds)

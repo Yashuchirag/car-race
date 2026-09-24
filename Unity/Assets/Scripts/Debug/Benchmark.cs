@@ -24,21 +24,36 @@ namespace CarRace.UnityGame
     public sealed class Benchmark : MonoBehaviour
     {
         const float WarmupSeconds = 8f;     // the 3 s countdown, then the field spreads out
-        const float SampleSeconds = 60f;
-        // In the warm-up, so its cost is not measured, unless -screenshotAt asks for another
-        // moment, for looking at the game mid race.
-        static float ScreenshotAtSeconds
+        /// <summary>60 s unless -benchmarkSeconds says otherwise, for watching a longer race.</summary>
+        static float SampleSeconds => Argument("-benchmarkSeconds", 60f);
+        // In the warm-up, so its cost is not measured, unless -screenshotAt asks for other
+        // moments, comma separated, for looking at the game mid race. Each is saved beside the
+        // report, named by its time.
+        static float[] ScreenshotTimes
         {
             get
             {
                 string[] args = Environment.GetCommandLineArgs();
                 int i = Array.IndexOf(args, "-screenshotAt");
-                return i >= 0 && i + 1 < args.Length && float.TryParse(args[i + 1], System.Globalization.NumberStyles.Float,
-                           System.Globalization.CultureInfo.InvariantCulture, out float at) ? at : 7f;
+                if (i < 0 || i + 1 >= args.Length) return new[] { 7f };
+                var times = new List<float>();
+                foreach (string part in args[i + 1].Split(','))
+                    if (float.TryParse(part, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float at))
+                        times.Add(at);
+                return times.Count > 0 ? times.ToArray() : new[] { 7f };
             }
         }
-        bool _shot;
-        readonly float _screenshotAt = ScreenshotAtSeconds;
+
+        static float Argument(string name, float fallback)
+        {
+            string[] args = Environment.GetCommandLineArgs();
+            int i = Array.IndexOf(args, name);
+            return i >= 0 && i + 1 < args.Length && float.TryParse(args[i + 1], System.Globalization.NumberStyles.Float,
+                       System.Globalization.CultureInfo.InvariantCulture, out float value) ? value : fallback;
+        }
+        readonly float[] _screenshotTimes = ScreenshotTimes;
+        readonly float _sampleSeconds = SampleSeconds;
+        int _shots;
 
         readonly List<float> _frames = new List<float>(20000);
         // Numbers only while sampling, formatted at the end: building the CSV line by line
@@ -125,10 +140,11 @@ namespace CarRace.UnityGame
             _elapsed += dt;
             int collections = GC.CollectionCount(0);
             long memory = GC.GetTotalMemory(false);
-            if (!_shot && _elapsed >= _screenshotAt)
+            if (_shots < _screenshotTimes.Length && _elapsed >= _screenshotTimes[_shots])
             {
-                _shot = true;
-                ScreenCapture.CaptureScreenshot(Path.ChangeExtension(_outPath, ".png"));
+                string suffix = _screenshotTimes.Length == 1 ? "" : $"-{_screenshotTimes[_shots]:0}";
+                ScreenCapture.CaptureScreenshot(Path.ChangeExtension(_outPath, null) + suffix + ".png");
+                _shots++;
             }
             if (_elapsed < WarmupSeconds)
             {
@@ -149,7 +165,7 @@ namespace CarRace.UnityGame
             _fixedSteps = 0;
             _lastCollections = collections;
             _lastMemory = memory;
-            if (_elapsed < WarmupSeconds + SampleSeconds) return;
+            if (_elapsed < WarmupSeconds + _sampleSeconds) return;
 
             File.WriteAllText(_outPath, Report());
             var csv = new System.Text.StringBuilder("t,ms,fixed_steps,gc,mem_delta");
