@@ -278,6 +278,10 @@ Known, deliberate, and not blocking. Recorded so they are not rediscovered.
 - 0 to 100 is 11.6% above the perfect-launch analytic floor. Tyre relaxation and
   traction control catching the wheel account for it. Real launches lose time too.
 - Tyre temperature and wear are not modelled. Phase 6 if wanted at all.
+- No rolling resistance. A car left on a slope rolls until something stops it, as it did
+  on Monza's grid in Unity, on a 4.4% grade from SRTM elevation that is probably steeper
+  than the real track. Real rolling resistance, around 1%, would not have held it there
+  either, so this is realism rather than a bug.
 - Force feedback for a wheel needs a native plugin. Real uncertainty, Phase 6.
 
 - The model reads the car's pose once per Unity physics step and holds it across its
