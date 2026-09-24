@@ -19,9 +19,9 @@ namespace CarRace.UnityGame
         [Tooltip("The first car is the player.")]
         [SerializeField] Transform[] cars = new Transform[0];
         [Tooltip("Width and height at 1080p; scaled with the screen, see Hud.")]
-        [SerializeField] int sizePixels = 220;
-        [SerializeField] float aheadMetres = 220f;
-        [SerializeField] float behindMetres = 30f;
+        [SerializeField] int sizePixels = 300;
+        [SerializeField] float aheadMetres = 350f;
+        [SerializeField] float behindMetres = 40f;
 
         [Tooltip("Corners tighter than these radii, in metres, are drawn orange and red.")]
         [SerializeField] float mediumRadius = 150f;

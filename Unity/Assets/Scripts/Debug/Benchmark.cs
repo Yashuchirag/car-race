@@ -25,8 +25,20 @@ namespace CarRace.UnityGame
     {
         const float WarmupSeconds = 8f;     // the 3 s countdown, then the field spreads out
         const float SampleSeconds = 60f;
-        const float ScreenshotAtSeconds = 7f;   // in the warm-up, so its cost is not measured
+        // In the warm-up, so its cost is not measured, unless -screenshotAt asks for another
+        // moment, for looking at the game mid race.
+        static float ScreenshotAtSeconds
+        {
+            get
+            {
+                string[] args = Environment.GetCommandLineArgs();
+                int i = Array.IndexOf(args, "-screenshotAt");
+                return i >= 0 && i + 1 < args.Length && float.TryParse(args[i + 1], System.Globalization.NumberStyles.Float,
+                           System.Globalization.CultureInfo.InvariantCulture, out float at) ? at : 7f;
+            }
+        }
         bool _shot;
+        readonly float _screenshotAt = ScreenshotAtSeconds;
 
         readonly List<float> _frames = new List<float>(20000);
         // Numbers only while sampling, formatted at the end: building the CSV line by line
@@ -113,7 +125,7 @@ namespace CarRace.UnityGame
             _elapsed += dt;
             int collections = GC.CollectionCount(0);
             long memory = GC.GetTotalMemory(false);
-            if (!_shot && _elapsed >= ScreenshotAtSeconds)
+            if (!_shot && _elapsed >= _screenshotAt)
             {
                 _shot = true;
                 ScreenCapture.CaptureScreenshot(Path.ChangeExtension(_outPath, ".png"));

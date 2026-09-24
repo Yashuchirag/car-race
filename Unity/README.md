@@ -196,10 +196,15 @@ table appears and fills in as the AI finish: position, grid, places gained, best
 fastest marked), race time, gap to the winner and contacts with other cars. Enter races
 again.
 
-`MiniMap` shows the road around you in the bottom left corner, 220 m ahead and 30 m
-behind, turned so the road ahead points up (with the track, not the car, so a spin does not
+`MiniMap` shows the road around you in the bottom left corner, 350 m ahead and 40 m
+behind, 300 px square at 1080p, turned so the road ahead points up (with the track, not the car, so a spin does not
 spin it). Corners tighter than 150 m radius are orange and tighter than 60 m red, the start
 line is blue, and the AI show as dots in their body colours when in view.
+
+`Dashboard` puts a rev counter and a speedometer in the bottom right corner, dials with
+needles like a car's instrument cluster: 0 to 8,000 rpm with a red zone from 7,000 and the
+gear in the middle (red near the rev limit, as a shift light), and 0 to 320 km/h with the
+speed in figures. It attaches itself to the player's car at every scene load.
 
 The AI code copies in from `Sim/`, with the closed-form numbers its speed plan is built
 from:
