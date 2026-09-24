@@ -21,8 +21,8 @@ namespace CarRace.UnityGame.EditorTools
     /// Elevation is shifted so the lowest point of the lap sits at y = 0.
     ///
     /// Grip comes from the collider's physics material, which the wheels read: asphalt at 1,
-    /// grass at 0.35, the value UnityGround documents. Past the verge there is nothing, so a
-    /// car that leaves it falls; R respawns it on the grid.
+    /// grass at 0.35, the value UnityGround documents. A frictionless wall runs along the
+    /// outside of each verge, so the car cannot leave the circuit; R respawns it on the grid.
     /// </summary>
     public static class TrackSceneBuilder
     {
@@ -31,6 +31,11 @@ namespace CarRace.UnityGame.EditorTools
         const string RoadMaterialPath = "Assets/Materials/Road.mat";
         const string GrassMaterialPath = "Assets/Materials/Grass.mat";
         const string LineMaterialPath = "Assets/Materials/RacingLine.mat";
+        const string BarrierMaterialPath = "Assets/Materials/Barrier.mat";
+        const string BarrierPhysicsPath = "Assets/Physics/Barrier.asset";
+        const string BarrierLayerName = "Barrier";
+        const float BarrierHeightM = 1.2f;
+        const float BarrierFootM = 0.5f;
         const float VergeWidthM = 15f;
         const float LineWidthM = 0.35f;
 
@@ -66,6 +71,7 @@ namespace CarRace.UnityGame.EditorTools
 
             if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) return;
             int carLayer = SkidpadSceneBuilder.EnsureLayer(SkidpadSceneBuilder.CarLayerName);
+            int barrierLayer = SkidpadSceneBuilder.EnsureLayer(BarrierLayerName);
             SkidpadSceneBuilder.EnsureTriggerAxes();
 
             // Scene first, assets after: see SkidpadSceneBuilder.Build for why the order matters.
@@ -73,9 +79,11 @@ namespace CarRace.UnityGame.EditorTools
             SkidpadSceneBuilder.EnsureAsphalt();
             SkidpadSceneBuilder.EnsureDefinition();
             EnsureGrassPhysics();
+            EnsureBarrierPhysics();
             AssetDatabase.SaveAssets();
             var asphalt = AssetDatabase.LoadAssetAtPath<PhysicsMaterial>(SkidpadSceneBuilder.AsphaltPath);
             var grass = AssetDatabase.LoadAssetAtPath<PhysicsMaterial>(GrassPhysicsPath);
+            var barrierSurface = AssetDatabase.LoadAssetAtPath<PhysicsMaterial>(BarrierPhysicsPath);
             var definition = AssetDatabase.LoadAssetAtPath<CarDefinition>(SkidpadSceneBuilder.DefinitionPath);
 
             float floor = Min(track.centerline.z);
@@ -107,6 +115,13 @@ namespace CarRace.UnityGame.EditorTools
             Strip("Verge Left", root, leftOuter, leftEdge, grassMaterial, grass);
             Strip("Verge Right", root, rightEdge, rightOuter, grassMaterial, grass);
 
+            // A wall along the outside of each verge, so the car cannot leave the circuit. It
+            // sits on its own layer, which the wheel probes are told to ignore below: a wheel
+            // brushing the wall would otherwise read it as ground and launch the car.
+            var barrierMaterial = SkidpadSceneBuilder.EnsureMaterial(BarrierMaterialPath, new Color(0.85f, 0.85f, 0.85f), null, Vector2.one);
+            Wall("Barrier Left", root, leftOuter, right, +1f, barrierMaterial, barrierSurface, barrierLayer);
+            Wall("Barrier Right", root, rightOuter, right, -1f, barrierMaterial, barrierSurface, barrierLayer);
+
             // The racing line, painted 2 cm above the road with no collider: the line the AI
             // drives in the harness, so a lap here can be compared with the plan.
             var lineRight = RightOf(line);
@@ -125,6 +140,12 @@ namespace CarRace.UnityGame.EditorTools
             Vector3 heading = (line[1] - line[n - 1]).normalized;
             Vector3 start = line[0] + Vector3.up * (definition.cgHeight + 0.05f);
             GameObject car = SkidpadSceneBuilder.PlaceCar(carLayer, definition, start, Quaternion.LookRotation(heading, Vector3.up));
+            var controller = new SerializedObject(car.GetComponent<CarController>());
+            var ground = controller.FindProperty("groundLayers");
+            ground.intValue &= ~(1 << barrierLayer);
+            controller.ApplyModifiedPropertiesWithoutUndo();
+            if ((ground.intValue & (1 << barrierLayer)) != 0)
+                throw new InvalidOperationException("The wheels would read the barrier as ground.");
 
             // A lap spans kilometres; the default 1 km far plane cuts it off in the distance.
             var camera = Camera.main;
@@ -230,6 +251,72 @@ namespace CarRace.UnityGame.EditorTools
                 collider.sharedMaterial = surface;
             }
             return go;
+        }
+
+        /// <summary>
+        /// A vertical wall along <paramref name="edge"/>, facing the track, which lies on the
+        /// side <paramref name="inward"/> times <paramref name="right"/>. Its foot is sunk
+        /// BarrierFootM below the edge so that no gap opens where the ground rises and falls
+        /// between samples, and it has a top so it reads as a wall rather than a sheet.
+        /// </summary>
+        static void Wall(string name, GameObject parent, Vector3[] edge, Vector3[] right, float inward,
+                         Material material, PhysicsMaterial surface, int layer)
+        {
+            int n = edge.Length;
+            const float thickness = 0.4f;
+            // Per sample: inner foot, inner top, outer top, outer foot.
+            var vertices = new Vector3[n * 4];
+            for (int i = 0; i < n; i++)
+            {
+                Vector3 outward = -right[i] * inward * thickness;
+                vertices[4 * i] = edge[i] + Vector3.down * BarrierFootM;
+                vertices[4 * i + 1] = edge[i] + Vector3.up * BarrierHeightM;
+                vertices[4 * i + 2] = edge[i] + outward + Vector3.up * BarrierHeightM;
+                vertices[4 * i + 3] = edge[i] + outward + Vector3.down * BarrierFootM;
+            }
+
+            var triangles = new List<int>(n * 18);
+            for (int i = 0; i < n; i++)
+            {
+                int a = 4 * i, b = 4 * ((i + 1) % n);
+                for (int f = 0; f < 3; f++)   // inner face, top, outer face
+                    triangles.AddRange(new[] { a + f, b + f, a + f + 1, a + f + 1, b + f, b + f + 1 });
+            }
+
+            // The inner face must face the track. Check its first triangle against the inward
+            // direction and flip everything if it faces away; the other faces follow.
+            Vector3 normal = Vector3.Cross(vertices[triangles[1]] - vertices[triangles[0]],
+                                           vertices[triangles[2]] - vertices[triangles[0]]);
+            if (Vector3.Dot(normal, right[0] * inward) < 0f)
+                for (int t = 0; t < triangles.Count; t += 3)
+                    (triangles[t + 1], triangles[t + 2]) = (triangles[t + 2], triangles[t + 1]);
+
+            var mesh = new Mesh { name = name, indexFormat = UnityEngine.Rendering.IndexFormat.UInt32, vertices = vertices };
+            mesh.SetTriangles(triangles, 0);
+            mesh.RecalculateNormals();
+            mesh.RecalculateBounds();
+
+            var go = new GameObject(name) { layer = layer };
+            go.transform.SetParent(parent.transform, false);
+            go.AddComponent<MeshFilter>().sharedMesh = mesh;
+            go.AddComponent<MeshRenderer>().sharedMaterial = material;
+            var collider = go.AddComponent<MeshCollider>();
+            collider.sharedMesh = mesh;
+            collider.sharedMaterial = surface;
+        }
+
+        /// <summary>No friction and no bounce, combined at the minimum, so a car that touches
+        /// the wall glances along it instead of snagging or being thrown back across the road.</summary>
+        static void EnsureBarrierPhysics()
+        {
+            if (AssetDatabase.LoadAssetAtPath<PhysicsMaterial>(BarrierPhysicsPath) != null) return;
+            var barrier = new PhysicsMaterial("Barrier")
+            {
+                dynamicFriction = 0f, staticFriction = 0f, bounciness = 0f,
+                frictionCombine = PhysicsMaterialCombine.Minimum, bounceCombine = PhysicsMaterialCombine.Minimum,
+            };
+            Directory.CreateDirectory(Path.GetDirectoryName(BarrierPhysicsPath));
+            AssetDatabase.CreateAsset(barrier, BarrierPhysicsPath);
         }
 
         static void EnsureGrassPhysics()

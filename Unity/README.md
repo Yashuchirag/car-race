@@ -118,8 +118,10 @@ circuit. It reads the pipeline's JSON and builds the road from the centreline an
 widths, a 15 m grass verge either side, the racing line painted on the road, and the car
 on that line at the start of the lap. The road follows the file's elevation (Spa climbs
 105 m); camber and banking are zero in every file, so it is flat across. Asphalt grips at
-1 and grass at 0.35, read by the wheels from each collider's physics material. Past the
-verge there is nothing: a car that leaves it falls, and `R` puts it back on the grid.
+1 and grass at 0.35, read by the wheels from each collider's physics material. A 1.2 m
+frictionless wall runs along the outside of each verge, on a `Barrier` layer the wheel
+probes ignore, so the car glances off it and cannot leave the circuit. `R` puts the car
+back on the grid.
 
 The circuits copy in from the repo, with their licence, since `Tracks_Data/` is ODbL:
 
