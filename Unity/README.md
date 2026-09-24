@@ -216,6 +216,16 @@ to yours is repainted in one that is not. The Esc menu in a race has Back to lob
 `-carColour 4` picks a colour for one session, and `-lobbyScreenshot <file>` saves a picture
 of the lobby and quits. Under `-benchmark` the lobby goes straight to the race.
 
+## Scenery
+
+The track builder dresses each circuit in its theme (`SceneryBuilder`, themes in
+`TrackSceneBuilder.Themes`); only Royal Park's countryside exists so far. Models are a
+selection of Kenney's CC0 Nature and Racing kits in `Assets/Art/Kenney` (Git LFS), with
+shared materials made by `KenneyModels`. Structures are static GameObjects under
+`Scenery`; trees are the terrain's trees, drawn at run time by `InstancedTrees` because
+the terrain's own path draws mesh trees one call each. Nothing is placed within 3 m of a
+barrier, so none of it has a collider.
+
 ## Racing the AI
 
 Track scenes grid three AI cars ahead of you, laid out as the harness does it but either

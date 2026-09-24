@@ -170,8 +170,12 @@ namespace CarRace.UnityGame.EditorTools
             Wall("Barrier Right", root, rightOuter, right, -1f, barrierMaterial, barrierSurface, barrierLayer);
 
             // Ground out to the horizon, held under the road and verges.
-            GroundBuilder.Build(root, centre, track.centerline.width_left, track.centerline.width_right,
-                                VergeWidthM, $"Assets/Scenes/Track {track.name}/Ground.asset");
+            Terrain terrain = GroundBuilder.Build(root, centre, track.centerline.width_left, track.centerline.width_right,
+                                                 VergeWidthM, $"Assets/Scenes/Track {track.name}/Ground.asset");
+
+            // The surroundings in the circuit's theme, on that ground and clear of the barriers.
+            SceneryBuilder.Build(root, Themes.TryGetValue(circuit, out string theme) ? theme : "", centre, right,
+                                 track.centerline.width_left, track.centerline.width_right, VergeWidthM, terrain);
 
             // The racing line is drawn by RacingLineGuide, added below once the player's car
             // exists: bars ahead of the car coloured by how hard it would have to brake.
