@@ -1,6 +1,7 @@
 using System;
 using UnityEngine;
 using CarRace.Vehicle;
+using Vec3 = System.Numerics.Vector3;
 
 namespace CarRace.UnityGame
 {
@@ -35,20 +36,26 @@ namespace CarRace.UnityGame
         [SerializeField] KeyCode restartKey = KeyCode.Backspace;
 
         [Header("Steering assist")]
-        [Tooltip("Scale steering to what the front tyres can use at the current speed, and ramp it " +
-                 "in rather than jumping. For the keyboard, whose keys are all or nothing. Untick " +
-                 "for a wheel or a pad driven with care.")]
+        [Tooltip("Steer for a turn rate rather than a wheel angle, and counter-steer when the car " +
+                 "rotates more than asked or starts to slide. For the keyboard, whose keys are all " +
+                 "or nothing. Untick for a wheel or a pad driven with care.")]
         [SerializeField] bool steeringAssist = true;
-        [Tooltip("Seconds from centre to full, and from full back to centre.")]
+        [Tooltip("Seconds for the key's request to go from centre to full, and from full back to centre.")]
         [SerializeField] float steerRampSeconds = 0.25f;
         [SerializeField] float steerReturnSeconds = 0.12f;
-        [Tooltip("Front slip angle a full input asks for, on top of the angle the corner needs. " +
-                 "The reference tyre makes 95% of its grip at 8 degrees; beyond that more lock " +
-                 "adds almost nothing and the front just pushes on.")]
-        [SerializeField] float usefulSlipDegrees = 8f;
         [Tooltip("Cornering acceleration the car can hold, m/s^2. The reference car measures " +
                  "0.94 g on the skidpad.")]
         [SerializeField] float lateralGripMs2 = 9.2f;
+        [Tooltip("Share of that grip a full key asks for. Past about 1.2 the car corners no harder, " +
+                 "it only slides more.")]
+        [SerializeField] float cornerReach = 1.2f;
+        [Tooltip("How hard the wheels correct a turn rate that differs from the one asked for. " +
+                 "1 corrects the whole difference through the car's own steering response.")]
+        [SerializeField] float yawGain = 1f;
+        [Tooltip("How much the wheels turn towards where the car is actually going, per unit of " +
+                 "sideslip beyond the dead band. 1 points them along the car's path.")]
+        [SerializeField] float slipGain = 1f;
+        [SerializeField] float slipDeadDegrees = 2f;
 
         [Header("Gamepad buttons, XInput numbering")]
         [SerializeField] KeyCode handbrakeButton = KeyCode.JoystickButton0;   // A
@@ -63,7 +70,7 @@ namespace CarRace.UnityGame
         public bool RespawnRequested { get; private set; }
         public bool RestartRequested { get; private set; }
 
-        float _steer;
+        float _steer, _request;
         float _maxSteerDegrees = 33f, _steerFalloffSpeed = 42f, _wheelbase = 2.65f;
 
         /// <summary>The car's steering geometry, which the assist needs to know how much lock
@@ -80,33 +87,48 @@ namespace CarRace.UnityGame
         /// before Read, so that Read itself has no side effects and the readout and telemetry
         /// can call it too.
         ///
-        /// Why it exists, from telemetry at Monza: a 0.1 s key tap at 150 km/h swung the front
-        /// wheels 10 to 13 degrees, when a driver there uses two or three, and four such taps
-        /// in two seconds built a weave that ended on the grass. The car itself settled from a
-        /// single tap in half a second; the input was the problem, not the physics.
+        /// Why it works this way, from telemetry at Monza and the same inputs replayed headlessly.
+        /// The first assist gave a full key the lock the corner needs plus 8 degrees of front
+        /// slip. At 175 km/h that is 8 degrees at the wheels, where the corner at the grip limit
+        /// needs half of one, so a 0.2 s tap put the fronts at their peak, the car yawed far past
+        /// what the tyres could hold, and with the keys released it stayed in a 15 degree slide.
+        /// The model is right to do that: a 1 or 2 degree pulse at that speed recovers by itself,
+        /// and a real car given a quarter turn of the wheel at 175 km/h spins too.
+        ///
+        /// So a key now asks for a turn rate, cornerReach times the grip limit, lateral grip over
+        /// speed. The wheels get the angle that turn needs, plus a correction for the difference
+        /// between the turn rate asked for and the one the car has, plus a turn towards where the
+        /// car is actually going once it slides past the dead band. The last two are the counter-
+        /// steer a keyboard cannot give. Replayed headlessly, the old assist spun the car in 7 of
+        /// 10 keyboard scenarios and this one in none, while a held key still corners at 0.77 to
+        /// 0.91 g depending on speed.
         /// </summary>
-        public void Tick(float dt, float speedMs)
+        public void Tick(float dt, in BodyState body)
         {
             float raw = Input.GetAxisRaw("Horizontal");
             if (!steeringAssist) { _steer = raw; return; }
 
-            // What a full input should give at this speed: the wheel angle the corner needs at
-            // the grip limit, radius v^2 / a, plus the useful slip. As a share of the lock the
-            // model hands out at this speed, never more than all of it.
-            float v = MathF.Max(MathF.Abs(speedMs), 1f);
-            float kinematicDegrees = _wheelbase * lateralGripMs2 / (v * v) * (180f / MathF.PI);
-            float fullDegrees = _maxSteerDegrees / (1f + v / MathF.Max(_steerFalloffSpeed, 0.01f));
-            float limit = MathF.Min(1f, (kinematicDegrees + usefulSlipDegrees) / MathF.Max(fullDegrees, 0.01f));
+            // The key's request ramps, so a tap asks for a little and a hold for everything.
+            bool outward = MathF.Abs(raw) > MathF.Abs(_request) && raw * _request >= 0f;
+            float rate = 1f / MathF.Max(outward ? steerRampSeconds : steerReturnSeconds, 0.01f);
+            _request += MathF.Max(-rate * dt, MathF.Min(rate * dt, raw - _request));
 
-            // The ramps are measured against that limit, not against the whole input: a quarter
-            // second to reach whatever full is at this speed. Measured against the whole input,
-            // a 0.1 s tap at 150 km/h still reached three quarters of the limit.
-            float target = raw * limit;
-            bool outward = MathF.Abs(target) > MathF.Abs(_steer) && target * _steer >= 0f;
-            float span = MathF.Max(limit, MathF.Abs(_steer));
-            float rate = span / MathF.Max(outward ? steerRampSeconds : steerReturnSeconds, 0.01f);
-            float step = rate * dt;
-            _steer += MathF.Max(-step, MathF.Min(step, target - _steer));
+            float speed = Vec3.Dot(body.Velocity, body.Forward);
+            float v = MathF.Max(MathF.Abs(speed), 3f);
+            float yawRate = Vec3.Dot(body.AngularVelocity, body.Up);
+            float sideslip = body.Velocity.LengthSquared() < 1f ? 0f
+                           : MathF.Atan2(Vec3.Dot(body.Velocity, body.Right), MathF.Abs(speed));
+
+            float wantedYaw = _request * cornerReach * lateralGripMs2 / v;
+            float wheel = MathF.Atan(_wheelbase * wantedYaw / v)
+                        + yawGain * _wheelbase / v * (wantedYaw - yawRate);
+            float dead = slipDeadDegrees * (MathF.PI / 180f);
+            if (MathF.Abs(sideslip) > dead)
+                wheel += slipGain * (sideslip - MathF.Sign(sideslip) * dead);
+
+            // As a share of the lock the model hands out at this speed.
+            float full = _maxSteerDegrees / (1f + v / MathF.Max(_steerFalloffSpeed, 0.01f)) * (MathF.PI / 180f);
+            _steer = MathF.Max(-1f, MathF.Min(1f, wheel / MathF.Max(full, 1e-4f)));
         }
 
         void Update()

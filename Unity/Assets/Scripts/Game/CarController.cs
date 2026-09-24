@@ -125,7 +125,7 @@ namespace CarRace.UnityGame
             if (transform.position.y < fallLimitY) Recover();
 
             if (driver != null)
-                driver.Tick(Time.fixedDeltaTime, Vector3.Dot(_body.linearVelocity, transform.forward));
+                driver.Tick(Time.fixedDeltaTime, Bridge.ReadBody(_body));
             VehicleInputs inputs = Autopilot != null ? Autopilot(Bridge.ReadBody(_body), Time.fixedDeltaTime)
                                  : driver != null ? driver.Read() : VehicleInputs.Coasting;
 

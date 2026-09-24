@@ -20,7 +20,9 @@ sideways gap holds. The race criterion still passes on ten seeds, with no contac
 
 **Next action:** AI opponents in Unity is WIP (section 3, Phase 3): three AI cars from the
 headless `RaceDriver` on the track scene, you gridded behind them. Lap timing, recovery and
-the direction cues still wait on your drive. Passing lanes remain a TODO row for later.
+the direction cues still wait on your drive. So does the new keyboard steering assist
+(section 3, Phase 1), from your report that the car is hard to hold above 120 km/h.
+Passing lanes remain a TODO row for later.
 
 ---
 
@@ -168,6 +170,7 @@ A row only becomes DONE when its verification command passes.
 | Driver input, keyboard and gamepad | DONE | `DriverInput.cs`. Old input manager, so a car drives with no input asset authored. | Keyboard driven in Unity; the gamepad mapping (XInput buttons and trigger axes) is written but never tried, since no pad is in use.
 | Manual shifting in the model | DONE | `Drivetrain.Shift`. Setting `Gear` directly skipped the shift time, so a manual upshift was free lap time. |
 | **Feel test** | DONE | 2026-09-24, on the keyboard, by you: acceleration, cornering, braking, handbrake slides and keyboard control all fine. The Phase 1 exit criterion. Not tried on a gamepad. |
+| Keyboard stability above 120 km/h | WIP | 2026-09-24, from your report that the car is hard to hold above 120 km/h. Telemetry: at 175 km/h a key tap turned the wheels 8 degrees where the corner needs half of one, and the car stayed in a 15 degree slide after the keys were released. Replayed headlessly, the model is right (a 1 to 2 degree pulse recovers, 3 or more lifted does not) and the assist was wrong. `DriverInput` now asks for a turn rate (1.2 times grip over speed) and counter-steers on yaw rate error and on sideslip past 2 degrees. Headless keyboard scenarios: old assist spun 7 of 10, new 0 of 10, held key corners at 0.77 to 0.91 g. Compiles against real Unity and the stub. Waiting on your drive. Not done: throttle is still all or nothing on the keyboard. |
 
 ### Phase 2, track pipeline
 
@@ -476,6 +479,17 @@ learned, so context is not lost between sessions.
   `WorthPassing` refuses a pass on a car with none, so the AI would have queued behind
   a slow player forever. They now assume a plan at pace 0.7 for you.
 - Compiles against the real Unity DLLs and the stub. Not run: the editor was open.
+- You found the car hard to hold above 120 km/h. Your Monza telemetry had sideslip past
+  5 degrees for 14 to 24% of the time above 120, some of it on the grass but the worst on
+  the tarmac: a 0.2 to 0.35 s tap turned the wheels 8 degrees at 175 km/h and the car kept
+  rotating with the keys released. A scratch program replaying keyboard inputs on the
+  headless rig reproduced it, and showed the physics is not the fault: engine braking is
+  0.09 g with negligible slip, aero is rear biased, a 1 to 2 degree pulse recovers. Lifted,
+  3 degrees for 0.3 s leaves both axles at 15 degrees of slip past the tyre peak, a steady
+  drift a real car would need counter-steer to leave too. The first assist's idea, full key
+  equals the corner's lock plus the tyre's useful slip, was the error: steering beyond the
+  corner's need is all slip at the instant it is applied. Rewrote it to ask for a turn rate
+  and counter-steer; 0 spins in 10 scenarios and in the tap weave.
 
 ### 2026-09-23, ninth session
 

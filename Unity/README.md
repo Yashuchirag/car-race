@@ -84,6 +84,10 @@ so tuned car values survive. The steps below are what it does, for building it b
 | Restart from the start | Backspace | Menu |
 | Cycle camera | C | Y |
 
+Keyboard steering is assisted (`Steering Assist` on `DriverInput`, on by default): a key
+asks for a turn rate, a share of what the tyres can hold at that speed, and the assist
+turns the wheels for it, counter-steering when the car rotates more than asked or starts
+to slide. Untick it for a wheel, or a pad driven with care.
 
 The exit criterion for Phase 1 is whether this is enjoyable on a gamepad, which needs
 no track and no art:
