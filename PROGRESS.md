@@ -18,7 +18,7 @@ car it is clearly quicker than instead of 0.9 s, gets those same 10 s to make pr
 before giving up, and may close on the car it is passing at up to 4 m/s while the
 sideways gap holds. The race criterion still passes on ten seeds, with no contacts.
 
-**Next action:** Create the project, deciding HDRP or URP first (Unity now recommends URP for new projects), then `Unity/README.md`. Passing lanes, the
+**Next action:** Follow `Unity/README.md` in the new URP project at `D:\Dev\CarRace`: copy the scripts in, set the project settings, build the skidpad scene, and drive it. Passing lanes, the
 fix for the contacts that remain (below), are a TODO row in section 3 for later.
 
 ---
@@ -139,7 +139,7 @@ A row only becomes DONE when its verification command passes.
 | Off-machine backup | DONE | GitHub repo `Yashuchirag/car-race`, public, `main` tracking `origin/main` |
 | Licensing | DONE | MIT for code, ODbL for `Tracks_Data/`. See README. |
 | Unity 6 LTS installed | DONE | 6.3 LTS (6000.3.24f1) installed 2026-09-23 at `D:\Software\Unity\Editor\6000.3.24f1` with Windows IL2CPP and offline docs; Hub 3.21.3 at `D:\Software\Unity Hub`; Defender exclusions for both folders, `D:\Dev\CarRace` and the two executables (`D:\Software\Unity\Downloads\setup-admin.ps1` has the undo); `UPM_CACHE_ROOT` and `ASSETSTORE_CACHE_PATH` point at `D:\Software\Unity\Cache`. The CLI is `D:\Software\Unity Hub\resources\cli\unity.exe`, not on PATH. Unity Personal activated 2026-09-24 with `unity auth login` and `unity license activate --personal`; a headless start (`Unity.exe -batchmode -quit`) exits 0 as Unity Personal. Also set the Asset Store cache in Preferences, Package Manager, once it opens. Use `pwsh.exe`, not `powershell.exe`: `PSModulePath` lists PowerShell 7 first and breaks 5.1's security module. |
-| Unity project created at `D:\Dev\CarRace` | BLOCKED | Depends on the row above |
+| Unity project created at `D:\Dev\CarRace` | DONE | 2026-09-24, from the Universal 3D template (`com.unity.template.3d-cross-platform`), URP 17.3.0, editor 6000.3.24f1, created headless with `Unity.exe -createProject -cloneFromTemplate`. URP, not HDRP: your decision, see IMPLEMENTATION_REPORT.md, engine section. The template turns on the new Input System only; `DriverInput` needs Active Input Handling set to `Both` (Unity/README.md, settings item 2). |
 | Git LFS configured | TODO | Only needed once binary art assets exist |
 
 
@@ -257,8 +257,8 @@ Unity/          the integration layer, written, never run    Phase 1, WIP
 
 ## 5. Blocked on you
 
-1. **Decide HDRP or URP** before the project at `D:\Dev\CarRace` is created. Unity now
-   recommends URP for new projects; HDRP gets fixes only.
+1. **Drive the car on a gamepad** once the skidpad scene exists. The Phase 1 feel test
+   is the one exit criterion that needs a person.
 3. **Push after meaningful work.** `git push` now that `origin` is configured. The
    repo is private; making it public later is a one-line change, the reverse is
    not really possible.

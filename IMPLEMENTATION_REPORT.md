@@ -45,7 +45,13 @@ exactly what Gran Turismo and the F1 games are. Forza's *visual polish* stays as
 the target; its structure does not. Free roam, if ever wanted, is one drivable
 region added late, not a world.
 
-### Engine: Unity 6 with HDRP
+### Engine: Unity 6 with URP
+
+**Changed on 2026-09-24 from HDRP to URP.** Unity's 2026 render pipeline strategy puts
+HDRP in maintenance only, with no new features, and recommends URP for new projects;
+URP also leaves more headroom for 1080p and 100fps on the RTX 2060. The HDRP reasoning
+below is kept for the record. Moving to HDRP later is a migration of materials, lighting
+and post-processing, cheap only before real art exists. Installed: 6.3 LTS, 6000.3.24f1.
 
 Unreal Engine 5 was the expected answer and was rejected on hardware grounds,
 not on merit:
@@ -509,8 +515,9 @@ noon, evening, dusk, night). Dynamic sun with shadow cascades handles moving car
 Roughly 0.3 ms where real-time GI costs 5 ms or more, and near identical on a
 static track.
 
-**Car paint is the highest-impact material.** HDRP StackLit in Shader Graph does a
-genuine dual-layer coat over base. Metallic flake as a high-tiling detail normal,
+**Car paint is the highest-impact material.** Written for HDRP StackLit; on URP it has to
+be a Shader Graph with a hand-built clearcoat layer, which is the main visual cost of the
+switch. The goal is unchanged: a genuine dual-layer coat over base. Metallic flake as a high-tiling detail normal,
 clearcoat with its own roughness. Get this one material right and the whole game
 reads as expensive.
 
@@ -618,7 +625,7 @@ Each phase ends in something playable with a measurable exit condition.
 
 | Phase | Work | Exit criterion | State |
 |---|---|---|---|
-| 0 | Unity 6 + HDRP installed on D:, Git with LFS, a box on a plane driven by gamepad | packaged build runs standalone above 200fps | **not started** |
+| 0 | Unity 6 + URP installed on D:, Git with LFS, a box on a plane driven by gamepad | packaged build runs standalone above 200fps | **not started** |
 | 1 | Vehicle physics: suspension, Pacejka tyres, drivetrain, aero, telemetry, cameras | placeholder car on a skidpad feels genuinely good; all five validation tests pass; oversteer can be provoked and caught | **physics, validation and the Unity layer all written; the layer has never been run, and the feel test needs Unity** |
 | 2 | Track pipeline: OSM to spline, elevation, racing line, timing | hot-lap two circuits, invalid laps flagged, new circuit under a day | **DONE** |
 | 3 | AI drivers, race state machine, sessions, flags, penalties, pit stops | ten-lap race against fifteen AI with a plausible spread and no turn-one pile-up | **drivers, traffic and race control all run headlessly; sixteen cars finish ten laps of Monza with no contacts on ten seeds and a spread that follows pace, so the headless criterion is met. Passes complete where the plans say one can, so a fast car started last works forward past much slower ones; a few pass contacts remain. Flags, penalties and pit stops untouched** |
@@ -637,7 +644,7 @@ not code.
 1. **Install Unity 6 LTS**, setting the Hub's editor install location to D:.
 2. **Add the Windows Defender exclusion** for `D:\Dev\CarRace` and the Unity
    processes. Worth 2 to 5x on import times on the spinning disk.
-3. **Create the HDRP project** at `D:\Dev\CarRace`, native Windows path.
+3. **Create the URP project** at `D:\Dev\CarRace`, native Windows path.
 4. **Initialise Git with LFS.** Track `*.fbx *.png *.tga *.wav *.asset`, and use
    Unity's standard `.gitignore` for `Library/` and `Temp/`.
 5. **Wire the physics into Unity.** Written, in `Unity/Assets/Scripts/Game/`: the

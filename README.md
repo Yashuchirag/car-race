@@ -47,7 +47,7 @@ Adding another circuit is a catalogue entry plus one command.
 
 | Layer | Choice |
 |---|---|
-| Engine | Unity 6 LTS with HDRP |
+| Engine | Unity 6.3 LTS with URP (switched from HDRP on 2026-09-24) |
 | Language | C#, with vehicle dynamics as plain math on a Rigidbody at 400 to 500 Hz |
 | Networking | FishNet, listen server, UDP broadcast LAN discovery |
 | Data pipeline | Python 3.10 under WSL: numpy, scipy, pyproj, shapely, matplotlib, requests |
