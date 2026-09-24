@@ -18,7 +18,7 @@ car it is clearly quicker than instead of 0.9 s, gets those same 10 s to make pr
 before giving up, and may close on the car it is passing at up to 4 m/s while the
 sideways gap holds. The race criterion still passes on ten seeds, with no contacts.
 
-**Next action:** Build the skidpad scene in `D:\Dev\CarRace` (`Unity/README.md`, scene section) and drive it on a gamepad. The scripts are copied in and compile against Unity 6.3 with no errors or warnings, and the four project settings are applied. Passing lanes, the
+**Next action:** The Phase 1 feel test: drive the skidpad car and report how it feels (grip, understeer, braking, how it catches a slide). It runs on the keyboard; you are not planning to use a gamepad. Tuning follows from that feedback, on the Car Definition asset. Passing lanes, the
 fix for the contacts that remain (below), are a TODO row in section 3 for later.
 
 ---
@@ -141,6 +141,7 @@ A row only becomes DONE when its verification command passes.
 | Unity 6 LTS installed | DONE | 6.3 LTS (6000.3.24f1) installed 2026-09-23 at `D:\Software\Unity\Editor\6000.3.24f1` with Windows IL2CPP and offline docs; Hub 3.21.3 at `D:\Software\Unity Hub`; Defender exclusions for both folders, `D:\Dev\CarRace` and the two executables (`D:\Software\Unity\Downloads\setup-admin.ps1` has the undo); `UPM_CACHE_ROOT` and `ASSETSTORE_CACHE_PATH` point at `D:\Software\Unity\Cache`. The CLI is `D:\Software\Unity Hub\resources\cli\unity.exe`, not on PATH. Unity Personal activated 2026-09-24 with `unity auth login` and `unity license activate --personal`; a headless start (`Unity.exe -batchmode -quit`) exits 0 as Unity Personal. Also set the Asset Store cache in Preferences, Package Manager, once it opens. Use `pwsh.exe`, not `powershell.exe`: `PSModulePath` lists PowerShell 7 first and breaks 5.1's security module. |
 | Unity project created at `D:\Dev\CarRace` | DONE | 2026-09-24, from the Universal 3D template (`com.unity.template.3d-cross-platform`), URP 17.3.0, editor 6000.3.24f1, created headless with `Unity.exe -createProject -cloneFromTemplate`. URP, not HDRP: your decision, see IMPLEMENTATION_REPORT.md, engine section. The template turns on the new Input System only; `DriverInput` needs Active Input Handling set to `Both` (Unity/README.md, settings item 2). |
 | Scripts in the project, settings applied | DONE | 2026-09-24. `Sim/CarRace.Vehicle` and `Unity/Assets/Scripts/Game` copied per `Unity/README.md`; a headless open compiles all seven classes into `Assembly-CSharp.dll`, 0 errors, 0 warnings. Fixed Timestep 0.005, Active Input Handling Both, Default Solver Iterations 12, layer 8 named `Car`. Recopy after editing either side; the repo is the source of truth. |
+| Skidpad scene, car driving in Unity | DONE | 2026-09-24. `CarRace, Build Skidpad Scene` (`Unity/Assets/Editor/SkidpadSceneBuilder.cs`) builds it; you confirmed the car drives on the keyboard. Three bugs found on the way, all fixed: the builder lost the Car Definition when it opened the new scene; the README's body collider reached 15 cm into the ground, so the car sat on it and would not move; and bare cylinder wheels were stood upright by the controller. Checker ground, coloured car and a `DriveHud` readout (speed, gear, rpm, inputs, raw axes) make it readable. |
 | Git LFS configured | TODO | Only needed once binary art assets exist |
 
 
