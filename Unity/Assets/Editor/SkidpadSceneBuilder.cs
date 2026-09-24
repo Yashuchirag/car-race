@@ -71,8 +71,8 @@ namespace CarRace.UnityGame.EditorTools
             AddToBuildSettings(ScenePath);
             Selection.activeGameObject = car;
             Debug.Log($"Skidpad scene built at {ScenePath}. Press Play. Keyboard: WASD, Space handbrake, " +
-                      "E/Q shift, R respawn, C camera. Gamepad: left stick steer, RT throttle, LT brake, " +
-                      "A handbrake, RB/LB shift, View respawn, Y camera.");
+                      "E/Q shift, R recover, Backspace restart, C camera. Gamepad: left stick steer, RT throttle, " +
+                      "LT brake, A handbrake, RB/LB shift, View recover, Menu restart, Y camera.");
         }
 
         /// <summary>For a headless check: Unity.exe -batchmode -executeMethod

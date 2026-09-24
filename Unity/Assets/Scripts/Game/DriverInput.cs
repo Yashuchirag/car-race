@@ -28,7 +28,11 @@ namespace CarRace.UnityGame
         [SerializeField] KeyCode handbrakeKey = KeyCode.Space;
         [SerializeField] KeyCode shiftUpKey = KeyCode.E;
         [SerializeField] KeyCode shiftDownKey = KeyCode.Q;
+        [Tooltip("Recover: back onto the track where the car is, stopped and pointing the right " +
+                 "way. On a scene with no track, back to the start.")]
         [SerializeField] KeyCode respawnKey = KeyCode.R;
+        [Tooltip("Restart: back to the start.")]
+        [SerializeField] KeyCode restartKey = KeyCode.Backspace;
 
         [Header("Steering assist")]
         [Tooltip("Scale steering to what the front tyres can use at the current speed, and ramp it " +
@@ -51,11 +55,13 @@ namespace CarRace.UnityGame
         [SerializeField] KeyCode shiftUpButton = KeyCode.JoystickButton5;     // RB
         [SerializeField] KeyCode shiftDownButton = KeyCode.JoystickButton4;   // LB
         [SerializeField] KeyCode respawnButton = KeyCode.JoystickButton6;     // View
+        [SerializeField] KeyCode restartButton = KeyCode.JoystickButton7;     // Menu
 
         /// <summary>Set the frame the key went down, cleared when the car acts on it.</summary>
         public bool ShiftUpRequested { get; private set; }
         public bool ShiftDownRequested { get; private set; }
         public bool RespawnRequested { get; private set; }
+        public bool RestartRequested { get; private set; }
 
         float _steer;
         float _maxSteerDegrees = 33f, _steerFalloffSpeed = 42f, _wheelbase = 2.65f;
@@ -110,6 +116,7 @@ namespace CarRace.UnityGame
             if (Input.GetKeyDown(shiftUpKey) || Input.GetKeyDown(shiftUpButton)) ShiftUpRequested = true;
             if (Input.GetKeyDown(shiftDownKey) || Input.GetKeyDown(shiftDownButton)) ShiftDownRequested = true;
             if (Input.GetKeyDown(respawnKey) || Input.GetKeyDown(respawnButton)) RespawnRequested = true;
+            if (Input.GetKeyDown(restartKey) || Input.GetKeyDown(restartButton)) RestartRequested = true;
         }
 
         public void ConsumeRequests()
@@ -117,6 +124,7 @@ namespace CarRace.UnityGame
             ShiftUpRequested = false;
             ShiftDownRequested = false;
             RespawnRequested = false;
+            RestartRequested = false;
         }
 
         public VehicleInputs Read()

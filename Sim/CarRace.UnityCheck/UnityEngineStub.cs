@@ -191,7 +191,7 @@ namespace UnityEngine
 
     public enum KeyCode
     {
-        None = 0, Space, Q, E, R, C, LeftShift,
+        None = 0, Space, Q, E, R, C, LeftShift, Backspace,
         JoystickButton0, JoystickButton1, JoystickButton2, JoystickButton3,
         JoystickButton4, JoystickButton5, JoystickButton6, JoystickButton7,
     }

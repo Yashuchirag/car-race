@@ -80,7 +80,8 @@ so tuned car values survive. The steps below are what it does, for building it b
 | Throttle, brake | W / S | Right trigger, left trigger (or left stick up, down) |
 | Handbrake | Space | A |
 | Shift up, down (manual gearbox) | E / Q | RB / LB |
-| Respawn | R | View |
+| Recover onto the track where you are (the start on the skidpad) | R | View |
+| Restart from the start | Backspace | Menu |
 | Cycle camera | C | Y |
 
 

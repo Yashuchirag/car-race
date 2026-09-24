@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 using CarRace.Vehicle;
 using Vec3 = System.Numerics.Vector3;
@@ -39,6 +40,14 @@ namespace CarRace.UnityGame
         [SerializeField] float fallLimitY = -30f;
 
         public VehicleSim Sim { get; private set; }
+
+        /// <summary>
+        /// Where Recover puts the car, if the scene knows better than the start: a circuit
+        /// supplies the nearest point on the track, pointing along the lap. Null means the
+        /// start. A delegate rather than a reference so this script needs nothing from the
+        /// race code.
+        /// </summary>
+        public Func<(Vector3 position, Quaternion rotation)> RecoveryPose;
         public float SpeedKph => _body != null ? _body.linearVelocity.magnitude * 3.6f : 0f;
 
         Rigidbody _body;
@@ -105,7 +114,7 @@ namespace CarRace.UnityGame
             Sim.AntiLockBrakes = antiLockBrakes;
             Sim.TractionControl = tractionControl;
 
-            if (transform.position.y < fallLimitY) Respawn();
+            if (transform.position.y < fallLimitY) Recover();
 
             if (driver != null)
                 driver.Tick(Time.fixedDeltaTime, Vector3.Dot(_body.linearVelocity, transform.forward));
@@ -113,7 +122,8 @@ namespace CarRace.UnityGame
 
             if (driver != null)
             {
-                if (driver.RespawnRequested) Respawn();
+                if (driver.RespawnRequested) Recover();
+                if (driver.RestartRequested) Respawn();
                 if (!automaticGearbox)
                 {
                     if (driver.ShiftUpRequested) Sim.Drivetrain.Shift(1);
@@ -186,15 +196,28 @@ namespace CarRace.UnityGame
             }
         }
 
-        /// <summary>Puts the car back where it started, at rest. For the driving feel test:
-        /// spinning it is the point, and walking back to the scene view is not.</summary>
-        public void Respawn()
+        /// <summary>Puts the car back where it started, at rest.</summary>
+        public void Respawn() => PlaceAt(_spawnPosition, _spawnRotation);
+
+        /// <summary>
+        /// Puts the car back on the track where it is, at rest and pointing the right way, or
+        /// at the start when the scene has no track. After a spin the car used to be sent back
+        /// to the start, which threw the lap away, so a spin felt unrecoverable when it was not.
+        /// </summary>
+        public void Recover()
+        {
+            if (RecoveryPose == null) { Respawn(); return; }
+            var pose = RecoveryPose();
+            PlaceAt(pose.position, pose.rotation);
+        }
+
+        void PlaceAt(Vector3 position, Quaternion rotation)
         {
             _body.linearVelocity = Vector3.zero;
             _body.angularVelocity = Vector3.zero;
-            _body.position = _spawnPosition;
-            _body.rotation = _spawnRotation;
-            transform.SetPositionAndRotation(_spawnPosition, _spawnRotation);
+            _body.position = position;
+            _body.rotation = rotation;
+            transform.SetPositionAndRotation(position, rotation);
             Sim.Reset();
             for (int i = 0; i < 4; i++) _spinDegrees[i] = 0f;
         }

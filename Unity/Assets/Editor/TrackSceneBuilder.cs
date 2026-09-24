@@ -159,6 +159,14 @@ namespace CarRace.UnityGame.EditorTools
             timerSettings.FindProperty("track").objectReferenceValue = path;
             timerSettings.ApplyModifiedPropertiesWithoutUndo();
 
+            // R recovers onto the track where the car is, rather than back to the grid.
+            var recovery = car.AddComponent<TrackRecovery>();
+            var recoverySettings = new SerializedObject(recovery);
+            recoverySettings.FindProperty("car").objectReferenceValue = car.GetComponent<CarController>();
+            recoverySettings.FindProperty("track").objectReferenceValue = path;
+            recoverySettings.FindProperty("cgHeight").floatValue = definition.cgHeight;
+            recoverySettings.ApplyModifiedPropertiesWithoutUndo();
+
             var controller = new SerializedObject(car.GetComponent<CarController>());
             var ground = controller.FindProperty("groundLayers");
             ground.intValue &= ~(1 << barrierLayer);
@@ -179,7 +187,7 @@ namespace CarRace.UnityGame.EditorTools
             SkidpadSceneBuilder.AddToBuildSettings(scenePath);
             Selection.activeGameObject = car;
             Debug.Log($"{track.name} built at {scenePath}: {n} samples, {Length(centre):0} m of road, " +
-                      $"{Max(track.centerline.z) - floor:0} m of climb. Press Play; R respawns on the grid.");
+                      $"{Max(track.centerline.z) - floor:0} m of climb. Press Play; R recovers onto the track, Backspace restarts.");
         }
 
         static void Check(TrackFile track, string circuit)

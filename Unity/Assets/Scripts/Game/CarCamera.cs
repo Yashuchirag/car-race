@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 
 namespace CarRace.UnityGame
@@ -39,7 +40,7 @@ namespace CarRace.UnityGame
 
         Camera _camera;
         Vector3 _rigPosition;
-        Vector3 _smoothedHeading;
+        float _yaw;   // smoothed heading, radians about the vertical axis
 
         void Awake()
         {
@@ -53,7 +54,7 @@ namespace CarRace.UnityGame
             if (targetBody == null) targetBody = target.GetComponent<Rigidbody>();
 
             _rigPosition = target.TransformPoint(chaseOffset);
-            _smoothedHeading = target.forward;
+            _yaw = YawOf(target.forward);
         }
 
         void Update()
@@ -79,15 +80,22 @@ namespace CarRace.UnityGame
         void FollowChase(Vector3 velocity, float speed)
         {
             // Heading, not the car's facing: below walking pace there is no meaningful
-            // heading, so fall back to facing or the camera swims while parked.
-            Vector3 heading = speed > 1.5f ? velocity.normalized : target.forward;
-            heading.y = 0f;
-            if (heading.sqrMagnitude < 1e-4f) heading = target.forward;
-            _smoothedHeading = Vector3.Slerp(_smoothedHeading, heading.normalized,
-                                             1f - Mathf.Exp(-Time.deltaTime / followLag));
+            // heading, so fall back to facing or the camera swims while parked. And facing
+            // again once the car is travelling backwards, after a spin: following the
+            // velocity there put the camera in front of the car, looking at its nose.
+            Vector3 heading = speed > 1.5f && Vector3.Dot(velocity, target.forward) > 0f
+                ? velocity : target.forward;
+
+            // Smoothed as an angle about the vertical, the short way round. Slerping
+            // directions instead broke in a spin: facing and heading point opposite ways,
+            // a slerp between opposites has no defined path, and it swung the camera through
+            // the sky.
+            float follow = 1f - Mathf.Exp(-Time.deltaTime / followLag);
+            _yaw += Wrap(YawOf(heading) - _yaw) * follow;
+            Vector3 smoothedHeading = new Vector3(MathF.Sin(_yaw), 0f, MathF.Cos(_yaw));
 
             Vector3 anchor = target.position
-                           + _smoothedHeading * chaseOffset.z
+                           + smoothedHeading * chaseOffset.z
                            + Vector3.up * chaseOffset.y
                            + target.right * chaseOffset.x;
 
@@ -98,8 +106,20 @@ namespace CarRace.UnityGame
                                         1f - Mathf.Exp(-Time.deltaTime / followLag));
             transform.position = _rigPosition;
 
-            Vector3 aim = Vector3.Slerp(target.forward, _smoothedHeading, lookIntoCorner);
-            transform.rotation = Quaternion.LookRotation(aim, Vector3.up);
+            // Aim partway from the car's facing towards the heading, by angle, level.
+            float facing = YawOf(target.forward);
+            float aimYaw = facing + Wrap(_yaw - facing) * lookIntoCorner;
+            transform.rotation = Quaternion.LookRotation(new Vector3(MathF.Sin(aimYaw), 0f, MathF.Cos(aimYaw)), Vector3.up);
+        }
+
+        static float YawOf(Vector3 direction) => MathF.Atan2(direction.x, direction.z);
+
+        /// <summary>An angle difference brought into -pi to pi, so a turn goes the short way.</summary>
+        static float Wrap(float radians)
+        {
+            while (radians > MathF.PI) radians -= 2f * MathF.PI;
+            while (radians < -MathF.PI) radians += 2f * MathF.PI;
+            return radians;
         }
 
         void MountRigidly()
