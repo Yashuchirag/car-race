@@ -134,6 +134,15 @@ cp Tracks_Data/LICENSE /mnt/d/Dev/CarRace/Assets/Tracks/LICENSE.txt
 Each builds to `Assets/Scenes/Track <name>.unity`. The skidpad and the tracks share one
 car setup (`SkidpadSceneBuilder.PlaceCar`), so a fix to the car reaches every scene.
 
+## Lap timing
+
+Track scenes time laps: `TrackPath` on the circuit holds the centreline, start line at
+sample 0, and `LapTimer` on the car shows current, last and best lap, three sectors
+against your best sectors, and the headless reference driver's lap for that circuit. A
+lap counts only after passing both sector gates in order, so reversing over the line or
+cutting across cannot complete one. The clock starts when the car first moves; a respawn
+abandons the lap in progress. The best lap is kept per circuit in PlayerPrefs.
+
 ## Analogue triggers
 
 Throttle and brake share one axis by default, which is the only thing the stock input

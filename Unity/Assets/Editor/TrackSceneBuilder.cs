@@ -56,6 +56,14 @@ namespace CarRace.UnityGame.EditorTools
             AssetDatabase.SaveAssets();
         }
 
+        /// <summary>The headless reference driver's lap on each circuit, pace 0.85, from
+        /// `--lap all` on 2026-09-24. On flat ground, so a guide rather than a par here.</summary>
+        static readonly Dictionary<string, float> ReferenceLaps = new Dictionary<string, float>
+        {
+            ["bahrain"] = 171.071f, ["monza"] = 154.490f, ["silverstone"] = 183.688f,
+            ["spa"] = 202.576f, ["suzuka"] = 175.725f, ["testcircuit"] = 65.336f,
+        };
+
         [Serializable] class Polyline { public float[] x, y, z, width_left, width_right; }
         [Serializable] class TrackFile { public string name; public float sample_spacing_m; public Polyline centerline, racing_line; }
 
@@ -140,6 +148,17 @@ namespace CarRace.UnityGame.EditorTools
             Vector3 heading = (line[1] - line[n - 1]).normalized;
             Vector3 start = line[0] + Vector3.up * (definition.cgHeight + 0.05f);
             GameObject car = SkidpadSceneBuilder.PlaceCar(carLayer, definition, start, Quaternion.LookRotation(heading, Vector3.up));
+            // Lap timing: the centreline as the timer's measure of progress, start line at 0.
+            var path = root.AddComponent<TrackPath>();
+            path.trackName = track.name;
+            path.centre = centre;
+            path.referenceLapSeconds = ReferenceLaps.TryGetValue(circuit, out float reference) ? reference : 0f;
+            var timer = car.AddComponent<LapTimer>();
+            var timerSettings = new SerializedObject(timer);
+            timerSettings.FindProperty("car").objectReferenceValue = car.GetComponent<Rigidbody>();
+            timerSettings.FindProperty("track").objectReferenceValue = path;
+            timerSettings.ApplyModifiedPropertiesWithoutUndo();
+
             var controller = new SerializedObject(car.GetComponent<CarController>());
             var ground = controller.FindProperty("groundLayers");
             ground.intValue &= ~(1 << barrierLayer);
