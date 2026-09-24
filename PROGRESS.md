@@ -18,9 +18,8 @@ car it is clearly quicker than instead of 0.9 s, gets those same 10 s to make pr
 before giving up, and may close on the car it is passing at up to 4 m/s while the
 sideways gap holds. The race criterion still passes on ten seeds, with no contacts.
 
-**Next action:** A decision for you. The contacts that remain come from the lane model
-itself (below), and the fix for those is proper passing lines, the design in section 12
-of IMPLEMENTATION_REPORT.md. If that can wait, go on to the Unity install.
+**Next action:** Activate the Unity Personal licence (section 3 row), then create the project, deciding HDRP or URP first (Unity now recommends URP for new projects), then `Unity/README.md`. Passing lanes, the
+fix for the contacts that remain (below), are a TODO row in section 3 for later.
 
 ---
 
@@ -139,7 +138,7 @@ A row only becomes DONE when its verification command passes.
 | Git repository | DONE | Initialised 2026-09-22 |
 | Off-machine backup | DONE | GitHub repo `Yashuchirag/car-race`, public, `main` tracking `origin/main` |
 | Licensing | DONE | MIT for code, ODbL for `Tracks_Data/`. See README. |
-| Unity 6 LTS installed | BLOCKED | Manual step, needs your account login. Section 5. |
+| Unity 6 LTS installed | WIP | 6.3 LTS (6000.3.24f1) installed 2026-09-23 at `D:\Software\Unity\Editor\6000.3.24f1` with Windows IL2CPP and offline docs; Hub 3.21.3 at `D:\Software\Unity Hub`; Defender exclusions for both folders, `D:\Dev\CarRace` and the two executables (`D:\Software\Unity\Downloads\setup-admin.ps1` has the undo); `UPM_CACHE_ROOT` and `ASSETSTORE_CACHE_PATH` point at `D:\Software\Unity\Cache`. The CLI is `D:\Software\Unity Hub\resources\cli\unity.exe`, not on PATH. **Left: the licence**, deferred by you: `unity auth login`, then `unity license activate --personal --accept-eula`, or the Hub. The editor will not open until then. Also set the Asset Store cache in Preferences, Package Manager, once it opens. Use `pwsh.exe`, not `powershell.exe`: `PSModulePath` lists PowerShell 7 first and breaks 5.1's security module. |
 | Unity project created at `D:\Dev\CarRace` | BLOCKED | Depends on the row above |
 | Git LFS configured | TODO | Only needed once binary art assets exist |
 
@@ -188,6 +187,7 @@ physics has never driven a corner the track pipeline produced.
 | Race control: grid, laps, positions, classification | DONE | `RaceControl`. Grid behind the line so every car drives the same distance. |
 | Headless race | DONE | `--race monza --cars 16 --laps 10`: 16 of 16 finish with no contacts, on seeds 1 to 10. Section 7. |
 | Overtaking | DONE | Passes that complete where the plans say one can: `--fastest-last` puts the fastest car at the back, and it now gains places. 1 contact in 20 such races remains, from the lane model; section 1. |
+| Passing lanes | TODO | Inside and outside lines fixed on the road, each with its own speed plan, and a forward check for whether two cars' lines cross, in place of offsets hung off a racing line that sweeps across the road. The fix for the squeeze contacts left in passing (section 1), and the design in section 12 of IMPLEMENTATION_REPORT.md. Deferred on 2026-09-23 in favour of the Unity install. |
 | Race telemetry | DONE | `--race ... --csv <path>`. One row per car every 20 ms: the `--lap` columns plus blocked by, following, overtaking, wanted and driven offset, and the cap. |
 | Catching a slide | WIP | Partial. `PathDriver` counter-steers and lifts above 12 degrees of sideslip, which stopped spun cars crawling for the rest of the race, but 11 crawl reports in a ten-lap race still show more than 25 degrees. |
 | Flags, penalties, pit stops | TODO | Not started. |
@@ -257,10 +257,8 @@ Unity/          the integration layer, written, never run    Phase 1, WIP
 
 ## 5. Blocked on you
 
-1. **Install Unity 6 LTS.** Set the Hub's editor install location to D:. This is
-   the only thing gating Phase 1 completion and everything after it.
-2. **Add a Windows Defender exclusion** for the project folder and the Unity
-   processes once it exists. Typically 2 to 5x on import times on a spinning disk.
+1. **Activate the Unity Personal licence.** Unity 6.3 LTS is installed; the licence is
+   the one step left before the editor opens. Section 3 has the commands.
 3. **Push after meaningful work.** `git push` now that `origin` is configured. The
    repo is private; making it public later is a one-line change, the reverse is
    not really possible.
