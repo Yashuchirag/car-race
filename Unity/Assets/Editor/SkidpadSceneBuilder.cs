@@ -24,6 +24,10 @@ namespace CarRace.UnityGame.EditorTools
         const string ScenePath = "Assets/Scenes/Skidpad.unity";
         const string DefinitionPath = "Assets/Cars/ReferenceCar.asset";
         const string AsphaltPath = "Assets/Physics/Asphalt.asset";
+        const string CheckerPath = "Assets/Materials/Checker.asset";
+        const string GroundMaterialPath = "Assets/Materials/Ground.mat";
+        const string BodyMaterialPath = "Assets/Materials/CarBody.mat";
+        const string TyreMaterialPath = "Assets/Materials/Tyre.mat";
         const string CarLayerName = "Car";
 
         [MenuItem("CarRace/Build Skidpad Scene")]
@@ -52,7 +56,22 @@ namespace CarRace.UnityGame.EditorTools
             ground.transform.localScale = new Vector3(100f, 1f, 100f);
             ground.GetComponent<Collider>().sharedMaterial = asphalt;
 
+            // A checkerboard of 5 m squares. On a plain plane there is nothing to see go past,
+            // so a moving car and a parked one look the same.
+            ground.GetComponent<Renderer>().sharedMaterial = EnsureMaterial(
+                GroundMaterialPath, new Color(0.55f, 0.55f, 0.55f), EnsureChecker(), new Vector2(100f, 100f));
+
             GameObject car = BuildCar(carLayer, definition);
+            var bodyMaterial = EnsureMaterial(BodyMaterialPath, new Color(0.8f, 0.1f, 0.08f), null, Vector2.one);
+            var tyreMaterial = EnsureMaterial(TyreMaterialPath, new Color(0.08f, 0.08f, 0.08f), null, Vector2.one);
+            foreach (var r in car.GetComponentsInChildren<Renderer>())
+                r.sharedMaterial = r.name == "Body" ? bodyMaterial : tyreMaterial;
+
+            var hud = car.AddComponent<DriveHud>();
+            var hudSettings = new SerializedObject(hud);
+            hudSettings.FindProperty("car").objectReferenceValue = car.GetComponent<CarController>();
+            hudSettings.FindProperty("driver").objectReferenceValue = car.GetComponent<DriverInput>();
+            hudSettings.ApplyModifiedPropertiesWithoutUndo();
 
             var camera = Camera.main != null ? Camera.main.gameObject : new GameObject("Main Camera", typeof(Camera));
             camera.transform.SetPositionAndRotation(new Vector3(0f, 2f, -6f), Quaternion.identity);
@@ -92,6 +111,10 @@ namespace CarRace.UnityGame.EditorTools
                 throw new System.InvalidOperationException("Car Controller has no Driver Input after building.");
             if (ground.GetComponent<Collider>().sharedMaterial != asphalt)
                 throw new System.InvalidOperationException("Ground has lost its Asphalt material.");
+            if (car.GetComponent<DriveHud>() == null)
+                throw new System.InvalidOperationException("Car has no DriveHud.");
+            if (!EditorUtility.IsPersistent(ground.GetComponent<Renderer>().sharedMaterial))
+                throw new System.InvalidOperationException("Ground material is not saved as an asset.");
             if (!EditorUtility.IsPersistent(definition))
                 throw new System.InvalidOperationException("Car Definition is not saved as an asset.");
         }
@@ -160,6 +183,46 @@ namespace CarRace.UnityGame.EditorTools
             for (int i = 0; i < 4; i++) wheels.GetArrayElementAtIndex(i).objectReferenceValue = visuals[i];
             settings.ApplyModifiedPropertiesWithoutUndo();
             return car;
+        }
+
+        /// <summary>A two by two checker, point filtered so the squares stay sharp.</summary>
+        static Texture2D EnsureChecker()
+        {
+            var checker = AssetDatabase.LoadAssetAtPath<Texture2D>(CheckerPath);
+            if (checker != null) return checker;
+
+            checker = new Texture2D(2, 2, TextureFormat.RGBA32, false)
+            {
+                name = "Checker", filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Repeat,
+            };
+            var light = new Color(0.85f, 0.85f, 0.85f);
+            var dark = new Color(0.35f, 0.35f, 0.35f);
+            checker.SetPixels(new[] { light, dark, dark, light });
+            checker.Apply();
+            Directory.CreateDirectory(Path.GetDirectoryName(CheckerPath));
+            AssetDatabase.CreateAsset(checker, CheckerPath);
+            return AssetDatabase.LoadAssetAtPath<Texture2D>(CheckerPath);
+        }
+
+        /// <summary>A URP Lit material, made once and reused, so edits to it survive rebuilds.</summary>
+        static Material EnsureMaterial(string path, Color colour, Texture2D texture, Vector2 tiling)
+        {
+            var material = AssetDatabase.LoadAssetAtPath<Material>(path);
+            if (material != null) return material;
+
+            var shader = Shader.Find("Universal Render Pipeline/Lit");
+            if (shader == null) throw new System.InvalidOperationException("URP Lit shader not found; is URP installed?");
+            material = new Material(shader);
+            material.SetColor("_BaseColor", colour);
+            if (texture != null)
+            {
+                material.SetTexture("_BaseMap", texture);
+                material.SetTextureScale("_BaseMap", tiling);
+            }
+            material.SetFloat("_Smoothness", 0.2f);
+            Directory.CreateDirectory(Path.GetDirectoryName(path));
+            AssetDatabase.CreateAsset(material, path);
+            return AssetDatabase.LoadAssetAtPath<Material>(path);
         }
 
         static PhysicsMaterial EnsureAsphalt()
