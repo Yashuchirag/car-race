@@ -18,7 +18,7 @@ car it is clearly quicker than instead of 0.9 s, gets those same 10 s to make pr
 before giving up, and may close on the car it is passing at up to 4 m/s while the
 sideways gap holds. The race criterion still passes on ten seeds, with no contacts.
 
-**Next action:** Activate the Unity Personal licence (section 3 row), then create the project, deciding HDRP or URP first (Unity now recommends URP for new projects), then `Unity/README.md`. Passing lanes, the
+**Next action:** Create the project, deciding HDRP or URP first (Unity now recommends URP for new projects), then `Unity/README.md`. Passing lanes, the
 fix for the contacts that remain (below), are a TODO row in section 3 for later.
 
 ---
@@ -138,7 +138,7 @@ A row only becomes DONE when its verification command passes.
 | Git repository | DONE | Initialised 2026-09-22 |
 | Off-machine backup | DONE | GitHub repo `Yashuchirag/car-race`, public, `main` tracking `origin/main` |
 | Licensing | DONE | MIT for code, ODbL for `Tracks_Data/`. See README. |
-| Unity 6 LTS installed | WIP | 6.3 LTS (6000.3.24f1) installed 2026-09-23 at `D:\Software\Unity\Editor\6000.3.24f1` with Windows IL2CPP and offline docs; Hub 3.21.3 at `D:\Software\Unity Hub`; Defender exclusions for both folders, `D:\Dev\CarRace` and the two executables (`D:\Software\Unity\Downloads\setup-admin.ps1` has the undo); `UPM_CACHE_ROOT` and `ASSETSTORE_CACHE_PATH` point at `D:\Software\Unity\Cache`. The CLI is `D:\Software\Unity Hub\resources\cli\unity.exe`, not on PATH. **Left: the licence**, deferred by you: `unity auth login`, then `unity license activate --personal --accept-eula`, or the Hub. The editor will not open until then. Also set the Asset Store cache in Preferences, Package Manager, once it opens. Use `pwsh.exe`, not `powershell.exe`: `PSModulePath` lists PowerShell 7 first and breaks 5.1's security module. |
+| Unity 6 LTS installed | DONE | 6.3 LTS (6000.3.24f1) installed 2026-09-23 at `D:\Software\Unity\Editor\6000.3.24f1` with Windows IL2CPP and offline docs; Hub 3.21.3 at `D:\Software\Unity Hub`; Defender exclusions for both folders, `D:\Dev\CarRace` and the two executables (`D:\Software\Unity\Downloads\setup-admin.ps1` has the undo); `UPM_CACHE_ROOT` and `ASSETSTORE_CACHE_PATH` point at `D:\Software\Unity\Cache`. The CLI is `D:\Software\Unity Hub\resources\cli\unity.exe`, not on PATH. Unity Personal activated 2026-09-24 with `unity auth login` and `unity license activate --personal`; a headless start (`Unity.exe -batchmode -quit`) exits 0 as Unity Personal. Also set the Asset Store cache in Preferences, Package Manager, once it opens. Use `pwsh.exe`, not `powershell.exe`: `PSModulePath` lists PowerShell 7 first and breaks 5.1's security module. |
 | Unity project created at `D:\Dev\CarRace` | BLOCKED | Depends on the row above |
 | Git LFS configured | TODO | Only needed once binary art assets exist |
 
@@ -257,8 +257,8 @@ Unity/          the integration layer, written, never run    Phase 1, WIP
 
 ## 5. Blocked on you
 
-1. **Activate the Unity Personal licence.** Unity 6.3 LTS is installed; the licence is
-   the one step left before the editor opens. Section 3 has the commands.
+1. **Decide HDRP or URP** before the project at `D:\Dev\CarRace` is created. Unity now
+   recommends URP for new projects; HDRP gets fixes only.
 3. **Push after meaningful work.** `git push` now that `origin` is configured. The
    repo is private; making it public later is a one-line change, the reverse is
    not really possible.
