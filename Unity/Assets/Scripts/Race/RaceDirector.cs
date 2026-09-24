@@ -260,32 +260,36 @@ namespace CarRace.UnityGame
             if (!enabled || _control == null) return;
             _style ??= new GUIStyle(GUI.skin.label)
             {
-                fontSize = 30, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter,
+                fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter,
                 normal = { textColor = Color.white }
             };
-            _bigStyle ??= new GUIStyle(_style) { fontSize = 120 };
+            _bigStyle ??= new GUIStyle(_style);
             _tableStyle ??= new GUIStyle(GUI.skin.label)
             {
-                fontSize = 18, font = Font.CreateDynamicFontFromOSFont("Consolas", 18),
+                font = Font.CreateDynamicFontFromOSFont("Consolas", 18),
                 normal = { textColor = Color.white }
             };
 
+            _style.fontSize = Hud.Font(30);
+            _bigStyle.fontSize = Hud.Font(120);
+            _tableStyle.fontSize = Hud.Font(18);
+
             RaceControl.Entry me = PlayerEntry;
             int lap = Mathf.Clamp(me.LapsComplete + 1, 1, raceLaps);
-            var box = new Rect(Screen.width * 0.5f - 160f, 10f, 320f, 56f);
+            var box = new Rect(Screen.width * 0.5f - Hud.Px(160f), Hud.Px(10f), Hud.Px(320f), Hud.Px(56f));
             GUI.Box(box, GUIContent.none);
             GUI.Label(box, $"P{me.Position} / {_cars.Length}    Lap {lap} / {raceLaps}", _style);
 
             if (!_started)
             {
                 _bigStyle.normal.textColor = new Color(1f, 0.2f, 0.15f);
-                GUI.Label(new Rect(0f, Screen.height * 0.3f, Screen.width, 160f),
+                GUI.Label(new Rect(0f, Screen.height * 0.3f, Screen.width, Hud.Px(160f)),
                           Mathf.CeilToInt(_countdown).ToString(), _bigStyle);
             }
             else if (_raceTime < GoShownSeconds)
             {
                 _bigStyle.normal.textColor = new Color(0.2f, 1f, 0.3f);
-                GUI.Label(new Rect(0f, Screen.height * 0.3f, Screen.width, 160f), "GO", _bigStyle);
+                GUI.Label(new Rect(0f, Screen.height * 0.3f, Screen.width, Hud.Px(160f)), "GO", _bigStyle);
             }
 
             if (me.Finished) Results();
@@ -314,12 +318,13 @@ namespace CarRace.UnityGame
             text.AppendLine();
             text.Append("* fastest lap        Enter: race again");
 
-            float width = 640f, height = 30f + 26f * (order.Length + 5);
+            float width = Hud.Px(640f), height = Hud.Px(30f + 26f * (order.Length + 5));
             var panel = new Rect(Screen.width * 0.5f - width * 0.5f, Screen.height * 0.5f - height * 0.5f, width, height);
             GUI.Box(panel, GUIContent.none);
             GUI.Box(panel, GUIContent.none);   // twice: one box is too faint to read a table over
-            GUI.Label(new Rect(panel.x, panel.y + 6f, width, 34f), "RESULTS", _style);
-            GUI.Label(new Rect(panel.x + 20f, panel.y + 46f, width - 40f, height - 50f), text.ToString(), _tableStyle);
+            GUI.Label(new Rect(panel.x, panel.y + Hud.Px(6f), width, Hud.Px(34f)), "RESULTS", _style);
+            GUI.Label(new Rect(panel.x + Hud.Px(20f), panel.y + Hud.Px(46f), width - Hud.Px(40f), height - Hud.Px(50f)),
+                      text.ToString(), _tableStyle);
         }
 
         static string Format(float seconds)

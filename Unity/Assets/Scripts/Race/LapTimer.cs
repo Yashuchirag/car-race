@@ -103,7 +103,8 @@ namespace CarRace.UnityGame
         void OnGUI()
         {
             if (!enabled) return;
-            _style ??= new GUIStyle(GUI.skin.label) { fontSize = 18, normal = { textColor = Color.white } };
+            _style ??= new GUIStyle(GUI.skin.label) { normal = { textColor = Color.white } };
+            _style.fontSize = Hud.Font(18);
 
             float current = _running ? _clock - _lapStart : 0f;
             string text = $"{track.trackName}\nLap {_laps + 1}   {Format(current)}" +
@@ -118,19 +119,20 @@ namespace CarRace.UnityGame
                 text += $"\nS{s + 1}  " + (done ? $"{_splits[s],6:0.000}{Delta(_splits[s], _bestSectors[s])}" : "  -");
             }
 
-            float width = 290f, height = 26f * (track.referenceLapSeconds > 0f ? 8 : 7) + 12f;
-            var box = new Rect(Screen.width - width - 10f, 10f, width, height);
+            float width = Hud.Px(290f), height = Hud.Px(26f * (track.referenceLapSeconds > 0f ? 8 : 7) + 12f);
+            var box = new Rect(Screen.width - width - Hud.Px(10f), Hud.Px(10f), width, height);
             GUI.Box(box, GUIContent.none);
-            GUI.Label(new Rect(box.x + 10f, box.y + 4f, width - 20f, height), text, _style);
+            GUI.Label(new Rect(box.x + Hud.Px(10f), box.y + Hud.Px(4f), width - Hud.Px(20f), height), text, _style);
 
             if (_wrongWayFor >= WrongWaySeconds)
             {
                 _warningStyle ??= new GUIStyle(GUI.skin.label)
                 {
-                    fontSize = 56, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter,
+                    fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter,
                     normal = { textColor = new Color(1f, 0.15f, 0.1f) }
                 };
-                GUI.Label(new Rect(0f, Screen.height * 0.25f, Screen.width, 80f), "WRONG WAY", _warningStyle);
+                _warningStyle.fontSize = Hud.Font(56);
+                GUI.Label(new Rect(0f, Screen.height * 0.25f, Screen.width, Hud.Px(80f)), "WRONG WAY", _warningStyle);
             }
         }
 

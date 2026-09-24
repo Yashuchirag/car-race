@@ -18,6 +18,7 @@ namespace CarRace.UnityGame
         [SerializeField] TrackPath track;
         [Tooltip("The first car is the player.")]
         [SerializeField] Transform[] cars = new Transform[0];
+        [Tooltip("Width and height at 1080p; scaled with the screen, see Hud.")]
         [SerializeField] int sizePixels = 220;
         [SerializeField] float aheadMetres = 220f;
         [SerializeField] float behindMetres = 30f;
@@ -42,14 +43,11 @@ namespace CarRace.UnityGame
         Vector3 _last;
         Vector3 _centre, _forward, _right;
         float _scale;
+        int _px;                   // the map's side in this screen's pixels
 
         void Start()
         {
             if (track == null || track.centre.Length < 3 || cars.Length == 0 || cars[0] == null) { enabled = false; return; }
-
-            _scale = sizePixels / (aheadMetres + behindMetres);
-            _map = new Texture2D(sizePixels, sizePixels, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp };
-            _pixels = new Color32[sizePixels * sizePixels];
 
             // Each sample's colour from the radius of the circle through its neighbours 6 m
             // either side, the stride TrackData uses so the sampling wiggle does not read as a bend.
@@ -82,9 +80,23 @@ namespace CarRace.UnityGame
             return (a - b).magnitude * (b - c).magnitude * (c - a).magnitude / (2f * cross);
         }
 
+        /// <summary>Drawn at the screen's own resolution, so the road stays sharp at 4K rather
+        /// than being a 1080p image stretched. Reallocated if the window changes size.</summary>
+        void Allocate()
+        {
+            int px = Mathf.RoundToInt(sizePixels * Hud.Scale);
+            if (px == _px && _map != null) return;
+            _px = px;
+            _scale = px / (aheadMetres + behindMetres);
+            if (_map != null) Destroy(_map);
+            _map = new Texture2D(px, px, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp };
+            _pixels = new Color32[px * px];
+        }
+
         void Update()
         {
-            if (_map == null) return;
+            if (_roadColour == null) return;
+            Allocate();
             int n = track.centre.Length;
             Vector3 position = cars[0].position;
             _index = (position - _last).sqrMagnitude > 25f * 25f
@@ -118,7 +130,7 @@ namespace CarRace.UnityGame
                 Vector3 dir = (track.centre[1] - track.centre[n - 1]).normalized;
                 Vector3 across = new Vector3(dir.z, 0f, -dir.x);
                 float half = track.widthLeft.Length == n ? Mathf.Max(track.widthLeft[0], track.widthRight[0]) : 6f;
-                for (float s = -half; s <= half; s += 0.5f) Disc(ToMap(start + across * s), 1.2f, StartLine);
+                for (float s = -half; s <= half; s += 0.5f) Disc(ToMap(start + across * s), Hud.Px(1.2f), StartLine);
             }
 
             _map.SetPixels32(_pixels);
@@ -130,7 +142,7 @@ namespace CarRace.UnityGame
         Vector2 ToMap(Vector3 world)
         {
             Vector3 d = world - _centre;
-            return new Vector2(sizePixels * 0.5f + Vector3.Dot(d, _right) * _scale,
+            return new Vector2(_px * 0.5f + Vector3.Dot(d, _right) * _scale,
                                behindMetres * _scale + Vector3.Dot(d, _forward) * _scale);
         }
 
@@ -138,17 +150,17 @@ namespace CarRace.UnityGame
         {
             int r = Mathf.CeilToInt(radius);
             int cx = Mathf.RoundToInt(c.x), cy = Mathf.RoundToInt(c.y);
-            if (cx < -r || cy < -r || cx >= sizePixels + r || cy >= sizePixels + r) return;
+            if (cx < -r || cy < -r || cx >= _px + r || cy >= _px + r) return;
             float r2 = radius * radius;
             for (int y = -r; y <= r; y++)
             {
                 int py = cy + y;
-                if (py < 0 || py >= sizePixels) continue;
+                if (py < 0 || py >= _px) continue;
                 for (int x = -r; x <= r; x++)
                 {
                     int px = cx + x;
-                    if (px < 0 || px >= sizePixels || x * x + y * y > r2) continue;
-                    _pixels[py * sizePixels + px] = colour;
+                    if (px < 0 || px >= _px || x * x + y * y > r2) continue;
+                    _pixels[py * _px + px] = colour;
                 }
             }
         }
@@ -156,7 +168,8 @@ namespace CarRace.UnityGame
         void OnGUI()
         {
             if (!enabled || _map == null) return;
-            var rect = new Rect(10f, Screen.height - sizePixels - 10f, sizePixels, sizePixels);
+            float margin = Hud.Px(10f);
+            var rect = new Rect(margin, Screen.height - _px - margin, _px, _px);
             GUI.DrawTexture(rect, _map);
 
             // The player last, so it is drawn on top of anyone alongside.
@@ -164,12 +177,12 @@ namespace CarRace.UnityGame
             {
                 if (cars[i] == null) continue;
                 Vector2 m = ToMap(cars[i].position);
-                if (m.x < 0f || m.y < 0f || m.x > sizePixels || m.y > sizePixels) continue;
-                float size = i == 0 ? 11f : 9f;
+                if (m.x < 0f || m.y < 0f || m.x > _px || m.y > _px) continue;
+                float size = Hud.Px(i == 0 ? 11f : 9f), rim = Hud.Px(1.5f);
                 // Texture rows count up from the bottom, the screen counts down from the top.
                 var dot = new Rect(rect.x + m.x - size * 0.5f, rect.yMax - m.y - size * 0.5f, size, size);
                 GUI.color = Color.black;
-                GUI.DrawTexture(new Rect(dot.x - 1.5f, dot.y - 1.5f, size + 3f, size + 3f), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(dot.x - rim, dot.y - rim, size + 2f * rim, size + 2f * rim), Texture2D.whiteTexture);
                 GUI.color = _dotColours[i];
                 GUI.DrawTexture(dot, Texture2D.whiteTexture);
             }

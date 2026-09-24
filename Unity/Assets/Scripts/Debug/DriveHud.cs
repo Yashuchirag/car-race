@@ -23,7 +23,8 @@ namespace CarRace.UnityGame
         void OnGUI()
         {
             if (car == null || car.Sim == null) return;
-            _style ??= new GUIStyle(GUI.skin.label) { fontSize = 18, normal = { textColor = Color.white } };
+            _style ??= new GUIStyle(GUI.skin.label) { normal = { textColor = Color.white } };
+            _style.fontSize = Hud.Font(18);
 
             var drivetrain = car.Sim.Drivetrain;
             string gear = drivetrain.Gear switch { -1 => "R", 0 => "N", _ => drivetrain.Gear.ToString() };
@@ -42,8 +43,8 @@ namespace CarRace.UnityGame
                         $"Throttle {Axis("Throttle")}  Brake {Axis("Brake")}";
             }
 
-            GUI.Box(new Rect(10, 10, 700, showRawAxes ? 92 : 68), GUIContent.none);
-            GUI.Label(new Rect(20, 14, 690, 90), text, _style);
+            GUI.Box(new Rect(Hud.Px(10), Hud.Px(10), Hud.Px(700), Hud.Px(showRawAxes ? 92 : 68)), GUIContent.none);
+            GUI.Label(new Rect(Hud.Px(20), Hud.Px(14), Hud.Px(690), Hud.Px(90)), text, _style);
         }
 
         static string Axis(string name)
