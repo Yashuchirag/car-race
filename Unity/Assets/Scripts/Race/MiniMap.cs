@@ -3,87 +3,150 @@ using UnityEngine;
 namespace CarRace.UnityGame
 {
     /// <summary>
-    /// A map of the whole circuit in the bottom left corner, north up, with a dot for every
-    /// car: the player larger and white, the others in their body colour. The outline is drawn
-    /// once into a texture from TrackPath's centreline, so a frame costs one texture and a dot
-    /// per car. Viewed from above with +z up the screen, +x is to the right, so the map is not
-    /// mirrored.
+    /// The road around the player, zoomed in, in the bottom left corner: AheadMetres ahead and
+    /// BehindMetres behind, turned so that the road ahead points up. It turns with the track's
+    /// direction where the player is, not with the car, so a spin does not spin the map.
+    /// Corners are coloured by how tight they are, and the other cars show as dots in their
+    /// body colour when they are in view.
+    ///
+    /// A map of the whole circuit came first and drew a Monza chicane a few pixels across,
+    /// which is no use for seeing what comes next. The view is drawn into a small texture
+    /// every frame, a clear and a disc per road sample, which is cheap and needs no camera.
     /// </summary>
     public sealed class MiniMap : MonoBehaviour
     {
         [SerializeField] TrackPath track;
         [Tooltip("The first car is the player.")]
         [SerializeField] Transform[] cars = new Transform[0];
-        [SerializeField] int sizePixels = 240;
+        [SerializeField] int sizePixels = 220;
+        [SerializeField] float aheadMetres = 220f;
+        [SerializeField] float behindMetres = 30f;
 
-        const int Padding = 10;
-        const float RoadPixels = 2.5f;
+        [Tooltip("Corners tighter than these radii, in metres, are drawn orange and red.")]
+        [SerializeField] float mediumRadius = 150f;
+        [SerializeField] float tightRadius = 60f;
+
+        static readonly Color32 Backdrop = new Color32(0, 0, 0, 120);
+        static readonly Color32 Straight = new Color32(225, 225, 225, 255);
+        static readonly Color32 Medium = new Color32(255, 165, 40, 255);
+        static readonly Color32 Tight = new Color32(235, 45, 35, 255);
+        static readonly Color32 StartLine = new Color32(40, 120, 255, 255);
 
         Texture2D _map;
-        Color[] _colours;
-        Vector2 _min;
+        Color32[] _pixels;
+        Color32[] _roadColour;
+        Color[] _dotColours;
+        int _index;
+        Vector3 _last;
+        Vector3 _centre, _forward, _right;
         float _scale;
 
         void Start()
         {
-            if (track == null || track.centre.Length < 3) { enabled = false; return; }
+            if (track == null || track.centre.Length < 3 || cars.Length == 0 || cars[0] == null) { enabled = false; return; }
 
-            _min = new Vector2(float.MaxValue, float.MaxValue);
-            Vector2 max = new Vector2(float.MinValue, float.MinValue);
-            foreach (Vector3 p in track.centre)
-            {
-                _min = Vector2.Min(_min, new Vector2(p.x, p.z));
-                max = Vector2.Max(max, new Vector2(p.x, p.z));
-            }
-            Vector2 span = max - _min;
-            _scale = (sizePixels - 2 * Padding) / Mathf.Max(span.x, span.y);
-            // Centre the circuit in the square along its shorter side.
-            _min -= (new Vector2(Mathf.Max(span.x, span.y), Mathf.Max(span.x, span.y)) - span) * 0.5f;
-
+            _scale = sizePixels / (aheadMetres + behindMetres);
             _map = new Texture2D(sizePixels, sizePixels, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp };
-            var pixels = new Color32[sizePixels * sizePixels];
-            var backdrop = new Color32(0, 0, 0, 110);
-            for (int i = 0; i < pixels.Length; i++) pixels[i] = backdrop;
+            _pixels = new Color32[sizePixels * sizePixels];
 
+            // Each sample's colour from the radius of the circle through its neighbours 6 m
+            // either side, the stride TrackData uses so the sampling wiggle does not read as a bend.
             int n = track.centre.Length;
-            var road = new Color32(235, 235, 235, 255);
+            int stride = Mathf.Max(1, Mathf.RoundToInt(6f / Mathf.Max(track.sampleSpacing, 0.1f)));
+            _roadColour = new Color32[n];
             for (int i = 0; i < n; i++)
-                Line(pixels, ToMap(track.centre[i]), ToMap(track.centre[(i + 1) % n]), RoadPixels, road);
+            {
+                float radius = Radius(track.centre[(i - stride + n) % n], track.centre[i], track.centre[(i + stride) % n]);
+                _roadColour[i] = radius < tightRadius ? Tight : radius < mediumRadius ? Medium : Straight;
+            }
 
-            // The start line, across the road at sample 0.
-            Vector3 along = (track.centre[1] - track.centre[n - 1]).normalized;
-            Vector3 across = new Vector3(along.z, 0f, -along.x) * (7f / _scale);
-            Line(pixels, ToMap(track.centre[0] - across), ToMap(track.centre[0] + across), 1.5f, new Color32(220, 40, 30, 255));
-
-            _map.SetPixels32(pixels);
-            _map.Apply();
-
-            _colours = new Color[cars.Length];
+            _dotColours = new Color[cars.Length];
             for (int i = 0; i < cars.Length; i++)
             {
                 Transform body = cars[i] != null ? cars[i].Find("Body") : null;
                 var renderer = body != null ? body.GetComponent<Renderer>() : null;
-                _colours[i] = i == 0 || renderer == null ? Color.white : renderer.sharedMaterial.GetColor("_BaseColor");
+                _dotColours[i] = i == 0 || renderer == null ? Color.white : renderer.sharedMaterial.GetColor("_BaseColor");
             }
+
+            _last = cars[0].position;
+            _index = track.Nearest(_last, 0, back: 0, ahead: n - 1);
         }
 
-        Vector2 ToMap(Vector3 world) => (new Vector2(world.x, world.z) - _min) * _scale + new Vector2(Padding, Padding);
-
-        /// <summary>A thick line into the pixel array, as discs stepped along it.</summary>
-        void Line(Color32[] pixels, Vector2 a, Vector2 b, float radius, Color32 colour)
+        static float Radius(Vector3 a, Vector3 b, Vector3 c)
         {
-            int steps = Mathf.Max(1, Mathf.CeilToInt(Vector2.Distance(a, b)));
-            int r = Mathf.CeilToInt(radius);
-            for (int s = 0; s <= steps; s++)
+            a.y = b.y = c.y = 0f;
+            float cross = Mathf.Abs((b.x - a.x) * (c.z - b.z) - (b.z - a.z) * (c.x - b.x));
+            if (cross < 1e-6f) return float.MaxValue;
+            return (a - b).magnitude * (b - c).magnitude * (c - a).magnitude / (2f * cross);
+        }
+
+        void Update()
+        {
+            if (_map == null) return;
+            int n = track.centre.Length;
+            Vector3 position = cars[0].position;
+            _index = (position - _last).sqrMagnitude > 25f * 25f
+                ? track.Nearest(position, 0, back: 0, ahead: n - 1)
+                : track.Nearest(position, _index);
+            _last = position;
+
+            // The track's direction here, over 10 samples either side so it turns smoothly.
+            Vector3 along = track.centre[(_index + 10) % n] - track.centre[(_index - 10 + n) % n];
+            along.y = 0f;
+            _forward = along.sqrMagnitude > 1e-6f ? along.normalized : Vector3.forward;
+            _right = new Vector3(_forward.z, 0f, -_forward.x);
+            _centre = position;
+
+            for (int i = 0; i < _pixels.Length; i++) _pixels[i] = Backdrop;
+
+            int back = Mathf.CeilToInt((behindMetres + 20f) / track.sampleSpacing);
+            int ahead = Mathf.CeilToInt((aheadMetres + 20f) / track.sampleSpacing);
+            for (int k = -back; k <= ahead; k++)
             {
-                Vector2 c = Vector2.Lerp(a, b, s / (float)steps);
-                for (int y = -r; y <= r; y++)
+                int i = ((_index + k) % n + n) % n;
+                float half = 0.5f * (track.widthLeft.Length == n ? track.widthLeft[i] + track.widthRight[i] : 12f);
+                Disc(ToMap(track.centre[i]), Mathf.Max(half * _scale, 1.5f), _roadColour[i]);
+            }
+
+            // The start line across the road at sample 0, if it is in view.
+            int toStart = ((0 - _index) % n + n) % n;
+            if (toStart <= ahead || toStart >= n - back)
+            {
+                Vector3 start = track.centre[0];
+                Vector3 dir = (track.centre[1] - track.centre[n - 1]).normalized;
+                Vector3 across = new Vector3(dir.z, 0f, -dir.x);
+                float half = track.widthLeft.Length == n ? Mathf.Max(track.widthLeft[0], track.widthRight[0]) : 6f;
+                for (float s = -half; s <= half; s += 0.5f) Disc(ToMap(start + across * s), 1.2f, StartLine);
+            }
+
+            _map.SetPixels32(_pixels);
+            _map.Apply();
+        }
+
+        /// <summary>Pixel coordinates in the map, x to the right, y up, the player at the
+        /// middle of the bottom edge plus behindMetres.</summary>
+        Vector2 ToMap(Vector3 world)
+        {
+            Vector3 d = world - _centre;
+            return new Vector2(sizePixels * 0.5f + Vector3.Dot(d, _right) * _scale,
+                               behindMetres * _scale + Vector3.Dot(d, _forward) * _scale);
+        }
+
+        void Disc(Vector2 c, float radius, Color32 colour)
+        {
+            int r = Mathf.CeilToInt(radius);
+            int cx = Mathf.RoundToInt(c.x), cy = Mathf.RoundToInt(c.y);
+            if (cx < -r || cy < -r || cx >= sizePixels + r || cy >= sizePixels + r) return;
+            float r2 = radius * radius;
+            for (int y = -r; y <= r; y++)
+            {
+                int py = cy + y;
+                if (py < 0 || py >= sizePixels) continue;
                 for (int x = -r; x <= r; x++)
                 {
-                    if (x * x + y * y > radius * radius) continue;
-                    int px = Mathf.RoundToInt(c.x) + x, py = Mathf.RoundToInt(c.y) + y;
-                    if (px < 0 || py < 0 || px >= sizePixels || py >= sizePixels) continue;
-                    pixels[py * sizePixels + px] = colour;
+                    int px = cx + x;
+                    if (px < 0 || px >= sizePixels || x * x + y * y > r2) continue;
+                    _pixels[py * sizePixels + px] = colour;
                 }
             }
         }
@@ -99,12 +162,13 @@ namespace CarRace.UnityGame
             {
                 if (cars[i] == null) continue;
                 Vector2 m = ToMap(cars[i].position);
-                float size = i == 0 ? 11f : 8f;
+                if (m.x < 0f || m.y < 0f || m.x > sizePixels || m.y > sizePixels) continue;
+                float size = i == 0 ? 11f : 9f;
                 // Texture rows count up from the bottom, the screen counts down from the top.
                 var dot = new Rect(rect.x + m.x - size * 0.5f, rect.yMax - m.y - size * 0.5f, size, size);
                 GUI.color = Color.black;
                 GUI.DrawTexture(new Rect(dot.x - 1.5f, dot.y - 1.5f, size + 3f, size + 3f), Texture2D.whiteTexture);
-                GUI.color = _colours[i];
+                GUI.color = _dotColours[i];
                 GUI.DrawTexture(dot, Texture2D.whiteTexture);
             }
             GUI.color = Color.white;
