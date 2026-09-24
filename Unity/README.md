@@ -43,8 +43,11 @@ cp Sim/CarRace.Vehicle/*.cs        /mnt/d/Dev/CarRace/Assets/Scripts/Vehicle/
 cp Unity/Assets/Scripts/Game/*.cs  /mnt/d/Dev/CarRace/Assets/Scripts/Game/
 ```
 
-Copy again after editing either side. This repo stays the source of truth, because it
-is the copy that is under version control and under test.
+Copy again after editing either side. This repo stays the source of truth for the
+scripts, because it is the copy under test. The Unity project is its own Git repo, for
+everything else it holds (settings, packages, scenes, materials and, later, art in Git
+LFS); commit the copied scripts there too, so the two stay in step. Use `git.exe` for it
+from WSL: WSL's git over `/mnt/d` is slow and churns line endings.
 
 ## Project settings that matter
 
