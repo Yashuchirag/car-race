@@ -150,6 +150,7 @@ A row only becomes DONE when its verification command passes.
 | Standalone build, performance baseline | DONE | 2026-09-24, the Phase 0 exit criterion and the baseline for the graphics pass. `CarRace, Build Windows Player` (`Unity/Assets/Editor/BuildTools.cs`) builds the Monza scene to `Builds/Windows/CarRace.exe` (Mono, Direct3D 12, 99 MB, 124 s headless). `-benchmark` (`Scripts/Debug/Benchmark.cs`) has the AI drive your car too, turns vsync and the frame cap off, and records 60 s of frames from 8 s after load. At 1920x1080 fullscreen on the RTX 2060 and i7-10750H, two runs: 291 and 269 fps average, 1% lows 129 and 159 fps, 0.1% lows 90 and 112, worst frame 12 to 14 ms. The 200 fps target is met on average; the 1% lows, likely IMGUI string allocations and the minimap's per-frame texture upload, are worth a profile before art adds to the frame. |
 | Stutter investigation | DONE | 2026-09-24, your request after the baseline. The benchmark now logs each frame's physics steps, garbage collections and allocation, and in a development build (`CarRace, Build Windows Development Player`) the profiler markers for scripts, PhysX, IMGUI and GC; `-noTelemetry` and `-noHud` switch those off. Findings: (1) one-second hitches every 20 to 25 s came from the Unity editor running alongside; with it closed they never happen. (2) A 90 to 219 ms stall at the same moment, 33 s after load, in every build: the telemetry recorder, which wrote a line from every physics step. It now runs only in the editor and development builds; the release build's worst frame is 14.6 ms. (3) The HUD (IMGUI) makes 95% of the garbage, 20 KB a frame and 412 collections a minute against 59 without it, but incremental GC hides it: hiding the HUD changed the average by 1%, inside run-to-run noise, so it is not rewritten for speed. (4) The remaining 1% lows (130 to 160 fps) are frames that run two physics steps after an OS hiccup; a step costs about 1 ms for four cars. Release, 1080p: 263 to 291 fps average. |
 | URP settings for the graphics pass | DONE | 2026-09-24, reviewed with you and applied by `Unity/Assets/Editor/GraphicsSetup.cs` (`CarRace, Apply Graphics Settings`). The project was on the Universal 3D template defaults, and the track scenes had no post-processing and no anti-aliasing at all: the builder used Unity's plain camera, which has post-processing off. Now: MSAA 4x (TAA smears at racing speed), HDR colour grading, shadows to 150 m in 4 cascades at 2048 (was 50 m), opaque texture off, and a track profile `Assets/Settings/TrackPostProcessing.asset` with ACES tone mapping, bloom 0.3 above threshold 1 and a 0.2 vignette. Track scenes get a global volume and a camera with post-processing on. Kept: Forward+, HDR, SRP batcher. Later: GPU Resident Drawer and probe volumes, once there is trackside art and baked light. Benchmark after: 278 fps average, 1% low 138, worst frame 11.5 ms, the same as before: the frame is CPU bound. A screenshot confirmed smooth edges, tone mapping and contact shadows. The skidpad scene does not get the volume. Corrected `IMPLEMENTATION_REPORT.md`: URP has no DLSS, only FSR 1 and STP. |
+| Sky and lighting | WIP | 2026-09-24, the first step of the graphics pass. Sky: Poly Haven "Kloofendal 48d Partly Cloudy (Pure Sky)", CC0, 4096x2048 HDR in `Assets/Art/Sky` (Git LFS), on Skybox/Panoramic. `Tools/sky_analysis.py` measures the image: sun 47.9 degrees up at (0.5543, 0.7416, -0.3778) in the shader's own mapping, colour (0.974, 1, 0.936), intensity 1.44 (its illuminance over pi, which puts it at its real ratio to the sky's ambient, 2.3 to 1 on level ground), horizon (0.439, 0.472, 0.573) linear. `GraphicsSetup.SetUpSkyAndSun` aims the directional light at the sun, takes ambient light and reflections from the sky, adds linear fog 300 to 3500 m in the horizon colour, and bakes the environment only (no lightmaps yet); the track builder calls it. Benchmark: 283 fps average, unchanged. The screenshot shows the sky and sky-coloured lighting, and also the edge of the world past the verges, now visible as the sky's lower half: needs ground. One 92 ms stall 30 s in on this run, with telemetry off, so the recorder may not have been its only cause (section 6). Waiting on your look. |
 
 
 ### Phase 1, vehicle physics
@@ -285,6 +286,14 @@ Unity/          the integration layer, written, never run    Phase 1, WIP
 ## 6. Open issues and deferred decisions
 
 Known, deliberate, and not blocking. Recorded so they are not rediscovered.
+
+**Performance**
+
+- A single stall of about 90 ms, followed by 18 catch-up physics steps, 30 to 34 s after
+  load. Seen with the telemetry recorder on (every run) and once in four runs with it off,
+  on 2026-09-24. Turning the recorder off in release builds removed it from three runs, so
+  it was a cause but may not be the only one. Next time: a development build run with the
+  profiler markers, to see which script is in that frame.
 
 **Vehicle physics**
 
@@ -534,6 +543,9 @@ learned, so context is not lost between sessions.
 - URP settings: MSAA 4x, HDR grading, 150 m shadows and a post-processing profile, at no
   measurable cost. Found the track scenes had been rendering with no post-processing or
   anti-aliasing at all.
+
+- Sky and lighting: a CC0 Poly Haven sky with the sun and its brightness measured from
+  the image, sky ambient and reflections, horizon fog. No cost to the frame rate.
 
 ### 2026-09-23, ninth session
 

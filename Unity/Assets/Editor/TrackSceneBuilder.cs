@@ -245,6 +245,11 @@ namespace CarRace.UnityGame.EditorTools
             string scenePath = $"Assets/Scenes/Track {track.name}.unity";
             Directory.CreateDirectory(Path.GetDirectoryName(scenePath));
             EditorSceneManager.SaveScene(scene, scenePath);
+
+            // The sky and sun last: the environment bake needs the scene saved, since it
+            // writes the scene's lighting data beside it, and the scene is saved again after.
+            GraphicsSetup.SetUpSkyAndSun(UnityEngine.Object.FindAnyObjectByType<Light>());
+            EditorSceneManager.SaveScene(scene, scenePath);
             SkidpadSceneBuilder.AddToBuildSettings(scenePath);
             Selection.activeGameObject = car;
             Debug.Log($"{track.name} built at {scenePath}: {n} samples, {Length(centre):0} m of road, " +
