@@ -62,11 +62,134 @@ namespace CarRace.UnityGame.EditorTools
 
             EnsureTrackProfile();
             EnsureSkyMaterial();
+            EnsureQualityLevels(pipeline);
             AssetDatabase.SaveAssets();
             Debug.Log($"Graphics settings applied to {PipelinePath}: MSAA {pipeline.msaaSampleCount}x, " +
                       $"{pipeline.colorGradingMode} grading, shadows {pipeline.shadowDistance} m in " +
                       $"{pipeline.shadowCascadeCount} cascades, opaque texture {pipeline.supportsCameraOpaqueTexture}; " +
                       $"post-processing profile at {TrackProfilePath}.");
+        }
+
+        // Quality levels: the one above is High; Medium and Low are copies of it with less to
+        // draw, for machines slower than the development laptop. Names are what the game
+        // looks the levels up by (DisplaySettings.QualityNames).
+        const string PipelineMediumPath = "Assets/Settings/Medium_RPAsset.asset";
+        const string PipelineLowPath = "Assets/Settings/Low_RPAsset.asset";
+        const string RendererPath = "Assets/Settings/PC_Renderer.asset";
+        const string RendererNoAoPath = "Assets/Settings/NoAO_Renderer.asset";
+
+        /// <summary>
+        /// Low, Medium and High quality levels, each with its own URP asset, in place of the
+        /// template's single "PC" level, which becomes High. Separate assets rather than one
+        /// changed while the game runs, because changing an asset in play mode overwrites it
+        /// in the project. Low and Medium share a renderer with ambient occlusion off. Run
+        /// again, it updates the levels instead of adding more. The template's Mobile level is
+        /// left alone; it is excluded from PC builds.
+        ///
+        ///            MSAA  shadows                       AO   render scale        LOD bias
+        ///   High     4x    150 m, 4 cascades, 2048, soft  on   100%                2
+        ///   Medium   2x    100 m, 2 cascades, 2048, soft  off  100%                1.5
+        ///   Low      off    60 m, 1 cascade, 1024, hard   off  80%, FSR upscaled   1
+        /// </summary>
+        static void EnsureQualityLevels(UniversalRenderPipelineAsset high)
+        {
+            if (AssetDatabase.LoadAssetAtPath<ScriptableRendererData>(RendererNoAoPath) == null)
+                AssetDatabase.CopyAsset(RendererPath, RendererNoAoPath);
+            var noAo = AssetDatabase.LoadAssetAtPath<ScriptableRendererData>(RendererNoAoPath);
+            foreach (ScriptableRendererFeature feature in noAo.rendererFeatures)
+                if (feature != null && feature.GetType().Name == "ScreenSpaceAmbientOcclusion") feature.SetActive(false);
+            EditorUtility.SetDirty(noAo);
+
+            var medium = PipelineCopy(PipelineMediumPath, noAo);
+            medium.msaaSampleCount = 2;
+            medium.shadowDistance = 100f;
+            medium.shadowCascadeCount = 2;
+            medium.renderScale = 1f;
+            SetShadowDetail(medium, 2048, soft: true);
+
+            var low = PipelineCopy(PipelineLowPath, noAo);
+            low.msaaSampleCount = 1;
+            low.shadowDistance = 60f;
+            low.shadowCascadeCount = 1;
+            low.renderScale = 0.8f;
+            low.upscalingFilter = UpscalingFilterSelection.FSR;
+            SetShadowDetail(low, 1024, soft: false);
+
+            SetShadowDetail(high, 2048, soft: true);
+
+            var settings = new SerializedObject(AssetDatabase.LoadAllAssetsAtPath("ProjectSettings/QualitySettings.asset")[0]);
+            var levels = settings.FindProperty("m_QualitySettings");
+            int highIndex = LevelIndex(levels, "High");
+            if (highIndex < 0)
+            {
+                int pc = LevelIndex(levels, "PC");
+                if (pc < 0) throw new InvalidOperationException("Neither a High nor a PC quality level was found.");
+                levels.InsertArrayElementAtIndex(pc);   // each insert copies the level at pc
+                levels.InsertArrayElementAtIndex(pc);
+                levels.GetArrayElementAtIndex(pc).FindPropertyRelative("name").stringValue = "Low";
+                levels.GetArrayElementAtIndex(pc + 1).FindPropertyRelative("name").stringValue = "Medium";
+                levels.GetArrayElementAtIndex(pc + 2).FindPropertyRelative("name").stringValue = "High";
+                highIndex = pc + 2;
+            }
+            Level(levels, "Low", low, lodBias: 1f, anisotropic: 1);
+            Level(levels, "Medium", medium, lodBias: 1.5f, anisotropic: 2);
+            Level(levels, "High", high, lodBias: 2f, anisotropic: 2);
+
+            settings.FindProperty("m_CurrentQuality").intValue = highIndex;
+            var defaults = settings.FindProperty("m_PerPlatformDefaultQuality");
+            for (int i = 0; i < defaults.arraySize; i++)
+            {
+                var pair = defaults.GetArrayElementAtIndex(i);
+                if (pair.FindPropertyRelative("first").stringValue == "Standalone")
+                    pair.FindPropertyRelative("second").intValue = highIndex;
+            }
+            settings.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        static UniversalRenderPipelineAsset PipelineCopy(string path, ScriptableRendererData renderer)
+        {
+            if (AssetDatabase.LoadAssetAtPath<UniversalRenderPipelineAsset>(path) == null)
+                AssetDatabase.CopyAsset(PipelinePath, path);
+            var asset = AssetDatabase.LoadAssetAtPath<UniversalRenderPipelineAsset>(path);
+            var serialized = new SerializedObject(asset);
+            var list = serialized.FindProperty("m_RendererDataList");
+            list.arraySize = 1;
+            list.GetArrayElementAtIndex(0).objectReferenceValue = renderer;
+            serialized.FindProperty("m_DefaultRendererIndex").intValue = 0;
+            serialized.ApplyModifiedPropertiesWithoutUndo();
+            asset.colorGradingMode = ColorGradingMode.HighDynamicRange;
+            asset.supportsCameraOpaqueTexture = false;
+            EditorUtility.SetDirty(asset);
+            return asset;
+        }
+
+        /// <summary>Shadow map resolution and soft shadows have no public setters.</summary>
+        static void SetShadowDetail(UniversalRenderPipelineAsset asset, int resolution, bool soft)
+        {
+            var serialized = new SerializedObject(asset);
+            serialized.FindProperty("m_MainLightShadowmapResolution").intValue = resolution;
+            serialized.FindProperty("m_SoftShadowsSupported").boolValue = soft;
+            serialized.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        static int LevelIndex(SerializedProperty levels, string name)
+        {
+            for (int i = 0; i < levels.arraySize; i++)
+                if (levels.GetArrayElementAtIndex(i).FindPropertyRelative("name").stringValue == name) return i;
+            return -1;
+        }
+
+        /// <summary>A level's pipeline and the few settings URP leaves to the level. Its vSync is
+        /// left at 0: the player's frame rate choice (DisplaySettings) owns that.</summary>
+        static void Level(SerializedProperty levels, string name, UniversalRenderPipelineAsset pipeline,
+                          float lodBias, int anisotropic)
+        {
+            var level = levels.GetArrayElementAtIndex(LevelIndex(levels, name));
+            level.FindPropertyRelative("customRenderPipeline").objectReferenceValue = pipeline;
+            level.FindPropertyRelative("lodBias").floatValue = lodBias;
+            level.FindPropertyRelative("anisotropicTextures").intValue = anisotropic;
+            level.FindPropertyRelative("vSyncCount").intValue = 0;
+            level.FindPropertyRelative("antiAliasing").intValue = 0;   // MSAA is the pipeline's
         }
 
         /// <summary>

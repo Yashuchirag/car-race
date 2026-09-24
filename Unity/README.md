@@ -87,7 +87,7 @@ so tuned car values survive. The steps below are what it does, for building it b
 | Recover onto the track where you are (the start on the skidpad) | R | View |
 | Restart from the start | Backspace | Menu |
 | Cycle camera | C | Y |
-| Pause and settings (frame rate) | Esc | |
+| Pause and settings (quality, frame rate) | Esc | |
 
 Keyboard steering is assisted (`Steering Assist` on `DriverInput`, on by default): a key
 asks for a turn rate, a share of what the tyres can hold at that speed, and the assist
@@ -157,9 +157,13 @@ post-processing profile (`Assets/Settings/TrackPostProcessing.asset`: ACES tone 
 light bloom, slight vignette), created once and then left for editing. The track builder
 adds a global volume with it and turns post-processing on for the camera.
 
-Frame rate is the player's choice, in the Esc menu and kept between sessions: VSync (the
-default), 30, 60, 120 or 144 fps, or unlimited. `-frameRate 60` on the command line
-overrides it for one session. Physics runs at 200 Hz whatever the frame rate, and a frame
+Frame rate and graphics quality are the player's choice, in the Esc menu and kept between
+sessions. Frame rate: VSync (the default), 30, 60, 120 or 144 fps, or unlimited. Quality:
+Low, Medium or High, Unity quality levels each with its own URP asset (built by `CarRace,
+Apply Graphics Settings`); the first run picks from the graphics card's memory. High is
+MSAA 4x, 150 m soft shadows in 4 cascades and SSAO; Medium MSAA 2x, 100 m shadows in 2
+cascades, no SSAO; Low no MSAA, 60 m hard shadows at 1024, no SSAO, 80% render scale with
+FSR. `-frameRate 60` and `-quality Low` on the command line override them for one session. Physics runs at 200 Hz whatever the frame rate, and a frame
 catches up at most 0.1 s of it, so a slow machine slows briefly instead of freezing.
 
 `CarRace, Build Windows Player` builds the Monza scene to `Builds/Windows`; run it with
