@@ -92,14 +92,18 @@ no track and no art:
    measured at.
 2. An empty GameObject for the car, on a `Car` layer, at `y = 0.45` (the config's
    `CgHeight`, because **the transform origin has to be the centre of mass**).
-3. Add `Rigidbody`, a `BoxCollider` roughly 1.9 x 1.2 x 4.4, `DriverInput`, and
+3. Add `Rigidbody`, a `BoxCollider` with Center 0, 0.3, 0 and Size 1.9 x 0.8 x 4.4, `DriverInput`, and
    `CarController`. Do not touch mass, drag or the inertia tensor: `CarController`
    sets all three from the config, and Unity's derived tensor turns the car into a bus.
 4. Right-click in the Project window, `Create, CarRace, Car Definition`. A new asset is
    the reference sports car the harness validates. Assign it to `CarController`.
-5. Four cylinders or spheres as children for the wheels, assigned to `Wheel Visuals` in
-   the order front-left, front-right, rear-left, rear-right. They are cosmetic: the
-   model does the suspension, so give them no colliders.
+   The collider's bottom must clear the ground: centred on the origin, a taller box
+   reaches into the tarmac and the car grinds on it and will not move.
+5. Four empty children as wheel pivots, assigned to `Wheel Visuals` in the order
+   front-left, front-right, rear-left, rear-right, each holding a cylinder rotated 0, 0,
+   90. The controller sets the pivot's rotation to spin and steer, so a bare cylinder
+   would be stood upright. They are cosmetic: the model does the suspension, so give
+   them no colliders.
 6. On the camera, add `CarCamera` and assign the car as the target. `C` cycles views.
 7. Press play. `WASD` drives, `Space` is the handbrake, `R` respawns, `E` and `Q` shift
    when `Automatic Gearbox` is off.

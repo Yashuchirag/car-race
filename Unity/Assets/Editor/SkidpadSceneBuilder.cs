@@ -111,6 +111,11 @@ namespace CarRace.UnityGame.EditorTools
                 throw new System.InvalidOperationException("Car Controller has no Driver Input after building.");
             if (ground.GetComponent<Collider>().sharedMaterial != asphalt)
                 throw new System.InvalidOperationException("Ground has lost its Asphalt material.");
+            var box = car.GetComponent<BoxCollider>();
+            float boxBottom = car.transform.position.y + box.center.y - box.size.y * 0.5f;
+            if (boxBottom < 0.1f)
+                throw new System.InvalidOperationException(
+                    $"Body collider reaches {boxBottom:0.00} m, into the ground; the car could not move.");
             if (car.GetComponent<DriveHud>() == null)
                 throw new System.InvalidOperationException("Car has no DriveHud.");
             if (!EditorUtility.IsPersistent(ground.GetComponent<Renderer>().sharedMaterial))
@@ -128,8 +133,13 @@ namespace CarRace.UnityGame.EditorTools
             car.layer = carLayer;
 
             car.AddComponent<Rigidbody>();   // mass, damping and inertia come from the definition
+            // The body collider must clear the ground. The origin is at the centre of mass,
+            // 0.45 m up, so a 1.2 m box centred on it reached 15 cm into the tarmac: the car
+            // sat on its own collider with asphalt friction, and the tyres pushed against a
+            // block that would not slide. Only the simulated tyres may touch the road.
             var box = car.AddComponent<BoxCollider>();
-            box.size = new Vector3(1.9f, 1.2f, 4.4f);
+            box.center = new Vector3(0f, 0.3f, 0f);
+            box.size = new Vector3(1.9f, 0.8f, 4.4f);
             var driver = car.AddComponent<DriverInput>();
             var controller = car.AddComponent<CarController>();
 
@@ -151,17 +161,23 @@ namespace CarRace.UnityGame.EditorTools
             };
             string[] names = { "Wheel FL", "Wheel FR", "Wheel RL", "Wheel RR" };
             var visuals = new Transform[4];
+            // Each wheel is an empty pivot holding a cylinder laid on its side. CarController
+            // sets the pivot's rotation to spin and steer every frame, which on a bare
+            // cylinder wiped out the 90 degrees that lays it down and stood the wheels up.
             for (int i = 0; i < 4; i++)
             {
-                var wheel = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-                wheel.name = names[i];
-                Object.DestroyImmediate(wheel.GetComponent<Collider>());
-                wheel.layer = carLayer;
-                wheel.transform.SetParent(car.transform, false);
-                wheel.transform.localPosition = positions[i];
-                wheel.transform.localRotation = Quaternion.Euler(0f, 0f, 90f);
-                wheel.transform.localScale = new Vector3(radius * 2f, 0.12f, radius * 2f);
-                visuals[i] = wheel.transform;
+                var pivot = new GameObject(names[i]) { layer = carLayer };
+                pivot.transform.SetParent(car.transform, false);
+                pivot.transform.localPosition = positions[i];
+
+                var tyre = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+                tyre.name = "Tyre";
+                Object.DestroyImmediate(tyre.GetComponent<Collider>());
+                tyre.layer = carLayer;
+                tyre.transform.SetParent(pivot.transform, false);
+                tyre.transform.localRotation = Quaternion.Euler(0f, 0f, 90f);
+                tyre.transform.localScale = new Vector3(radius * 2f, 0.12f, radius * 2f);
+                visuals[i] = pivot.transform;
             }
 
             var body = GameObject.CreatePrimitive(PrimitiveType.Cube);
