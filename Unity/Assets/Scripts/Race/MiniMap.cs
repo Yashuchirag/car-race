@@ -26,11 +26,13 @@ namespace CarRace.UnityGame
         [SerializeField] float mediumRadius = 150f;
         [SerializeField] float tightRadius = 60f;
 
-        static readonly Color32 Backdrop = new Color32(0, 0, 0, 120);
-        static readonly Color32 Straight = new Color32(225, 225, 225, 255);
-        static readonly Color32 Medium = new Color32(255, 165, 40, 255);
-        static readonly Color32 Tight = new Color32(235, 45, 35, 255);
-        static readonly Color32 StartLine = new Color32(40, 120, 255, 255);
+        // The square barely there, the road a little see-through, so the map sits over the
+        // scene rather than covering it. The car dots stay solid.
+        static readonly Color32 Backdrop = new Color32(0, 0, 0, 55);
+        static readonly Color32 Straight = new Color32(225, 225, 225, 200);
+        static readonly Color32 Medium = new Color32(255, 165, 40, 200);
+        static readonly Color32 Tight = new Color32(235, 45, 35, 200);
+        static readonly Color32 StartLine = new Color32(40, 120, 255, 200);
 
         Texture2D _map;
         Color32[] _pixels;
