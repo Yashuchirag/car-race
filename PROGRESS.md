@@ -18,8 +18,9 @@ car it is clearly quicker than instead of 0.9 s, gets those same 10 s to make pr
 before giving up, and may close on the car it is passing at up to 4 m/s while the
 sideways gap holds. The race criterion still passes on ten seeds, with no contacts.
 
-**Next action:** Confirm lap timing on a real lap (rebuild the track scene first). Then your choice: AI cars in Unity, finishing Phase 0, or passing lanes (section 3, TODO). Passing lanes, the
-fix for the contacts that remain (below), are a TODO row in section 3 for later.
+**Next action:** AI opponents in Unity is WIP (section 3, Phase 3): three AI cars from the
+headless `RaceDriver` on the track scene, you gridded behind them. Lap timing, recovery and
+the direction cues still wait on your drive. Passing lanes remain a TODO row for later.
 
 ---
 
@@ -190,6 +191,7 @@ physics has never driven a corner the track pipeline produced.
 | AI personalities and traffic awareness | DONE | `RaceDriver`. Pace spread, braking-distance safety bound, side-by-side separation, picking a side to pass. |
 | Race control: grid, laps, positions, classification | DONE | `RaceControl`. Grid behind the line so every car drives the same distance. |
 | Headless race | DONE | `--race monza --cars 16 --laps 10`: 16 of 16 finish with no contacts, on seeds 1 to 10. Section 7. |
+| AI opponents in Unity | WIP | 2026-09-24. You chose three AI plus you. `RaceDirector` (`Unity/Assets/Scripts/Race`) drives three cars with the headless `RaceDriver` through a new `CarController.Autopilot` hook, and shows every driver the field, you included, every 20 ms, as `RaceRun` does. `TrackPath` now carries the racing line and widths and builds the harness's `TrackData`. Grid as in the harness, AI ahead with paces 0.80, 0.77, 0.74, you at the back; the AI hold until you move off; a car stopped 5 s is put back on its line; your place is shown. The AI assume you drive at pace 0.7 when judging a pass on you, since with no plan for you they would never try one. `Sim/CarRace.Track` and `Analytic.cs` copy into `Assets/Scripts/Track`. Compiles against the real Unity DLLs and the stub, 0 errors, 0 warnings. Not yet run: the editor was open, so no headless build. Waiting on your drive. |
 | Overtaking | DONE | Passes that complete where the plans say one can: `--fastest-last` puts the fastest car at the back, and it now gains places. 1 contact in 20 such races remains, from the lane model; section 1. |
 | Passing lanes | TODO | Inside and outside lines fixed on the road, each with its own speed plan, and a forward check for whether two cars' lines cross, in place of offsets hung off a racing line that sweeps across the road. The fix for the squeeze contacts left in passing (section 1), and the design in section 12 of IMPLEMENTATION_REPORT.md. Deferred on 2026-09-23 in favour of the Unity install. |
 | Race telemetry | DONE | `--race ... --csv <path>`. One row per car every 20 ms: the `--lap` columns plus blocked by, following, overtaking, wanted and driven offset, and the cap. |
@@ -459,6 +461,21 @@ learned, so context is not lost between sessions.
   work existed with no history and no backup.
 - Added this file, and a rule in `CLAUDE.md` section 5 to keep it current during
   work rather than at the end.
+
+### 2026-09-24, tenth session
+
+- Found why the fast-jev-compaction plugin never compacted: it has no TypeSafe key, so
+  it falls back to the built-in summary. Left for you to supply the key.
+- AI opponents in Unity, your pick, with three AI. The AI code needed no change to run
+  in the engine: `RaceDriver`, `PathDriver` and `SpeedPlan` copy in as they are, and
+  `Analytic.cs` with them for the planning limits. What was new is the plumbing.
+  `CarController` takes an `Autopilot` delegate, so it still knows nothing about racing.
+  `TrackPath` builds the harness's `TrackData` from the scene. `RaceDirector` is the
+  Unity side of `RaceRun`: reaction interval, field, grid, stuck cars.
+- One thing the harness never had to answer: the player has no speed plan, and
+  `WorthPassing` refuses a pass on a car with none, so the AI would have queued behind
+  a slow player forever. They now assume a plan at pace 0.7 for you.
+- Compiles against the real Unity DLLs and the stub. Not run: the editor was open.
 
 ### 2026-09-23, ninth session
 

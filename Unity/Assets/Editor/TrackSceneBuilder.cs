@@ -12,7 +12,7 @@ namespace CarRace.UnityGame.EditorTools
     ///
     /// Reads the track JSON from Assets/Tracks (copied from the repo's Tracks_Data) and makes
     /// the road from the centreline and its widths, a grass verge either side, the racing line
-    /// painted on the road, and the car on the line at the start of the lap, pointing along it.
+    /// painted on the road, and a grid behind the start line: three AI cars and the player.
     /// The road follows the file's elevation, so Spa climbs its 105 m. Camber and banking ship
     /// as zero in every file, so the road is flat across; that is the data, not a shortcut.
     ///
@@ -41,6 +41,17 @@ namespace CarRace.UnityGame.EditorTools
         const float VergeWidthM = 15f;
         const float LineWidthM = 0.35f;
 
+        // The grid, as the harness lays it out (RaceRun.PlaceOnGrid): two abreast, rows 10 m
+        // apart, the front row 10 m behind the line. The AI fill the front slots, fastest on
+        // pole, and the player starts at the back.
+        const int AiCars = 3;
+        const float RowGapM = 10f;
+        const float GridLateralM = 2f;
+        static readonly Color[] AiColours =
+        {
+            new Color(0.1f, 0.3f, 0.85f), new Color(0.95f, 0.75f, 0.1f), new Color(0.15f, 0.65f, 0.25f),
+        };
+
         [MenuItem("CarRace/Build Track Scene/Test Circuit")] static void TestCircuit() => Build("testcircuit");
         [MenuItem("CarRace/Build Track Scene/Monza")] static void Monza() => Build("monza");
         [MenuItem("CarRace/Build Track Scene/Spa")] static void Spa() => Build("spa");
@@ -67,7 +78,7 @@ namespace CarRace.UnityGame.EditorTools
         };
 
         [Serializable] class Polyline { public float[] x, y, z, width_left, width_right; }
-        [Serializable] class TrackFile { public string name; public float sample_spacing_m; public Polyline centerline, racing_line; }
+        [Serializable] class TrackFile { public string name; public float sample_spacing_m, length_m; public Polyline centerline, racing_line; }
 
         public static void Build(string circuit)
         {
@@ -149,16 +160,20 @@ namespace CarRace.UnityGame.EditorTools
             var arrowMaterial = SkidpadSceneBuilder.EnsureMaterial(ArrowMaterialPath, new Color(0.95f, 0.95f, 0.95f), null, Vector2.one);
             Arrows(root, centre, right, arrowMaterial);
 
-            // The car on the racing line at the start of the lap, pointing along it, its origin
+            // The player in the last grid slot, pointing along the racing line, its origin
             // CgHeight above the road plus a few centimetres so it settles rather than starts
             // inside the surface on a slope.
-            Vector3 heading = (line[1] - line[n - 1]).normalized;
-            Vector3 start = line[0] + Vector3.up * (definition.cgHeight + 0.05f);
-            GameObject car = SkidpadSceneBuilder.PlaceCar(carLayer, definition, start, Quaternion.LookRotation(heading, Vector3.up));
+            var (start, facing) = GridSlot(AiCars, line, lineRight, track.sample_spacing_m, definition.cgHeight);
+            GameObject car = SkidpadSceneBuilder.PlaceCar(carLayer, definition, start, facing);
             // Lap timing: the centreline as the timer's measure of progress, start line at 0.
             var path = root.AddComponent<TrackPath>();
             path.trackName = track.name;
             path.centre = centre;
+            path.line = line;
+            path.widthLeft = track.centerline.width_left;
+            path.widthRight = track.centerline.width_right;
+            path.sampleSpacing = track.sample_spacing_m;
+            path.lengthM = track.length_m;
             path.referenceLapSeconds = ReferenceLaps.TryGetValue(circuit, out float reference) ? reference : 0f;
             var timer = car.AddComponent<LapTimer>();
             var timerSettings = new SerializedObject(timer);
@@ -174,12 +189,41 @@ namespace CarRace.UnityGame.EditorTools
             recoverySettings.FindProperty("cgHeight").floatValue = definition.cgHeight;
             recoverySettings.ApplyModifiedPropertiesWithoutUndo();
 
-            var controller = new SerializedObject(car.GetComponent<CarController>());
-            var ground = controller.FindProperty("groundLayers");
-            ground.intValue &= ~(1 << barrierLayer);
-            controller.ApplyModifiedPropertiesWithoutUndo();
-            if ((ground.intValue & (1 << barrierLayer)) != 0)
-                throw new InvalidOperationException("The wheels would read the barrier as ground.");
+            // The AI, in the slots in front, each its own colour. RaceDirector drives them.
+            var tyreMaterial = SkidpadSceneBuilder.EnsureMaterial(SkidpadSceneBuilder.TyreMaterialPath, new Color(0.08f, 0.08f, 0.08f), null, Vector2.one);
+            var cars = new List<CarController> { car.GetComponent<CarController>() };
+            var aiCars = new CarController[AiCars];
+            for (int slot = 0; slot < AiCars; slot++)
+            {
+                GameObject ai = SkidpadSceneBuilder.BuildCar(carLayer, definition, withDriver: false);
+                ai.name = $"AI {slot + 1}";
+                var (position, rotation) = GridSlot(slot, line, lineRight, track.sample_spacing_m, definition.cgHeight);
+                ai.transform.SetPositionAndRotation(position, rotation);
+                var body = SkidpadSceneBuilder.EnsureMaterial($"Assets/Materials/AiBody{slot + 1}.mat", AiColours[slot % AiColours.Length], null, Vector2.one);
+                foreach (var r in ai.GetComponentsInChildren<Renderer>())
+                    r.sharedMaterial = r.name == "Body" ? body : tyreMaterial;
+                aiCars[slot] = ai.GetComponent<CarController>();
+                cars.Add(aiCars[slot]);
+            }
+
+            var director = root.AddComponent<RaceDirector>();
+            var directorSettings = new SerializedObject(director);
+            directorSettings.FindProperty("track").objectReferenceValue = path;
+            directorSettings.FindProperty("player").objectReferenceValue = car.GetComponent<CarController>();
+            var aiList = directorSettings.FindProperty("aiCars");
+            aiList.arraySize = AiCars;
+            for (int i = 0; i < AiCars; i++) aiList.GetArrayElementAtIndex(i).objectReferenceValue = aiCars[i];
+            directorSettings.ApplyModifiedPropertiesWithoutUndo();
+
+            foreach (CarController each in cars)
+            {
+                var controller = new SerializedObject(each);
+                var ground = controller.FindProperty("groundLayers");
+                ground.intValue &= ~(1 << barrierLayer);
+                controller.ApplyModifiedPropertiesWithoutUndo();
+                if ((ground.intValue & (1 << barrierLayer)) != 0)
+                    throw new InvalidOperationException("The wheels would read the barrier as ground.");
+            }
 
             // A lap spans kilometres; the default 1 km far plane cuts it off in the distance.
             var camera = Camera.main;
@@ -194,7 +238,21 @@ namespace CarRace.UnityGame.EditorTools
             SkidpadSceneBuilder.AddToBuildSettings(scenePath);
             Selection.activeGameObject = car;
             Debug.Log($"{track.name} built at {scenePath}: {n} samples, {Length(centre):0} m of road, " +
-                      $"{Max(track.centerline.z) - floor:0} m of climb. Press Play; R recovers onto the track, Backspace restarts.");
+                      $"{Max(track.centerline.z) - floor:0} m of climb. {AiCars} AI on the grid ahead of you. Press Play; the AI go when you do.");
+        }
+
+        /// <summary>Grid slot <paramref name="slot"/>, 0 being pole: on the racing line behind the
+        /// start, to one side of it, pointing along it, CgHeight plus a few centimetres up.</summary>
+        static (Vector3, Quaternion) GridSlot(int slot, Vector3[] line, Vector3[] lineRight, float spacing, float cgHeight)
+        {
+            int n = line.Length;
+            float back = (slot / 2) * RowGapM + RowGapM;
+            float lateral = slot % 2 == 0 ? -GridLateralM : GridLateralM;
+            int index = ((-Mathf.RoundToInt(back / spacing)) % n + n) % n;
+            Vector3 position = line[index] + lineRight[index] * lateral + Vector3.up * (cgHeight + 0.05f);
+            Vector3 heading = line[(index + 1) % n] - line[(index - 1 + n) % n];
+            heading.y = 0f;
+            return (position, Quaternion.LookRotation(heading.normalized, Vector3.up));
         }
 
         static void Check(TrackFile track, string circuit)

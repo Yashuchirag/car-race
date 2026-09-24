@@ -124,7 +124,7 @@ frictionless wall runs along the outside of each verge, on a `Barrier` layer the
 probes ignore, so the car glances off it and cannot leave the circuit. White arrows
 every 50 m down the middle of the road point the way the lap runs, and a red WRONG WAY
 warning appears when the car faces back along the lap for more than 0.75 s. `R` puts the car
-back on the grid.
+back on the track where it is, and `Backspace` back on the grid.
 
 The circuits copy in from the repo, with their licence, since `Tracks_Data/` is ODbL:
 
@@ -145,6 +145,28 @@ against your best sectors, and the headless reference driver's lap for that circ
 lap counts only after passing both sector gates in order, so reversing over the line or
 cutting across cannot complete one. The clock starts when the car first moves; a respawn
 abandons the lap in progress. The best lap is kept per circuit in PlayerPrefs.
+
+## Racing the AI
+
+Track scenes grid three AI cars ahead of you, laid out as the harness does it: two
+abreast, rows 10 m apart, the front row 10 m behind the line, fastest on pole, you at the
+back. `RaceDirector` on the circuit drives them with the same `RaceDriver` the headless
+race uses, through `CarController.Autopilot`, and shows every driver the whole field,
+you included, every 20 ms. The AI hold on the grid until you move off. An AI car stopped
+for 5 s is put back on its racing line where it was. Your place shows at the top of the
+screen.
+
+The AI code copies in from `Sim/`, with the closed-form numbers its speed plan is built
+from:
+
+```bash
+mkdir -p /mnt/d/Dev/CarRace/Assets/Scripts/Track
+cp Sim/CarRace.Track/*.cs Sim/CarRace.Harness/Analytic.cs /mnt/d/Dev/CarRace/Assets/Scripts/Track/
+```
+
+Each AI car's pace (the share of grip it uses) is on `RaceDirector`, 0.80, 0.77 and 0.74
+by default; the harness races 0.78 to 0.85. The AI plan on flat ground, as in the harness,
+so crests and dips on Spa are not in their plan.
 
 ## Analogue triggers
 

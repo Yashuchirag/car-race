@@ -48,6 +48,14 @@ namespace CarRace.UnityGame
         /// race code.
         /// </summary>
         public Func<(Vector3 position, Quaternion rotation)> RecoveryPose;
+
+        /// <summary>
+        /// Drives the car in place of the keyboard when set: given the body this step and the
+        /// step length, returns the inputs. An AI car has no DriverInput and sets this instead.
+        /// A delegate for the same reason as RecoveryPose.
+        /// </summary>
+        public Func<BodyState, float, VehicleInputs> Autopilot;
+
         public float SpeedKph => _body != null ? _body.linearVelocity.magnitude * 3.6f : 0f;
 
         Rigidbody _body;
@@ -118,7 +126,8 @@ namespace CarRace.UnityGame
 
             if (driver != null)
                 driver.Tick(Time.fixedDeltaTime, Vector3.Dot(_body.linearVelocity, transform.forward));
-            VehicleInputs inputs = driver != null ? driver.Read() : VehicleInputs.Coasting;
+            VehicleInputs inputs = Autopilot != null ? Autopilot(Bridge.ReadBody(_body), Time.fixedDeltaTime)
+                                 : driver != null ? driver.Read() : VehicleInputs.Coasting;
 
             if (driver != null)
             {

@@ -27,7 +27,7 @@ namespace CarRace.UnityGame.EditorTools
         const string CheckerPath = "Assets/Materials/Checker.asset";
         const string GroundMaterialPath = "Assets/Materials/Ground.mat";
         const string BodyMaterialPath = "Assets/Materials/CarBody.mat";
-        const string TyreMaterialPath = "Assets/Materials/Tyre.mat";
+        internal const string TyreMaterialPath = "Assets/Materials/Tyre.mat";
         internal const string CarLayerName = "Car";
 
         [MenuItem("CarRace/Build Skidpad Scene")]
@@ -153,7 +153,9 @@ namespace CarRace.UnityGame.EditorTools
                 throw new System.InvalidOperationException("Car Definition is not saved as an asset.");
         }
 
-        static GameObject BuildCar(int carLayer, CarDefinition definition)
+        /// <summary>A car with no DriverInput when <paramref name="withDriver"/> is false: an AI
+        /// car, driven through CarController.Autopilot instead of the keyboard.</summary>
+        internal static GameObject BuildCar(int carLayer, CarDefinition definition, bool withDriver = true)
         {
             // The transform origin has to be the centre of mass: the model measures every
             // wheel and aero offset from it. So the car sits at its CG height, not at 0.
@@ -169,12 +171,15 @@ namespace CarRace.UnityGame.EditorTools
             var box = car.AddComponent<BoxCollider>();
             box.center = new Vector3(0f, 0.3f, 0f);
             box.size = new Vector3(1.9f, 0.8f, 4.4f);
-            var driver = car.AddComponent<DriverInput>();
+            var driver = withDriver ? car.AddComponent<DriverInput>() : null;
             var controller = car.AddComponent<CarController>();
 
-            var driverSettings = new SerializedObject(driver);
-            driverSettings.FindProperty("useTriggerAxes").boolValue = true;
-            driverSettings.ApplyModifiedPropertiesWithoutUndo();
+            if (driver != null)
+            {
+                var driverSettings = new SerializedObject(driver);
+                driverSettings.FindProperty("useTriggerAxes").boolValue = true;
+                driverSettings.ApplyModifiedPropertiesWithoutUndo();
+            }
 
             // Wheels are cosmetic, and must have no collider: the model does the suspension,
             // and a collider on a wheel would be a second, fighting suspension.
