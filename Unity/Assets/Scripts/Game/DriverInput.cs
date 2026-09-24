@@ -6,11 +6,14 @@ namespace CarRace.UnityGame
     /// <summary>
     /// Turns keyboard and gamepad state into the normalised inputs the model takes.
     ///
-    /// Uses the old input manager, because "Horizontal", "Vertical" and "Jump" exist in
-    /// every project without authoring an asset first, so a car drives the moment the
-    /// scene runs. Analogue triggers are a separate path: Windows reports them as
-    /// joystick axes that have to be added by hand, and reading an axis name that does
-    /// not exist throws, so they stay behind a flag until those entries are made.
+    /// Uses the old input manager, because "Horizontal" and "Vertical" exist in every
+    /// project without authoring an asset first, and both already read the left stick,
+    /// so a car drives the moment the scene runs. Analogue triggers are a separate path:
+    /// Windows reports them as joystick axes that have to be added to the Input Manager,
+    /// and reading an axis name that does not exist throws, so they stay behind a flag.
+    /// The scene builder in Assets/Editor adds them and sets the flag. When on, the
+    /// triggers add to the keyboard rather than replace it, so both keep working.
+    /// Every action has a key and a gamepad button; the defaults are an XInput pad.
     /// Project Settings, Player, Active Input Handling must include the old manager.
     /// </summary>
     public sealed class DriverInput : MonoBehaviour
@@ -26,6 +29,12 @@ namespace CarRace.UnityGame
         [SerializeField] KeyCode shiftDownKey = KeyCode.Q;
         [SerializeField] KeyCode respawnKey = KeyCode.R;
 
+        [Header("Gamepad buttons, XInput numbering")]
+        [SerializeField] KeyCode handbrakeButton = KeyCode.JoystickButton0;   // A
+        [SerializeField] KeyCode shiftUpButton = KeyCode.JoystickButton5;     // RB
+        [SerializeField] KeyCode shiftDownButton = KeyCode.JoystickButton4;   // LB
+        [SerializeField] KeyCode respawnButton = KeyCode.JoystickButton6;     // View
+
         /// <summary>Set the frame the key went down, cleared when the car acts on it.</summary>
         public bool ShiftUpRequested { get; private set; }
         public bool ShiftDownRequested { get; private set; }
@@ -35,9 +44,9 @@ namespace CarRace.UnityGame
         {
             // Latched rather than read in FixedUpdate: a physics step can run twice in one
             // frame or not at all, which would double a shift or drop it entirely.
-            if (Input.GetKeyDown(shiftUpKey)) ShiftUpRequested = true;
-            if (Input.GetKeyDown(shiftDownKey)) ShiftDownRequested = true;
-            if (Input.GetKeyDown(respawnKey)) RespawnRequested = true;
+            if (Input.GetKeyDown(shiftUpKey) || Input.GetKeyDown(shiftUpButton)) ShiftUpRequested = true;
+            if (Input.GetKeyDown(shiftDownKey) || Input.GetKeyDown(shiftDownButton)) ShiftDownRequested = true;
+            if (Input.GetKeyDown(respawnKey) || Input.GetKeyDown(respawnButton)) RespawnRequested = true;
         }
 
         public void ConsumeRequests()
@@ -49,17 +58,13 @@ namespace CarRace.UnityGame
 
         public VehicleInputs Read()
         {
-            float throttle, brake;
+            float forward = Input.GetAxisRaw("Vertical");
+            float throttle = Mathf.Max(forward, 0f);
+            float brake = Mathf.Max(-forward, 0f);
             if (useTriggerAxes)
             {
-                throttle = Mathf.Clamp01(Input.GetAxisRaw(throttleAxis));
-                brake = Mathf.Clamp01(Input.GetAxisRaw(brakeAxis));
-            }
-            else
-            {
-                float forward = Input.GetAxisRaw("Vertical");
-                throttle = Mathf.Max(forward, 0f);
-                brake = Mathf.Max(-forward, 0f);
+                throttle = Mathf.Max(throttle, Mathf.Clamp01(Input.GetAxisRaw(throttleAxis)));
+                brake = Mathf.Max(brake, Mathf.Clamp01(Input.GetAxisRaw(brakeAxis)));
             }
 
             return new VehicleInputs
@@ -69,7 +74,7 @@ namespace CarRace.UnityGame
                 Steer = Input.GetAxisRaw("Horizontal"),
                 Throttle = throttle,
                 Brake = brake,
-                Handbrake = Input.GetKey(handbrakeKey) ? 1f : 0f,
+                Handbrake = Input.GetKey(handbrakeKey) || Input.GetKey(handbrakeButton) ? 1f : 0f,
                 Clutch = false,
             };
         }

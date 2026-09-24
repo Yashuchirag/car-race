@@ -62,6 +62,28 @@ is the copy that is under version control and under test.
 
 ## Scene for the feel test
 
+**The quick way:** `Assets/Editor/SkidpadSceneBuilder.cs` adds a menu, `CarRace, Build
+Skidpad Scene`, that does every step below, adds the two trigger axes to the Input Manager,
+and saves `Assets/Scenes/Skidpad.unity`. Copy it in with the rest:
+
+```bash
+mkdir -p /mnt/d/Dev/CarRace/Assets/Editor
+cp Unity/Assets/Editor/*.cs /mnt/d/Dev/CarRace/Assets/Editor/
+```
+
+Running it again rebuilds the scene from scratch but keeps `Assets/Cars/ReferenceCar.asset`,
+so tuned car values survive. The steps below are what it does, for building it by hand.
+
+| Action | Keyboard | XInput gamepad |
+|---|---|---|
+| Steer | A / D | Left stick |
+| Throttle, brake | W / S | Right trigger, left trigger (or left stick up, down) |
+| Handbrake | Space | A |
+| Shift up, down (manual gearbox) | E / Q | RB / LB |
+| Respawn | R | View |
+| Cycle camera | C | Y |
+
+
 The exit criterion for Phase 1 is whether this is enjoyable on a gamepad, which needs
 no track and no art:
 

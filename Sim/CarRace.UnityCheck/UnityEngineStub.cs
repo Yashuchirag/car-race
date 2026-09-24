@@ -188,7 +188,12 @@ namespace UnityEngine
         public float fieldOfView { get; set; }
     }
 
-    public enum KeyCode { None = 0, Space, Q, E, R, C, LeftShift }
+    public enum KeyCode
+    {
+        None = 0, Space, Q, E, R, C, LeftShift,
+        JoystickButton0, JoystickButton1, JoystickButton2, JoystickButton3,
+        JoystickButton4, JoystickButton5, JoystickButton6, JoystickButton7,
+    }
 
     public static class Input
     {

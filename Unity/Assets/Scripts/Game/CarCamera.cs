@@ -19,6 +19,7 @@ namespace CarRace.UnityGame
         [SerializeField] Rigidbody targetBody;
         [SerializeField] View view = View.Chase;
         [SerializeField] KeyCode cycleKey = KeyCode.C;
+        [SerializeField] KeyCode cycleButton = KeyCode.JoystickButton3;   // Y on an XInput pad
 
         [Header("Chase")]
         [SerializeField] Vector3 chaseOffset = new Vector3(0f, 1.55f, -5.4f);
@@ -57,7 +58,7 @@ namespace CarRace.UnityGame
 
         void Update()
         {
-            if (Input.GetKeyDown(cycleKey))
+            if (Input.GetKeyDown(cycleKey) || Input.GetKeyDown(cycleButton))
                 view = (View)(((int)view + 1) % 3);
         }
 
