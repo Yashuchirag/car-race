@@ -75,6 +75,7 @@ namespace CarRace.UnityGame
 
             _track = track.ToTrackData();
             _drivers = new RaceDriver[aiCars.Length];
+            _lastInputs = new VehicleInputs[aiCars.Length + 1];
             _field = new RaceDriver.Seen[aiCars.Length + 1];
             _stuckFor = new float[aiCars.Length];
             int n = _track.Count;
@@ -94,7 +95,7 @@ namespace CarRace.UnityGame
                 _drivers[i] = driver;
 
                 int k = i;
-                aiCars[i].Autopilot = (body, dt) => _started ? _drivers[k].Drive(body, dt)
+                aiCars[i].Autopilot = (body, dt) => _started ? Logged(k, _drivers[k].Drive(body, dt))
                                                              : new VehicleInputs { Brake = 1f };
                 aiCars[i].RecoveryPose = () => OnLine(k);
             }
@@ -149,9 +150,63 @@ namespace CarRace.UnityGame
             TopSpeedMs = Analytic.TopSpeedKph(config) / 3.6f,
         };
 
+        // With -aiLog on the command line, a row per car per reaction interval to ai.csv beside
+        // the executable, in the harness race CSV's terms, so the AI in Unity can be compared
+        // with the AI headless. How the grid pass that crashed a car at Monza's first chicane
+        // was found. Nothing is written or allocated without the switch.
+        static readonly bool AiLogAsked = System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-aiLog") >= 0;
+        System.IO.StreamWriter _aiLog;
+        VehicleInputs[] _lastInputs = new VehicleInputs[0];
+
+        VehicleInputs Logged(int car, VehicleInputs inputs)
+        {
+            if (AiLogAsked) _lastInputs[car] = inputs;
+            return inputs;
+        }
+
+        void LogAi(float time)
+        {
+            if (!AiLogAsked) return;
+            if (_aiLog == null)
+            {
+                string path = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(Application.dataPath) ?? ".", "ai.csv");
+                _aiLog = new System.IO.StreamWriter(path);
+                _aiLog.WriteLine("t,car,s,lap,x,y,z,fwd_kph,target_kph,planned_kph,cap_kph,throttle,brake,steer," +
+                                 "lateral_m,offset_m,wanted_m,cross_m,heading_deg,recovering,sideslip_deg,yaw_rate,gear,pitch_deg,overtaking,blocked_by,gap_m");
+            }
+            var c = System.Globalization.CultureInfo.InvariantCulture;
+            int count = aiCars.Length + (_playerDriver != null ? 1 : 0);
+            for (int i = 0; i < count; i++)
+            {
+                RaceDriver d = i < aiCars.Length ? _drivers[i] : _playerDriver;
+                CarController car = i < aiCars.Length ? aiCars[i] : player;
+                var body = car.GetComponent<Rigidbody>();
+                Transform t = car.transform;
+                float fwd = Vector3.Dot(body.linearVelocity, t.forward);
+                float right = Vector3.Dot(body.linearVelocity, t.right);
+                float slip = body.linearVelocity.sqrMagnitude > 1f ? Mathf.Atan2(right, Mathf.Abs(fwd)) * Mathf.Rad2Deg : 0f;
+                PathDriver p = d.Path;
+                VehicleInputs u = _lastInputs[i];
+                _aiLog.WriteLine(string.Join(",", new[]
+                {
+                    time.ToString("0.00", c), (i + 1).ToString(c), (p.Index * _track.SampleSpacingM).ToString("0", c), p.Laps.ToString(c),
+                    t.position.x.ToString("0.0", c), t.position.y.ToString("0.00", c), t.position.z.ToString("0.0", c),
+                    (fwd * 3.6f).ToString("0.0", c), (p.TargetSpeedMs * 3.6f).ToString("0.0", c), (p.PlannedSpeedMs * 3.6f).ToString("0.0", c),
+                    (p.SpeedCapMs < 0f ? -1f : p.SpeedCapMs * 3.6f).ToString("0.0", c),
+                    u.Throttle.ToString("0.00", c), u.Brake.ToString("0.00", c), u.Steer.ToString("0.000", c),
+                    p.LateralFromLineM.ToString("0.00", c), p.LineOffsetM.ToString("0.00", c), d.WantedOffsetM.ToString("0.00", c),
+                    p.LineErrorM.ToString("0.00", c), p.HeadingErrorDeg.ToString("0.0", c), p.Recovering.ToString("0.00", c),
+                    slip.ToString("0.0", c), Vector3.Dot(body.angularVelocity, t.up).ToString("0.000", c),
+                    car.Sim.Drivetrain.Gear.ToString(c), (-Mathf.Asin(Mathf.Clamp(t.forward.y, -1f, 1f)) * Mathf.Rad2Deg).ToString("0.00", c),
+                    (d.IsOvertaking ? 1 : 0).ToString(c), d.BlockedBy.ToString(c), d.BlockedGapM.ToString("0.0", c),
+                }));
+            }
+        }
+
+        void OnDestroy() => _aiLog?.Dispose();
+
         void FixedUpdate()
         {
-            long diagnosticStart = SlowStep.Now;   // DIAGNOSTIC, temporary
             float dt = Time.fixedDeltaTime;
             TrackPlayer();
             if (!_started)
@@ -159,7 +214,7 @@ namespace CarRace.UnityGame
                 _countdown -= dt;
                 if (_countdown > 0f) return;
                 _started = true;
-                player.Autopilot = _playerDriver != null ? (body, t) => _playerDriver.Drive(body, t) : null;
+                player.Autopilot = _playerDriver != null ? (body, t) => Logged(aiCars.Length, _playerDriver.Drive(body, t)) : null;
             }
 
             // Every step rather than every reaction interval, so lap times are to 5 ms.
@@ -172,14 +227,12 @@ namespace CarRace.UnityGame
             float playerProgressM = playerLaps * _track.LengthM + (_playerProgress - playerLaps * n) * _track.SampleSpacingM;
             _control.Update(aiCars.Length, _raceTime, playerLaps, playerProgressM);
             _control.Rank();
-            if (SlowStep.Slow(diagnosticStart, out double bookMs))   // DIAGNOSTIC, temporary
-                SlowStep.Log($"RaceDirector tracking and bookkeeping {bookMs:0.0} ms");
-            long diagnosticObserve = SlowStep.Now;
 
             _sinceReaction += dt;
             if (_sinceReaction < ReactionSeconds) return;
             float elapsed = _sinceReaction;
             _sinceReaction = 0f;
+            LogAi(_raceTime);
 
             for (int i = 0; i < aiCars.Length; i++)
             {
@@ -197,28 +250,10 @@ namespace CarRace.UnityGame
                 _drivers[i].Observe(_track, _field, i, elapsed);
 
                 bool stopped = _field[i].SpeedMs < 1f && _field[i].SpeedMs > -1f;
-                if (stopped && _stuckFor[i] == 0f)   // DIAGNOSTIC, temporary
-                {
-                    PathDriver p = _drivers[i].Path;
-                    SlowStep.Log($"STOPPED {aiCars[i].name} at {aiCars[i].transform.position}, s = {p.Index * _track.SampleSpacingM:0} m, " +
-                                 $"cap {p.SpeedCapMs * 3.6f:0} km/h, planned {p.PlannedSpeedMs * 3.6f:0}, off line {p.LateralFromLineM:0.0} m, " +
-                                 $"blocked by {_drivers[i].BlockedBy} at {_drivers[i].BlockedGapM:0.0} m, following {_drivers[i].IsFollowing}, " +
-                                 $"gear {aiCars[i].Sim.Drivetrain.Gear}, up {aiCars[i].transform.up.y:0.00}");
-                }
                 _stuckFor[i] = stopped ? _stuckFor[i] + elapsed : 0f;
                 if (_stuckFor[i] < StuckSeconds) continue;
-                SlowStep.Log($"RaceDirector recovering stuck {aiCars[i].name}");   // DIAGNOSTIC, temporary
-                long diagnosticRecover = SlowStep.Now;
                 aiCars[i].Recover();
-                SlowStep.Slow(diagnosticRecover, out double recoverMs);
-                SlowStep.Log($"RaceDirector Recover() took {recoverMs:0.0} ms");
                 _stuckFor[i] = 0f;
-            }
-            if (SlowStep.Slow(diagnosticObserve, out double observeMs))   // DIAGNOSTIC, temporary
-            {
-                string passing = "";
-                foreach (RaceDriver d in _drivers) passing += $" {d.Name}: overtaking {d.IsOvertaking}, blocked by {d.BlockedBy};";
-                SlowStep.Log($"RaceDirector observe {observeMs:0.0} ms;{passing}");
             }
         }
 

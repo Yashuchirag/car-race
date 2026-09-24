@@ -103,6 +103,17 @@ namespace CarRace.Track
         /// a healthy car still does 80% of its plan or more.</summary>
         public float TroubleShare = 0.45f;
 
+        /// <summary>
+        /// Slowest this car may itself be going to call another car in trouble. Standing on a
+        /// grid, both cars' speeds are noise, and in Unity they settle with a few millimetres a
+        /// second either way: the car ahead, rolling back 0.001 m/s, counted as doing less
+        /// than 45% of the 0.03 m/s of the car behind, which pulled out to pass on the grid,
+        /// ran alongside the second row's other car to Monza's first chicane, and squeezed it
+        /// into the wall in every race. The harness starts cars at exactly zero and never saw
+        /// it. Any car worth passing for being in trouble is passed at more than this.
+        /// </summary>
+        public float TroubleMinSpeedMs = 5f;
+
         /// <summary>How long before it tries the same car again after giving up, and how far
         /// past it has to be before a pass counts as done.</summary>
         public float PassRetrySeconds = 5f;
@@ -561,7 +572,8 @@ namespace CarRace.Track
         /// </summary>
         bool WorthPassing(TrackData track, in Seen self, in Seen other, float gapM)
         {
-            if (other.SpeedMs < TroubleShare * MathF.Min(Path.PlanAt(other.Index), self.SpeedMs))
+            if (self.SpeedMs > TroubleMinSpeedMs
+                && other.SpeedMs < TroubleShare * MathF.Min(Path.PlanAt(other.Index), self.SpeedMs))
                 return true;
             if (other.Plan == null) return false;
 

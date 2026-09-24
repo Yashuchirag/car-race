@@ -157,7 +157,8 @@ light bloom, slight vignette), created once and then left for editing. The track
 adds a global volume with it and turns post-processing on for the camera.
 
 `CarRace, Build Windows Player` builds the Monza scene to `Builds/Windows`; run it with
-`-benchmark` for a 60 s frame time report beside the executable (see `Benchmark.cs`).
+`-benchmark` for a 60 s frame time report beside the executable (see `Benchmark.cs`), and
+`-aiLog` to have every AI car's state written to `ai.csv` in the harness race CSV's terms.
 
 ## Lap timing
 

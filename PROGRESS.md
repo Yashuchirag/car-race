@@ -152,7 +152,7 @@ A row only becomes DONE when its verification command passes.
 | URP settings for the graphics pass | DONE | 2026-09-24, reviewed with you and applied by `Unity/Assets/Editor/GraphicsSetup.cs` (`CarRace, Apply Graphics Settings`). The project was on the Universal 3D template defaults, and the track scenes had no post-processing and no anti-aliasing at all: the builder used Unity's plain camera, which has post-processing off. Now: MSAA 4x (TAA smears at racing speed), HDR colour grading, shadows to 150 m in 4 cascades at 2048 (was 50 m), opaque texture off, and a track profile `Assets/Settings/TrackPostProcessing.asset` with ACES tone mapping, bloom 0.3 above threshold 1 and a 0.2 vignette. Track scenes get a global volume and a camera with post-processing on. Kept: Forward+, HDR, SRP batcher. Later: GPU Resident Drawer and probe volumes, once there is trackside art and baked light. Benchmark after: 278 fps average, 1% low 138, worst frame 11.5 ms, the same as before: the frame is CPU bound. A screenshot confirmed smooth edges, tone mapping and contact shadows. The skidpad scene does not get the volume. Corrected `IMPLEMENTATION_REPORT.md`: URP has no DLSS, only FSR 1 and STP. |
 | Sky and lighting | WIP | 2026-09-24, the first step of the graphics pass. Sky: Poly Haven "Kloofendal 48d Partly Cloudy (Pure Sky)", CC0, 4096x2048 HDR in `Assets/Art/Sky` (Git LFS), on Skybox/Panoramic. `Tools/sky_analysis.py` measures the image: sun 47.9 degrees up at (0.5543, 0.7416, -0.3778) in the shader's own mapping, colour (0.974, 1, 0.936), intensity 1.44 (its illuminance over pi, which puts it at its real ratio to the sky's ambient, 2.3 to 1 on level ground), horizon (0.439, 0.472, 0.573) linear. `GraphicsSetup.SetUpSkyAndSun` aims the directional light at the sun, takes ambient light and reflections from the sky, adds linear fog 300 to 3500 m in the horizon colour, and bakes the environment only (no lightmaps yet); the track builder calls it. Benchmark: 283 fps average, unchanged. The screenshot shows the sky and sky-coloured lighting, and also the edge of the world past the verges, now visible as the sky's lower half: needs ground. One 92 ms stall 30 s in on this run, with telemetry off, so the recorder may not have been its only cause (section 6). Waiting on your look. |
 | Ground to the horizon | DONE | 2026-09-24. `Unity/Assets/Editor/GroundBuilder.cs`, called by the track builder: a Terrain reaching 3 km past the circuit (Monza 7.3 x 8.2 km, 2049 heights, 3.5 m cells), its height an inverse distance weighted average of the centreline (softened over 60 m, computed on a 257 grid and interpolated), held 0.4 m under the road and verges to 12 m past the barriers. No collider. Flat grass colour until textures. Checked in Python on Monza, Spa and Suzuka: at 380,000 road and verge points the terrain as drawn is 0.4 m below the surface, never closer. Its data is 10 MB, in LFS (`Ground.asset`). From the driver's seat the 1.2 m barriers hide it; the blue-grey band past the right verge in the screenshots is the barrier in shadow, not the void as I first said. |
-| Stall at the first chicane | WIP | 2026-09-24. The recurring 90 to 750 ms stall (section 6) always falls in the frame where `RaceDirector` recovers a stuck AI car, and a car is stuck in every benchmark race: AI 2 misses Monza's first chicane on lap one (s = 668 m, planned 56 km/h), goes 21 m off its line into the right barrier at 58 km/h, stops nose in, and is recovered after 5 s at t = 31.2 s. The headless race with the same four-car field never leaves the road (worst 6.2 m off line, three seeds), so something in Unity causes the miss: suspects are the real elevation (the AI plans and was tested on flat ground) and the 200 Hz pose read against the harness's 500 Hz. The recovery itself measured 3 to 6 ms in four instrumented runs, none of which stalled; uninstrumented runs stalled about half the time, so the slow part is still unidentified. Temporary diagnostics are committed separately and marked DIAGNOSTIC: `Scripts/Debug/SlowStep.cs` and timing and logging in `CarController`, `RaceDirector`, `LapTimer`, `TrackRecovery` and `CarContacts`; remove them when this is closed. Next: log AI 2's speed, target and braking through s = 400 to 700 m in Unity and compare with the harness. |
+| AI crash at the first chicane | DONE | 2026-09-24, and very likely the "third car into the wall" you saw. The cause was on the grid, not at the chicane: in Unity the cars settle with speeds of a few millimetres a second, so AI 3, creeping at 0.03 m/s, judged AI 1 ahead of it (0.00 m/s) "in trouble" under `RaceDriver`'s rule (less than 45% of the speed of the car behind) and pulled out to pass on the grid. It ran alongside AI 2 all the way to the first chicane, where the side-by-side rule moved AI 2's line 2.4 m out under braking from 199 km/h; AI 2 weaved and spun into the barrier, every race. The harness starts cars at exactly zero and never saw it. Fix in `RaceDriver`: `TroubleMinSpeedMs = 5`, a car must itself be doing 18 km/h to call another in trouble. Headless unchanged: Monza ten laps seeds 1 to 10, 0 contacts; fastest-last 2 contacts in 20 races, as before; 5 checks; 6 of 6 laps. In Unity no car pulls out on the grid, every car stays within 2.6 m of its line on lap one, and no car stopped in three logged runs. Found with `-aiLog`, a new switch that writes every AI car's state to `ai.csv` beside the executable in the harness's terms; kept. A first guess, that grid places were a sample off, was wrong and reverted. The temporary diagnostics are removed. |
 
 
 ### Phase 1, vehicle physics
@@ -291,11 +291,14 @@ Known, deliberate, and not blocking. Recorded so they are not rediscovered.
 
 **Performance**
 
-- A single stall of about 90 ms, followed by 18 catch-up physics steps, 30 to 34 s after
-  load. Seen with the telemetry recorder on (every run) and once in four runs with it off,
-  on 2026-09-24. Turning the recorder off in release builds removed it from three runs, so
-  it was a cause but may not be the only one. Next time: a development build run with the
-  profiler markers, to see which script is in that frame.
+- Stalls of 90 to 750 ms, followed by catch-up physics steps, came with an AI car being
+  recovered after it crashed at Monza's first chicane (fixed, section 3). The recovery
+  itself timed at 3 to 6 ms in four instrumented runs, so what made that frame slow was
+  never pinned down; with the crash gone it no longer happens. Since then one run in four
+  had a single 259 ms frame, cause unknown. Next time: `-aiLog` together with the frame
+  log on every benchmark run, so a stall can be matched to what the cars were doing.
+- Frame rate varies 218 to 262 fps between identical runs as the laptop warms up, so a
+  change under about 10% cannot be measured from single runs. Compare several.
 
 **Vehicle physics**
 
@@ -551,6 +554,10 @@ learned, so context is not lost between sessions.
 
 - Ground to the horizon, verified offline. Chasing the stall found its trigger: an AI car
   missing Monza's first chicane in Unity (never headless) and being recovered.
+
+- Fixed the AI car that crashed at Monza's first chicane every race: a car on the grid
+  called the car ahead "in trouble" from millimetre-a-second noise and pulled out to pass.
+  Took `-aiLog` to see; the headless race could not show it.
 
 ### 2026-09-23, ninth session
 

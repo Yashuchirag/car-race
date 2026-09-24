@@ -44,13 +44,6 @@ namespace CarRace.UnityGame
 
         void FixedUpdate()
         {
-            long diagnosticStart = SlowStep.Now;   // DIAGNOSTIC, temporary
-            TimedFixedUpdate();
-            if (SlowStep.Slow(diagnosticStart, out double ms)) SlowStep.Log($"LapTimer {ms:0.0} ms");
-        }
-
-        void TimedFixedUpdate()
-        {
             _clock += Time.fixedDeltaTime;
             Vector3 position = car.position;
             int n = track.centre.Length;

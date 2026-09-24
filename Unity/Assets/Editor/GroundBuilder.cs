@@ -123,6 +123,9 @@ namespace CarRace.UnityGame.EditorTools
             terrain.heightmapPixelError = 5f;
             terrain.basemapDistance = 1000f;
             terrain.drawInstanced = true;
+            // Gentle land has little shadow worth casting, and casting it drew the whole
+            // terrain into four shadow cascades every frame.
+            terrain.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             return terrain;
         }
 
