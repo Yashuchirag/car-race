@@ -122,11 +122,12 @@ misconfiguration, and all three failures look like a physics bug if you do not r
 
 `Assets/Editor/TrackSceneBuilder.cs` adds `CarRace, Build Track Scene`, with one entry per
 circuit. It reads the pipeline's JSON and builds the road from the centreline and its
-widths, a 15 m grass verge either side, the racing line painted on the road, and the car
-on that line at the start of the lap. The road follows the file's elevation (Spa climbs
+widths, a 15 m grass verge either side, the racing line painted on the road, and a grid
+behind the start line (see Racing the AI). The road follows the file's elevation (Spa climbs
 105 m); camber and banking are zero in every file, so it is flat across. Asphalt grips at
-1 and grass at 0.35, read by the wheels from each collider's physics material. A 1.2 m
-frictionless wall runs along the outside of each verge, on a `Barrier` layer the wheel
+1 and grass at 0.45, read by the wheels from each collider's physics material. A 1.2 m
+wall with a little friction (0.3), so that sliding along it scrubs speed, runs along the
+outside of each verge, on a `Barrier` layer the wheel
 probes ignore, so the car glances off it and cannot leave the circuit. White arrows
 every 50 m down the middle of the road point the way the lap runs, and a red WRONG WAY
 warning appears when the car faces back along the lap for more than 0.75 s. `R` puts the car

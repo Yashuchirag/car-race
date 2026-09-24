@@ -21,8 +21,8 @@ namespace CarRace.UnityGame.EditorTools
     /// Elevation is shifted so the lowest point of the lap sits at y = 0.
     ///
     /// Grip comes from the collider's physics material, which the wheels read: asphalt at 1,
-    /// grass at 0.35, the value UnityGround documents. A frictionless wall runs along the
-    /// outside of each verge, so the car cannot leave the circuit; R respawns it on the grid.
+    /// grass at 0.45. A wall with a little friction runs along the outside of each verge, so
+    /// the car cannot leave the circuit; R recovers it onto the track where it is.
     /// </summary>
     public static class TrackSceneBuilder
     {
@@ -440,26 +440,45 @@ namespace CarRace.UnityGame.EditorTools
             collider.sharedMaterial = surface;
         }
 
-        /// <summary>No friction and no bounce, combined at the minimum, so a car that touches
-        /// the wall glances along it instead of snagging or being thrown back across the road.</summary>
+        /// <summary>
+        /// Some friction and no bounce, combined at the minimum. The wall started frictionless,
+        /// so a car touching it glanced along instead of snagging, but then nothing slowed a car
+        /// pinned to it: one ran along the Monza wall at 140 km/h for ten seconds with full lock
+        /// asked for, the wall holding its rear so it could not turn away. At 0.3 sliding along
+        /// the wall scrubs speed, and slower the grass can turn the car.
+        ///
+        /// Written on every build, not only when the asset is missing, so a change here reaches
+        /// a project built before it.
+        /// </summary>
         static void EnsureBarrierPhysics()
         {
-            if (AssetDatabase.LoadAssetAtPath<PhysicsMaterial>(BarrierPhysicsPath) != null) return;
-            var barrier = new PhysicsMaterial("Barrier")
-            {
-                dynamicFriction = 0f, staticFriction = 0f, bounciness = 0f,
-                frictionCombine = PhysicsMaterialCombine.Minimum, bounceCombine = PhysicsMaterialCombine.Minimum,
-            };
-            Directory.CreateDirectory(Path.GetDirectoryName(BarrierPhysicsPath));
-            AssetDatabase.CreateAsset(barrier, BarrierPhysicsPath);
+            var barrier = LoadOrCreate(BarrierPhysicsPath, "Barrier");
+            barrier.dynamicFriction = 0.3f;
+            barrier.staticFriction = 0.3f;
+            barrier.bounciness = 0f;
+            barrier.frictionCombine = PhysicsMaterialCombine.Minimum;
+            barrier.bounceCombine = PhysicsMaterialCombine.Minimum;
+            EditorUtility.SetDirty(barrier);
         }
 
+        /// <summary>Grass grips at 0.45 of asphalt: enough to steer back onto the road from
+        /// the verge, which at 0.35 was a struggle, and still well short of the road.</summary>
         static void EnsureGrassPhysics()
         {
-            if (AssetDatabase.LoadAssetAtPath<PhysicsMaterial>(GrassPhysicsPath) != null) return;
-            var grass = new PhysicsMaterial("Grass") { dynamicFriction = 0.35f, staticFriction = 0.35f };
-            Directory.CreateDirectory(Path.GetDirectoryName(GrassPhysicsPath));
-            AssetDatabase.CreateAsset(grass, GrassPhysicsPath);
+            var grass = LoadOrCreate(GrassPhysicsPath, "Grass");
+            grass.dynamicFriction = 0.45f;
+            grass.staticFriction = 0.45f;
+            EditorUtility.SetDirty(grass);
+        }
+
+        static PhysicsMaterial LoadOrCreate(string path, string name)
+        {
+            var material = AssetDatabase.LoadAssetAtPath<PhysicsMaterial>(path);
+            if (material != null) return material;
+            material = new PhysicsMaterial(name);
+            Directory.CreateDirectory(Path.GetDirectoryName(path));
+            AssetDatabase.CreateAsset(material, path);
+            return material;
         }
 
         static float Min(float[] v) { float m = float.MaxValue; foreach (float x in v) m = Mathf.Min(m, x); return m; }

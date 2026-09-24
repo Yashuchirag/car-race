@@ -92,7 +92,7 @@ namespace CarRace.UnityGame
         /// <summary>
         /// Grip multiplier for a surface: 1 is the tarmac the tyre coefficients were
         /// measured on, lower is worse. Authored as the collider's physics material
-        /// dynamic friction, so grass is a material with 0.35 rather than a lookup table
+        /// dynamic friction, so grass is a material with 0.45 rather than a lookup table
         /// of collider names.
         /// </summary>
         static float FrictionOf(Collider collider)

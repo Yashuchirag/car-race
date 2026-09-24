@@ -20,7 +20,7 @@ namespace CarRace.Vehicle
         public bool Hit;
         public float Distance;   // along the probe direction, metres
         public Vector3 Normal;   // unit, pointing up out of the surface
-        public float Friction;   // surface multiplier: asphalt 1.0, grass 0.35
+        public float Friction;   // surface multiplier: asphalt 1.0, grass 0.45
     }
 
     /// <summary>
