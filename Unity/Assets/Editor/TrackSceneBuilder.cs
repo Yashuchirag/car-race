@@ -12,7 +12,7 @@ namespace CarRace.UnityGame.EditorTools
     ///
     /// Reads the track JSON from Assets/Tracks (copied from the repo's Tracks_Data) and makes
     /// the road from the centreline and its widths, a grass verge either side, the racing line
-    /// painted on the road, and a grid behind the start line: three AI cars and the player.
+    /// as a braking guide (RacingLineGuide), and a grid behind the start line: three AI cars and the player.
     /// The road follows the file's elevation, so Spa climbs its 105 m. Camber and banking ship
     /// as zero in every file, so the road is flat across; that is the data, not a shortcut.
     ///
@@ -30,7 +30,12 @@ namespace CarRace.UnityGame.EditorTools
         const string GrassPhysicsPath = "Assets/Physics/Grass.asset";
         const string RoadMaterialPath = "Assets/Materials/Road.mat";
         const string GrassMaterialPath = "Assets/Materials/Grass.mat";
-        const string LineMaterialPath = "Assets/Materials/RacingLine.mat";
+        static readonly (string path, Color colour)[] GuideMaterials =
+        {
+            ("Assets/Materials/RacingLineGreen.mat", new Color(0.15f, 0.85f, 0.25f)),
+            ("Assets/Materials/RacingLineYellow.mat", new Color(1f, 0.82f, 0.1f)),
+            ("Assets/Materials/RacingLineRed.mat", new Color(1f, 0.15f, 0.1f)),
+        };
         const string BarrierMaterialPath = "Assets/Materials/Barrier.mat";
         const string ArrowMaterialPath = "Assets/Materials/DirectionArrow.mat";
         const int ArrowEverySamples = 25;   // 50 m at 2 m spacing
@@ -39,7 +44,6 @@ namespace CarRace.UnityGame.EditorTools
         const float BarrierHeightM = 1.2f;
         const float BarrierFootM = 0.5f;
         const float VergeWidthM = 15f;
-        const float LineWidthM = 0.35f;
 
         // The grid, as the harness lays it out (RaceRun.PlaceOnGrid): two abreast, rows 10 m
         // apart, the front row 10 m behind the line. The AI fill the front slots, fastest on
@@ -116,7 +120,6 @@ namespace CarRace.UnityGame.EditorTools
             var root = new GameObject(track.name);
             var roadMaterial = SkidpadSceneBuilder.EnsureMaterial(RoadMaterialPath, new Color(0.22f, 0.22f, 0.24f), null, Vector2.one);
             var grassMaterial = SkidpadSceneBuilder.EnsureMaterial(GrassMaterialPath, new Color(0.22f, 0.42f, 0.16f), null, Vector2.one);
-            var lineMaterial = SkidpadSceneBuilder.EnsureMaterial(LineMaterialPath, new Color(0.95f, 0.8f, 0.1f), null, Vector2.one);
 
             // Road edges from the centreline and its widths. The verges start at the road edge
             // and run VergeWidthM further out, at the same height as the edge they meet.
@@ -148,17 +151,9 @@ namespace CarRace.UnityGame.EditorTools
             GroundBuilder.Build(root, centre, track.centerline.width_left, track.centerline.width_right,
                                 VergeWidthM, $"Assets/Scenes/Track {track.name}/Ground.asset");
 
-            // The racing line, painted 2 cm above the road with no collider: the line the AI
-            // drives in the harness, so a lap here can be compared with the plan.
+            // The racing line is drawn by RacingLineGuide, added below once the player's car
+            // exists: bars ahead of the car coloured by how hard it would have to brake.
             var lineRight = RightOf(line);
-            var lineLeftSide = new Vector3[n];
-            var lineRightSide = new Vector3[n];
-            for (int i = 0; i < n; i++)
-            {
-                lineLeftSide[i] = line[i] - lineRight[i] * (LineWidthM * 0.5f) + Vector3.up * 0.02f;
-                lineRightSide[i] = line[i] + lineRight[i] * (LineWidthM * 0.5f) + Vector3.up * 0.02f;
-            }
-            Strip("Racing Line", root, lineLeftSide, lineRightSide, lineMaterial, null);
 
             // Arrowheads down the middle of the road, pointing the way the lap runs, so that
             // after a spin the road itself says which way to go.
@@ -220,6 +215,19 @@ namespace CarRace.UnityGame.EditorTools
             for (int i = 0; i < AiCars; i++) aiList.GetArrayElementAtIndex(i).objectReferenceValue = aiCars[i];
             directorSettings.ApplyModifiedPropertiesWithoutUndo();
 
+            // The racing line as a braking guide: green, yellow and red bars ahead of the player.
+            var guide = new GameObject("Racing Line");
+            guide.transform.SetParent(root.transform, false);
+            guide.AddComponent<MeshFilter>();
+            var guideRenderer = guide.AddComponent<MeshRenderer>();
+            guideRenderer.sharedMaterials = Array.ConvertAll(GuideMaterials, m => EnsureUnlit(m.path, m.colour));
+            guideRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            guideRenderer.receiveShadows = false;
+            var guideSettings = new SerializedObject(guide.AddComponent<RacingLineGuide>());
+            guideSettings.FindProperty("track").objectReferenceValue = path;
+            guideSettings.FindProperty("player").objectReferenceValue = car.GetComponent<CarController>();
+            guideSettings.ApplyModifiedPropertiesWithoutUndo();
+
             // The circuit map in the corner, the player first.
             var map = new SerializedObject(root.AddComponent<MiniMap>());
             map.FindProperty("track").objectReferenceValue = path;
@@ -272,6 +280,19 @@ namespace CarRace.UnityGame.EditorTools
             Vector3 heading = line[(index + 1) % n] - line[(index - 1 + n) % n];
             heading.y = 0f;
             return (position, Quaternion.LookRotation(heading.normalized, Vector3.up));
+        }
+
+        /// <summary>A flat colour that ignores light and shade, for the guide's bars.</summary>
+        static Material EnsureUnlit(string path, Color colour)
+        {
+            var material = AssetDatabase.LoadAssetAtPath<Material>(path);
+            if (material != null) return material;
+            material = new Material(Shader.Find("Universal Render Pipeline/Unlit")
+                                    ?? throw new InvalidOperationException("URP Unlit shader not found."));
+            material.SetColor("_BaseColor", colour);
+            Directory.CreateDirectory(Path.GetDirectoryName(path));
+            AssetDatabase.CreateAsset(material, path);
+            return material;
         }
 
         static void Check(TrackFile track, string circuit)

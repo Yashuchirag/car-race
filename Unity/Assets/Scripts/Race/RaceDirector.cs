@@ -140,7 +140,7 @@ namespace CarRace.UnityGame
 
         /// <summary>The same limits the harness plans with (LapRun.PlanningLimits), from the
         /// car's own closed-form numbers.</summary>
-        static SpeedPlan.Limits PlanningLimits(CarConfig config) => new SpeedPlan.Limits
+        internal static SpeedPlan.Limits PlanningLimits(CarConfig config) => new SpeedPlan.Limits
         {
             LateralMs2 = Analytic.SkidpadCeilingG(config) * 0.85f * CarRace.Vehicle.Physics.Gravity,
             BrakingMs2 = (27.78f * 27.78f) / (2f * Analytic.BrakingMetres(config)) * 0.85f,

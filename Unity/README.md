@@ -127,7 +127,7 @@ misconfiguration, and all three failures look like a physics bug if you do not r
 
 `Assets/Editor/TrackSceneBuilder.cs` adds `CarRace, Build Track Scene`, with one entry per
 circuit. It reads the pipeline's JSON and builds the road from the centreline and its
-widths, a 15 m grass verge either side, the racing line painted on the road, and a grid
+widths, a 15 m grass verge either side, the racing line as a braking guide, and a grid
 behind the start line (see Racing the AI). The road follows the file's elevation (Spa climbs
 105 m); camber and banking are zero in every file, so it is flat across. Asphalt grips at
 1 and grass at 0.45, read by the wheels from each collider's physics material. A 1.2 m
@@ -200,6 +200,12 @@ again.
 behind, 300 px square at 1080p, turned so the road ahead points up (with the track, not the car, so a spin does not
 spin it). Corners tighter than 150 m radius are orange and tighter than 60 m red, the start
 line is blue, and the AI show as dots in their body colours when in view.
+
+`RacingLineGuide` draws the racing line as bars, 2 m on and 2 m off, from just behind the
+car to 350 m ahead, coloured each frame by how hard you would have to brake from your
+current speed to reach each bar at the reference plan's speed (pace 0.85): green under 30%
+of the car's planned braking, yellow to 80%, red beyond. Red at a corner means brake now,
+or too fast for it; the bars turn green as you slow to its speed.
 
 `Dashboard` puts a rev counter and a speedometer in the bottom right corner, dials with
 needles like a car's instrument cluster: 0 to 8,000 rpm with a red zone from 7,000 and the
