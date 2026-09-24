@@ -16,9 +16,11 @@ into a `Rigidbody` and put a camera behind the car.
 
 ## State
 
-Written and type-checked, never run. There is no Unity on this machine yet, so none of
-this has been through the editor. What is verified is that it compiles and that it uses
-the vehicle model's API correctly:
+Compiled, never run. On 2026-09-24 both folders were copied into the Unity 6.3 LTS project
+at `D:\Dev\CarRace` (URP) and compiled against the real engine with no errors and no
+warnings, so the stub below matched Unity everywhere these scripts touch it. The project
+settings below are applied. Nothing has been driven yet: that needs the scene and a person.
+The stub check still earns its place, because it runs in seconds without the editor:
 
 ```bash
 dotnet build Sim/CarRace.UnityCheck -c Release
