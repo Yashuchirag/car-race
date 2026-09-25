@@ -56,8 +56,7 @@ namespace CarRace.UnityGame.EditorTools
             car.transform.SetParent(root.transform, false);
             car.transform.SetPositionAndRotation(new Vector3(0f, 0.1f + definition.cgHeight, 0f), Quaternion.Euler(0f, 210f, 0f));
             var body = SkidpadSceneBuilder.EnsureMaterial(SkidpadSceneBuilder.BodyMaterialPath, new Color(0.8f, 0.1f, 0.08f), null, Vector2.one);
-            var tyre = SkidpadSceneBuilder.EnsureMaterial(SkidpadSceneBuilder.TyreMaterialPath, new Color(0.08f, 0.08f, 0.08f), null, Vector2.one);
-            foreach (var r in car.GetComponentsInChildren<Renderer>()) r.sharedMaterial = r.name == "Body" ? body : tyre;
+            foreach (var r in car.GetComponentsInChildren<Renderer>()) if (r.name == "Body") r.sharedMaterial = body;
 
             // Camera at the front quarter, a little above, looking at the car, left of centre
             // on screen so the car panel on the right does not cover it.

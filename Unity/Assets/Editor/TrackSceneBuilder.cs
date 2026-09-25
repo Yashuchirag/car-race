@@ -212,7 +212,6 @@ namespace CarRace.UnityGame.EditorTools
             recoverySettings.ApplyModifiedPropertiesWithoutUndo();
 
             // The AI, in the slots in front, each its own colour. RaceDirector drives them.
-            var tyreMaterial = SkidpadSceneBuilder.EnsureMaterial(SkidpadSceneBuilder.TyreMaterialPath, new Color(0.08f, 0.08f, 0.08f), null, Vector2.one);
             var cars = new List<CarController> { car.GetComponent<CarController>() };
             var aiCars = new CarController[AiCars];
             for (int slot = 0; slot < AiCars; slot++)
@@ -222,8 +221,9 @@ namespace CarRace.UnityGame.EditorTools
                 var (position, rotation) = GridSlot(slot, centre, right, track.sample_spacing_m, definition.cgHeight);
                 ai.transform.SetPositionAndRotation(position, rotation);
                 var body = SkidpadSceneBuilder.EnsureMaterial($"Assets/Materials/AiBody{slot + 1}.mat", AiColours[slot % AiColours.Length], null, Vector2.one);
+                body.SetFloat("_Smoothness", CarModel.PaintSmoothness);
                 foreach (var r in ai.GetComponentsInChildren<Renderer>())
-                    r.sharedMaterial = r.name == "Body" ? body : tyreMaterial;
+                    if (r.name == "Body") r.sharedMaterial = body;
                 aiCars[slot] = ai.GetComponent<CarController>();
                 cars.Add(aiCars[slot]);
             }

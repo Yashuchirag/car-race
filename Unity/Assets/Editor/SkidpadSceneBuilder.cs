@@ -102,11 +102,6 @@ namespace CarRace.UnityGame.EditorTools
             GameObject car = BuildCar(carLayer, definition);
             car.transform.SetPositionAndRotation(position, rotation);
 
-            var bodyMaterial = EnsureMaterial(BodyMaterialPath, new Color(0.8f, 0.1f, 0.08f), null, Vector2.one);
-            var tyreMaterial = EnsureMaterial(TyreMaterialPath, new Color(0.08f, 0.08f, 0.08f), null, Vector2.one);
-            foreach (var r in car.GetComponentsInChildren<Renderer>())
-                r.sharedMaterial = r.name == "Body" ? bodyMaterial : tyreMaterial;
-
             var hud = car.AddComponent<DriveHud>();
             var hudSettings = new SerializedObject(hud);
             hudSettings.FindProperty("car").objectReferenceValue = car.GetComponent<CarController>();
@@ -181,46 +176,11 @@ namespace CarRace.UnityGame.EditorTools
                 driverSettings.ApplyModifiedPropertiesWithoutUndo();
             }
 
-            // Wheels are cosmetic, and must have no collider: the model does the suspension,
-            // and a collider on a wheel would be a second, fighting suspension.
-            float halfTrack = definition.trackWidth * 0.5f;
-            float front = definition.wheelbase * (1f - definition.frontWeightBias);
-            float rear = -definition.wheelbase * definition.frontWeightBias;
-            float radius = definition.tyreFront.radius;
-            float drop = radius - definition.cgHeight;
-            var positions = new[]
-            {
-                new Vector3(-halfTrack, drop, front), new Vector3(halfTrack, drop, front),
-                new Vector3(-halfTrack, drop, rear), new Vector3(halfTrack, drop, rear),
-            };
-            string[] names = { "Wheel FL", "Wheel FR", "Wheel RL", "Wheel RR" };
-            var visuals = new Transform[4];
-            // Each wheel is an empty pivot holding a cylinder laid on its side. CarController
-            // sets the pivot's rotation to spin and steer every frame, which on a bare
-            // cylinder wiped out the 90 degrees that lays it down and stood the wheels up.
-            for (int i = 0; i < 4; i++)
-            {
-                var pivot = new GameObject(names[i]) { layer = carLayer };
-                pivot.transform.SetParent(car.transform, false);
-                pivot.transform.localPosition = positions[i];
-
-                var tyre = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-                tyre.name = "Tyre";
-                Object.DestroyImmediate(tyre.GetComponent<Collider>());
-                tyre.layer = carLayer;
-                tyre.transform.SetParent(pivot.transform, false);
-                tyre.transform.localRotation = Quaternion.Euler(0f, 0f, 90f);
-                tyre.transform.localScale = new Vector3(radius * 2f, 0.12f, radius * 2f);
-                visuals[i] = pivot.transform;
-            }
-
-            var body = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            body.name = "Body";
-            Object.DestroyImmediate(body.GetComponent<Collider>());
-            body.layer = carLayer;
-            body.transform.SetParent(car.transform, false);
-            body.transform.localPosition = new Vector3(0f, 0.15f, 0f);
-            body.transform.localScale = new Vector3(1.8f, 0.7f, 4.3f);
+            // The looks, from CarModel: body, details and wheels, none with a collider. The
+            // wheels especially: the model does the suspension, and a collider on a wheel would
+            // be a second, fighting suspension.
+            var paint = EnsureMaterial(BodyMaterialPath, new Color(0.8f, 0.1f, 0.08f), null, Vector2.one);
+            Transform[] visuals = CarModel.Build(car.transform, definition, carLayer, paint);
 
             var settings = new SerializedObject(controller);
             settings.FindProperty("definition").objectReferenceValue = definition;
