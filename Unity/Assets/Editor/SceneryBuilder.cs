@@ -403,38 +403,36 @@ namespace CarRace.UnityGame.EditorTools
         }
 
         /// <summary>Street lights along the circuit, alternate sides, FloodlightEveryM apart:
-        /// a post behind the barrier, an arm out over the road's edge, and a glowing lamp head
-        /// LampHeightM up shining straight down, in wide pools that overlap so the whole road is
-        /// lit, not patches of it. Aimed from the post instead, the light reached the dark
-        /// asphalt at a grazing angle and barely showed. No shadows: a lap of them would be
-        /// dozens of shadow maps.</summary>
+        /// a steel pole just behind the barrier, an arm out over the road's edge with a brace,
+        /// and a glowing lamp head LampHeightM up shining straight down, in wide pools that
+        /// overlap so the whole road is lit, not patches of it. The pole is built here rather
+        /// than taken from the kit: the kit's post needed more room than the stands and garages
+        /// on the start straight leave, and those lamps were left hanging in the air. Aimed from
+        /// the post instead of down, the light reached the dark asphalt at a grazing angle and
+        /// barely showed. No shadows: a lap of them would be dozens of shadow maps.</summary>
         static int Floodlights(GameObject parent, Land land, Circuit circuit)
         {
-            GameObject post = KenneyModels.Load("Racing", "lightPostLarge");
-            var arm = AssetDatabase.LoadAssetAtPath<Material>($"{KenneyModels.Folder}/Racing/Materials/grey.mat");
+            var steel = AssetDatabase.LoadAssetAtPath<Material>($"{KenneyModels.Folder}/Racing/Materials/grey.mat");
             Material head = NeonMaterial(new Color(1f, 0.93f, 0.8f));
             int every = Mathf.RoundToInt(FloodlightEveryM / circuit.Spacing);
             int placed = 0, side = 1;
             for (int k = 0; k < circuit.N; k += every, side = -side)
             {
-                Vector3 toTrack = -circuit.Right[k] * side;
                 Vector3 lampAt = circuit.Edge(k, side) + Vector3.up * LampHeightM;
-                // Where the stands and garages leave no room for a post the lamp still hangs
-                // over the road, as if fixed to them, so the start straight is lit like the rest.
-                GameObject tower = Place(parent, land, post, circuit.Outside(k, side, StructureClearM + 1f), toTrack, 5f);
-                if (tower != null)
-                {
-                    placed++;
-                    Bounds b = tower.GetComponent<MeshRenderer>().bounds;
-                    Vector3 top = new Vector3(b.center.x, Mathf.Min(b.max.y, lampAt.y), b.center.z);
-                    Vector3 reach = lampAt - top;
-                    // Beside the post, not under it: the post is scaled, which would stretch it.
-                    Bar(parent, (top + lampAt) * 0.5f, Quaternion.LookRotation(reach.normalized),
-                        new Vector3(0.3f, 0.3f, reach.magnitude), arm);
-                }
+                Vector3 foot = circuit.Outside(k, side, PoleBeyondBarrierM);
+                foot.y = Mathf.Min(land.Height(foot), circuit.Centre[k].y) - 0.5f;
+                Vector3 top = new Vector3(foot.x, lampAt.y + 0.4f, foot.z);
+                Vector3 reach = lampAt - top;
+                reach.y = 0f;
+
+                Bar(parent, (foot + top) * 0.5f, Quaternion.identity, new Vector3(0.4f, top.y - foot.y, 0.4f), steel);
+                Bar(parent, top + reach * 0.5f, Quaternion.LookRotation(reach.normalized), new Vector3(0.3f, 0.3f, reach.magnitude), steel);
+                // A brace from a third of the way down the pole to a third of the way out.
+                Vector3 low = top + Vector3.down * (LampHeightM / 3f), mid = top + reach / 3f;
+                Bar(parent, (low + mid) * 0.5f, Quaternion.LookRotation((mid - low).normalized), new Vector3(0.2f, 0.2f, (mid - low).magnitude), steel);
                 Bar(parent, lampAt, Quaternion.LookRotation(circuit.Tangent(k)), new Vector3(0.9f, 0.3f, 2.2f), head);
 
-                var lamp = new GameObject("Floodlight").AddComponent<Light>();
+                var lamp = new GameObject("Street Light").AddComponent<Light>();
                 lamp.transform.SetParent(parent.transform, true);
                 lamp.transform.position = lampAt + Vector3.down * 0.3f;
                 lamp.transform.rotation = Quaternion.LookRotation(Vector3.down, circuit.Tangent(k));
@@ -445,6 +443,7 @@ namespace CarRace.UnityGame.EditorTools
                 lamp.intensity = FloodlightIntensity;
                 lamp.color = new Color(1f, 0.94f, 0.84f);
                 lamp.shadows = LightShadows.None;
+                placed++;
             }
             return placed;
         }
@@ -452,6 +451,7 @@ namespace CarRace.UnityGame.EditorTools
         const float FloodlightEveryM = 25f;
         const float FloodlightIntensity = 1400f;  // falls with distance squared: 2.5 or more anywhere on the road
         const float LampHeightM = 12f;
+        const float PoleBeyondBarrierM = 0.8f;   // inside the gap StructureClearM keeps free
 
         /// <summary>At night the buildings' windows glow: each Commercial material has a copy
         /// that emits its own colours, faintly, and InstancedTrees draws with the copies here.</summary>
