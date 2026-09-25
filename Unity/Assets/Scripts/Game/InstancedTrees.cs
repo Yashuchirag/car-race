@@ -14,7 +14,8 @@ namespace CarRace.UnityGame
     /// Trees are grouped by model and by CellM square of land, at most 1023 to a batch, each
     /// batch with its bounds. A batch is only submitted when it is in the main camera's view
     /// or near enough to cast a shadow into it: even culled, thousands of submissions a frame
-    /// cost more than drawing.
+    /// cost more than drawing. A scene can swap materials for its own (the night city's
+    /// glowing windows) without touching the models.
     /// </summary>
     [RequireComponent(typeof(Terrain))]
     public sealed class InstancedTrees : MonoBehaviour
@@ -32,7 +33,16 @@ namespace CarRace.UnityGame
             public Bounds Bounds;
         }
 
+        [SerializeField] Material[] swapFrom = new Material[0];
+        [SerializeField] Material[] swapTo = new Material[0];
+
         readonly List<Batch> _batches = new List<Batch>();
+
+        public void SetMaterialSwaps(Material[] from, Material[] to)
+        {
+            swapFrom = from;
+            swapTo = to;
+        }
         readonly Plane[] _planes = new Plane[6];
 
         void Start()
@@ -49,6 +59,12 @@ namespace CarRace.UnityGame
                 GameObject prefab = prototypes[p].prefab;
                 meshes[p] = prefab != null ? prefab.GetComponent<MeshFilter>()?.sharedMesh : null;
                 materials[p] = prefab != null ? prefab.GetComponent<MeshRenderer>()?.sharedMaterials : null;
+                if (materials[p] == null) continue;
+                for (int m = 0; m < materials[p].Length; m++)
+                {
+                    int swap = System.Array.IndexOf(swapFrom, materials[p][m]);
+                    if (swap >= 0) materials[p][m] = swapTo[swap];
+                }
             }
 
             Vector3 origin = terrain.transform.position, size = data.size;

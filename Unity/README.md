@@ -218,13 +218,19 @@ of the lobby and quits. Under `-benchmark` the lobby goes straight to the race.
 
 ## Scenery
 
-The track builder dresses each circuit in its theme (`SceneryBuilder`, themes in
-`TrackSceneBuilder.Themes`); only Royal Park's countryside exists so far. Models are a
-selection of Kenney's CC0 Nature and Racing kits in `Assets/Art/Kenney` (Git LFS), with
-shared materials made by `KenneyModels`. Structures are static GameObjects under
-`Scenery`; trees are the terrain's trees, drawn at run time by `InstancedTrees` because
-the terrain's own path draws mesh trees one call each. Nothing is placed within 3 m of a
-barrier, so none of it has a collider.
+The track builder dresses each circuit in its theme. `Theme.For` holds each one: what the
+ground is, how high the mountains rise, whether there is sea, city or night. Royal Park is
+countryside; the Ardennes, mountains and forest with rock on steep ground; Desert Park,
+sand, palm oases, cacti and sandstone; Ise Bay, a coast with sea and beach along the
+circuit's longer side; Northants, a city; the Airfield, a city at night with neon, floodlight
+gantries and headlights. `GroundBuilder` shapes and paints the terrain, `SceneryBuilder`
+places everything else, and `GraphicsSetup` sets the night sky and moon. Models are
+selections of Kenney's CC0 kits in `Assets/Art/Kenney` (Git LFS), with shared materials
+made by `KenneyModels`; ground textures are ambientCG's (see `Assets/Art/CREDITS.md`).
+Structures are static GameObjects under `Scenery`; trees, rocks and buildings are the
+terrain's trees, drawn at run time by `InstancedTrees`, because the terrain's own path draws
+mesh trees one call each. Nothing is placed within 3 m of a barrier, so none of it has a
+collider.
 
 ## Racing the AI
 

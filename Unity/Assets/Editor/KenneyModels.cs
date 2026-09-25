@@ -29,6 +29,7 @@ namespace CarRace.UnityGame.EditorTools
             ["woodBark"] = new Color(0.40f, 0.29f, 0.20f),
             ["woodBarkDark"] = new Color(0.30f, 0.22f, 0.16f),
             ["grass"] = new Color(0.28f, 0.50f, 0.18f),
+            ["stone"] = new Color(0.62f, 0.48f, 0.34f),      // sandstone, for the desert
         };
 
         public static void Ensure()

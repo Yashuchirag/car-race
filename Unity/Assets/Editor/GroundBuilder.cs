@@ -18,12 +18,21 @@ namespace CarRace.UnityGame.EditorTools
     /// across, and the corridor reaches past the barrier by more than a cell, so the slope
     /// between a held cell and a free one always falls outside the barrier.
     ///
-    /// Given mountainsM, mountains rise from MountainFromM beyond the nearest centreline
-    /// sample to their full height by MountainFullM: up to about 1.5 times mountainsM, as ridges
-    /// (Perlin noise folded about its middle) with smaller hills on them. Ground steeper than
-    /// RockFromDegrees turns to rock, fully so by RockFullDegrees.
+    /// The theme decides the rest. Its ground covers the land, and ground steeper than
+    /// RockFromDegrees turns to its steep surface, fully so by RockFullDegrees. Given
+    /// MountainsM, mountains rise from MountainFromM beyond the nearest centreline sample to
+    /// their full height by MountainFullM: up to about 1.5 times MountainsM, as ridges (Perlin
+    /// noise folded about its middle) with smaller hills on them. Given
+    /// sea, the land off the circuit's longer side drops below the water within a short
+    /// shore at a wandering coastline CoastBeyondM past it, so a long stretch of the lap runs
+    /// along the sea. The water sits SeaBelowTrackM below the lowest road near the coast, not
+    /// the lowest on the lap, or on a hilly circuit the land would hide it; the flat, glossy
+    /// plane only covers the seaward side, so it cannot rise through a lower road elsewhere.
+    /// The mountains give way before the coast, the land within NearCoastM of it flattens to
+    /// a plain no higher than the lowest road there, and near it ground within BeachAboveM
+    /// of the water is beach sand.
     ///
-    /// No collider: the barriers keep every car off it. Grass and rock from SurfaceTextures.
+    /// No collider: the barriers keep every car off it. Surfaces from SurfaceTextures.
     /// </summary>
     public static class GroundBuilder
     {
@@ -40,14 +49,20 @@ namespace CarRace.UnityGame.EditorTools
         const float RockFromDegrees = 24f;
         const float RockFullDegrees = 34f;
         const int AlphamapResolution = 1024;
+        const float CoastBeyondM = 120f;
+        const float CoastWanderM = 80f;       // either way
+        const float NearCoastM = 400f;
+        const float SeaBelowTrackM = 1.5f;
+        const float BeachAboveM = 1.5f;
+        const string SeaMaterialPath = "Assets/Materials/Sea.mat";
 
-        const string LayerPath = "Assets/Materials/GroundGrass.terrainlayer";
-        const string RockLayerPath = "Assets/Materials/GroundRock.terrainlayer";
+        const string LayerFolder = "Assets/Materials";
         const string MaterialPath = "Assets/Materials/Terrain.mat";
 
         public static Terrain Build(GameObject parent, Vector3[] centre, float[] widthLeft, float[] widthRight,
-                                    float vergeWidthM, string dataPath, float mountainsM = 0f)
+                                    float vergeWidthM, string dataPath, Theme theme)
         {
+            float mountainsM = theme.MountainsM;
             int n = centre.Length;
             float minX = float.MaxValue, maxX = float.MinValue, minZ = float.MaxValue, maxZ = float.MinValue;
             float minY = float.MaxValue, maxY = float.MinValue;
@@ -57,8 +72,25 @@ namespace CarRace.UnityGame.EditorTools
                 minZ = Mathf.Min(minZ, p.z); maxZ = Mathf.Max(maxZ, p.z);
                 minY = Mathf.Min(minY, p.y); maxY = Mathf.Max(maxY, p.y);
             }
-            var origin = new Vector3(minX - MarginM, minY - 20f, minZ - MarginM);
-            var size = new Vector3(maxX - minX + 2f * MarginM, maxY - minY + 60f + 1.6f * mountainsM, maxZ - minZ + 2f * MarginM);
+            var origin = new Vector3(minX - MarginM, minY - 40f, minZ - MarginM);
+            // Where the land ends: a wandering line off the circuit's longer side.
+            bool wide = maxX - minX >= maxZ - minZ;
+            Vector3 seaward = wide ? Vector3.back : Vector3.right, alongShore = wide ? Vector3.right : Vector3.forward;
+            float furthest = float.MinValue;
+            foreach (Vector3 p in centre) furthest = Mathf.Max(furthest, Vector3.Dot(p, seaward));
+            float nearCoastY = float.MaxValue;
+            foreach (Vector3 p in centre)
+                if (Vector3.Dot(p, seaward) > furthest - NearCoastM) nearCoastY = Mathf.Min(nearCoastY, p.y);
+            float seaLevel = nearCoastY - SeaBelowTrackM;
+            if (theme.Sea) theme.SeaLevelY = seaLevel;
+            float Inland(float x, float z)
+            {
+                var p = new Vector3(x, 0f, z);
+                float coast = furthest + CoastBeyondM + 2f * CoastWanderM * (Mathf.PerlinNoise(Vector3.Dot(p, alongShore) / 900f + 3f, 0.5f) - 0.5f);
+                return coast - Vector3.Dot(p, seaward);
+            }
+            if (theme.Sea) theme.Inland = p => Inland(p.x, p.z);
+            var size = new Vector3(maxX - minX + 2f * MarginM, maxY - minY + 80f + 1.6f * mountainsM, maxZ - minZ + 2f * MarginM);
 
             // The smooth field, on a coarse grid.
             var coarse = new float[CoarseResolution, CoarseResolution];
@@ -101,7 +133,19 @@ namespace CarRace.UnityGame.EditorTools
                     float x = origin.x + size.x * i / (Resolution - 1), z = origin.z + size.z * j / (Resolution - 1);
                     float ridge = 1f - Mathf.Abs(2f * Mathf.PerlinNoise(x / 1100f + 37f, z / 1100f + 11f) - 1f);
                     float hills = Mathf.PerlinNoise(x / 300f + 5f, z / 300f + 71f);
-                    heights[j, i] += mountainsM * r * (0.3f + 0.9f * ridge + 0.3f * hills);
+                    float inland = theme.Sea ? Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(100f, 900f, Inland(x, z))) : 1f;
+                    heights[j, i] += mountainsM * r * inland * (0.3f + 0.9f * ridge + 0.3f * hills);
+                }
+                if (theme.Sea)
+                {
+                    float x = origin.x + size.x * i / (Resolution - 1), z = origin.z + size.z * j / (Resolution - 1);
+                    // A coastal plain no higher than the lowest road near the coast, so the
+                    // land falls away to the water rather than rising between it and the road.
+                    float inlandM = Inland(x, z);
+                    float plain = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(NearCoastM, 150f, inlandM));
+                    heights[j, i] = Mathf.Lerp(heights[j, i], Mathf.Min(heights[j, i], nearCoastY - 0.5f), plain);
+                    float sea = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(60f, -120f, inlandM));
+                    heights[j, i] = Mathf.Lerp(heights[j, i], seaLevel - 12f, sea);
                 }
             }
 
@@ -131,18 +175,15 @@ namespace CarRace.UnityGame.EditorTools
             var data = new TerrainData { heightmapResolution = Resolution };
             data.size = size;
             data.SetHeights(0, 0, heights);
-            data.terrainLayers = mountainsM > 0f ? new[] { EnsureLayer(), EnsureRockLayer() } : new[] { EnsureLayer() };
+            data.terrainLayers = new[] { EnsureLayer(theme.Ground), EnsureLayer(theme.Steep), EnsureLayer(Surface.Beach) };
             Directory.CreateDirectory(Path.GetDirectoryName(dataPath));
             AssetDatabase.DeleteAsset(dataPath);
             AssetDatabase.CreateAsset(data, dataPath);
             // After the asset exists: the paint lives in textures kept inside it, and painted
             // before, they were never saved and the rock came out as grass.
-            if (mountainsM > 0f)
-            {
-                PaintRock(data);
-                EditorUtility.SetDirty(data);
-                AssetDatabase.SaveAssets();
-            }
+            Paint(data, origin, theme.Sea ? seaLevel - origin.y : float.NegativeInfinity, theme.Inland);
+            EditorUtility.SetDirty(data);
+            AssetDatabase.SaveAssets();
 
             GameObject go = Terrain.CreateTerrainGameObject(data);
             go.name = "Ground";
@@ -157,50 +198,81 @@ namespace CarRace.UnityGame.EditorTools
             // Gentle land has little shadow worth casting, and casting it drew the whole
             // terrain into four shadow cascades every frame.
             terrain.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            // From just inside the nearest the coast comes to the circuit, out to the edge.
+            if (theme.Sea) AddSea(parent, origin, size, seaward, furthest + CoastBeyondM - CoastWanderM - 30f, seaLevel);
             return terrain;
         }
 
-        /// <summary>One grass layer, textured by SurfaceTextures.</summary>
-        static TerrainLayer EnsureLayer()
+        /// <summary>The layer for a surface, one asset per surface, shared by every circuit.</summary>
+        static TerrainLayer EnsureLayer(Surface surface)
         {
-            var layer = AssetDatabase.LoadAssetAtPath<TerrainLayer>(LayerPath);
+            string path = $"{LayerFolder}/Ground{surface}.terrainlayer";
+            var layer = AssetDatabase.LoadAssetAtPath<TerrainLayer>(path);
             if (layer == null)
             {
                 layer = new TerrainLayer();
-                Directory.CreateDirectory(Path.GetDirectoryName(LayerPath));
-                AssetDatabase.CreateAsset(layer, LayerPath);
+                Directory.CreateDirectory(LayerFolder);
+                AssetDatabase.CreateAsset(layer, path);
             }
-            SurfaceTextures.ApplyGrass(layer);
+            SurfaceTextures.Apply(layer, surface);
             return layer;
         }
 
-        /// <summary>Rock where the ground is steep, grass elsewhere.</summary>
-        static void PaintRock(TerrainData data)
+        /// <summary>Layer 0, the theme's ground, everywhere but: layer 1, its steep surface,
+        /// where the ground is steep; layer 2, beach, near the coast within BeachAboveM of the
+        /// sea.</summary>
+        static void Paint(TerrainData data, Vector3 origin, float seaLocalY, System.Func<Vector3, float> inland)
         {
+            Vector3 size = data.size;
             data.alphamapResolution = AlphamapResolution;
             int res = data.alphamapResolution;
-            var maps = new float[res, res, 2];
+            var maps = new float[res, res, 3];
             for (int j = 0; j < res; j++)
             for (int i = 0; i < res; i++)
             {
-                float steepness = data.GetSteepness((i + 0.5f) / res, (j + 0.5f) / res);
-                float rock = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(RockFromDegrees, RockFullDegrees, steepness));
-                maps[j, i, 0] = 1f - rock;
-                maps[j, i, 1] = rock;
+                float u = (i + 0.5f) / res, v = (j + 0.5f) / res;
+                float steep = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(RockFromDegrees, RockFullDegrees, data.GetSteepness(u, v)));
+                float beach = 1f - Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(seaLocalY + BeachAboveM - 1f, seaLocalY + BeachAboveM + 1f,
+                                                                                 data.GetInterpolatedHeight(u, v)));
+                if (inland == null || inland(origin + new Vector3(u * size.x, 0f, v * size.z)) > NearCoastM) beach = 0f;
+                beach *= 1f - steep;
+                maps[j, i, 0] = 1f - steep - beach;
+                maps[j, i, 1] = steep;
+                maps[j, i, 2] = beach;
             }
             data.SetAlphamaps(0, 0, maps);
         }
 
-        static TerrainLayer EnsureRockLayer()
+        /// <summary>The sea: one flat plane over the terrain from fromU (along seaward) to its
+        /// edge, glossy so it takes the sky's reflection.</summary>
+        static void AddSea(GameObject parent, Vector3 origin, Vector3 size, Vector3 seaward, float fromU, float level)
         {
-            var layer = AssetDatabase.LoadAssetAtPath<TerrainLayer>(RockLayerPath);
-            if (layer == null)
+            var sea = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            sea.name = "Sea";
+            Object.DestroyImmediate(sea.GetComponent<Collider>());
+            sea.transform.SetParent(parent.transform, false);
+            // The terrain's rectangle, cut back to the seaward side of fromU.
+            float x0 = origin.x, x1 = origin.x + size.x, z0 = origin.z, z1 = origin.z + size.z;
+            if (seaward == Vector3.right) x0 = Mathf.Max(x0, fromU);
+            else z1 = Mathf.Min(z1, -fromU);      // seaward is back: u = -z
+            sea.transform.position = new Vector3((x0 + x1) * 0.5f, level, (z0 + z1) * 0.5f);
+            sea.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
+            sea.transform.localScale = new Vector3(x1 - x0, z1 - z0, 1f);
+
+            var material = AssetDatabase.LoadAssetAtPath<Material>(SeaMaterialPath);
+            if (material == null)
             {
-                layer = new TerrainLayer();
-                AssetDatabase.CreateAsset(layer, RockLayerPath);
+                material = new Material(Shader.Find("Universal Render Pipeline/Lit"));
+                AssetDatabase.CreateAsset(material, SeaMaterialPath);
             }
-            SurfaceTextures.ApplyRock(layer);
-            return layer;
+            material.SetColor("_BaseColor", new Color(0.07f, 0.24f, 0.32f));
+            material.SetFloat("_Smoothness", 0.92f);
+            material.SetFloat("_Metallic", 0f);
+            EditorUtility.SetDirty(material);
+            var renderer = sea.GetComponent<MeshRenderer>();
+            renderer.sharedMaterial = material;
+            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            GameObjectUtility.SetStaticEditorFlags(sea, StaticEditorFlags.BatchingStatic);
         }
 
         static Material EnsureMaterial()

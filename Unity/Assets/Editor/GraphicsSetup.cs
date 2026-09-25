@@ -46,6 +46,15 @@ namespace CarRace.UnityGame.EditorTools
         // The sky's mean colour in the 5 degrees above the horizon, linear. Distance fog fades
         // the far ground to this, so it meets the sky rather than ending against it.
         static readonly Color HorizonLinear = new Color(0.439f, 0.472f, 0.573f);
+        // Night, for the neon city: set by eye, since there is no sky image to measure. A dark
+        // procedural sky, a dim blue moon where the sun would be, fixed ambient colours (the
+        // dark sky alone would leave everything unlit black), and a navy haze.
+        const string NightSkyMaterialPath = "Assets/Materials/NightSky.mat";
+        static readonly Vector3 TowardsMoon = new Vector3(-0.4f, 0.6f, 0.5f);
+        static readonly Color MoonColour = new Color(0.62f, 0.72f, 1f);
+        const float MoonIntensity = 0.18f;
+        static readonly Color NightFog = new Color(0.035f, 0.04f, 0.085f);
+
         public const string TrackProfilePath = "Assets/Settings/TrackPostProcessing.asset";
 
         [MenuItem("CarRace/Apply Graphics Settings")]
@@ -264,10 +273,12 @@ namespace CarRace.UnityGame.EditorTools
         /// The sky, a sun lined up with the one in it, light and reflections from the sky, and
         /// distance fog in the horizon's colour, for the open scene. Then bakes the environment
         /// lighting: with baked and realtime GI both off, that is only the ambient probe and the
-        /// reflection cubemap, a few seconds, and nothing is lightmapped yet.
+        /// reflection cubemap, a few seconds, and nothing is lightmapped yet. At night, the
+        /// night sky, moon, ambient and haze instead.
         /// </summary>
-        public static void SetUpSkyAndSun(Light sun)
+        public static void SetUpSkyAndSun(Light sun, bool night = false)
         {
+            if (night) { SetUpNight(sun); return; }
             RenderSettings.skybox = EnsureSkyMaterial();
 
             if (sun != null)
@@ -290,7 +301,11 @@ namespace CarRace.UnityGame.EditorTools
             RenderSettings.fogStartDistance = 300f;
             RenderSettings.fogEndDistance = 3500f;
             RenderSettings.fogColor = HorizonLinear.gamma;   // colours are authored in sRGB
+            BakeEnvironment();
+        }
 
+        static void BakeEnvironment()
+        {
             var settings = AssetDatabase.LoadAssetAtPath<LightingSettings>(LightingSettingsPath);
             if (settings == null)
             {
@@ -300,6 +315,48 @@ namespace CarRace.UnityGame.EditorTools
             Lightmapping.lightingSettings = settings;
             if (!Lightmapping.Bake())
                 Debug.LogWarning("Environment lighting bake did not complete; ambient light will be flat until it is baked.");
+        }
+
+        static void SetUpNight(Light moon)
+        {
+            var sky = AssetDatabase.LoadAssetAtPath<Material>(NightSkyMaterialPath);
+            if (sky == null)
+            {
+                sky = new Material(Shader.Find("Skybox/Procedural")
+                                   ?? throw new InvalidOperationException("Skybox/Procedural shader not found."));
+                AssetDatabase.CreateAsset(sky, NightSkyMaterialPath);
+            }
+            sky.SetFloat("_SunDisk", 0f);
+            sky.SetFloat("_AtmosphereThickness", 0.35f);
+            sky.SetColor("_SkyTint", new Color(0.25f, 0.3f, 0.6f));
+            sky.SetColor("_GroundColor", new Color(0.05f, 0.05f, 0.08f));
+            sky.SetFloat("_Exposure", 0.12f);
+            EditorUtility.SetDirty(sky);
+            RenderSettings.skybox = sky;
+
+            if (moon != null)
+            {
+                moon.type = LightType.Directional;
+                moon.transform.rotation = Quaternion.LookRotation(-TowardsMoon.normalized, Vector3.up);
+                moon.color = MoonColour;
+                moon.intensity = MoonIntensity;
+                moon.shadows = LightShadows.Soft;
+                RenderSettings.sun = moon;
+            }
+
+            RenderSettings.ambientMode = AmbientMode.Trilight;
+            RenderSettings.ambientSkyColor = new Color(0.16f, 0.18f, 0.32f);
+            RenderSettings.ambientEquatorColor = new Color(0.12f, 0.10f, 0.18f);
+            RenderSettings.ambientGroundColor = new Color(0.03f, 0.03f, 0.04f);
+            RenderSettings.defaultReflectionMode = DefaultReflectionMode.Skybox;
+            RenderSettings.reflectionIntensity = 1f;
+
+            RenderSettings.fog = true;
+            RenderSettings.fogMode = FogMode.Linear;
+            RenderSettings.fogStartDistance = 150f;
+            RenderSettings.fogEndDistance = 2000f;
+            RenderSettings.fogColor = NightFog;
+            BakeEnvironment();
         }
 
         /// <summary>A global volume with the track profile, and post-processing on for the

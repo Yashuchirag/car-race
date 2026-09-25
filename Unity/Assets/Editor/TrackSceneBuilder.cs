@@ -93,16 +93,6 @@ namespace CarRace.UnityGame.EditorTools
 
         const string CatalogPath = "Assets/Settings/TrackCatalog.asset";
 
-        /// <summary>Each circuit's surroundings, as you chose them on 2026-09-24, following the
-        /// real locations, with a night neon city for the test circuit.</summary>
-        static readonly Dictionary<string, string> Themes = new Dictionary<string, string>
-        {
-            ["monza"] = "Countryside", ["spa"] = "Mountains", ["bahrain"] = "Desert",
-            ["suzuka"] = "Coast", ["silverstone"] = "City", ["testcircuit"] = "Night City",
-        };
-
-        const float MountainsM = 260f;   // the Ardennes' ridges, see GroundBuilder
-
         [Serializable] class Polyline { public float[] x, y, z, width_left, width_right; }
         [Serializable] class TrackFile { public string name; public float sample_spacing_m, length_m; public Polyline centerline, racing_line; }
 
@@ -141,8 +131,11 @@ namespace CarRace.UnityGame.EditorTools
             var root = new GameObject(track.name);
             var roadMaterial = SkidpadSceneBuilder.EnsureMaterial(RoadMaterialPath, new Color(0.3f, 0.3f, 0.32f), null, Vector2.one);
             SurfaceTextures.ApplyAsphalt(roadMaterial);
-            var grassMaterial = SkidpadSceneBuilder.EnsureMaterial(GrassMaterialPath, new Color(0.22f, 0.42f, 0.16f), null, Vector2.one);
-            SurfaceTextures.ApplyGrass(grassMaterial);
+            // The verges look like the theme's ground (sand in the desert) and still drive as grass.
+            Theme theme = Theme.For(circuit);
+            string vergePath = theme.Ground == Surface.Grass ? GrassMaterialPath : $"Assets/Materials/Verge{theme.Ground}.mat";
+            var grassMaterial = SkidpadSceneBuilder.EnsureMaterial(vergePath, new Color(0.22f, 0.42f, 0.16f), null, Vector2.one);
+            SurfaceTextures.Apply(grassMaterial, theme.Ground);
 
             // Road edges from the centreline and its widths. The verges start at the road edge
             // and run VergeWidthM further out, at the same height as the edge they meet.
@@ -172,10 +165,8 @@ namespace CarRace.UnityGame.EditorTools
             Wall("Barrier Right", root, rightOuter, right, -1f, barrierMaterial, barrierSurface, barrierLayer);
 
             // Ground out to the horizon, held under the road and verges.
-            string theme = Themes.TryGetValue(circuit, out string named) ? named : "";
             Terrain terrain = GroundBuilder.Build(root, centre, track.centerline.width_left, track.centerline.width_right,
-                                                 VergeWidthM, $"Assets/Scenes/Track {track.name}/Ground.asset",
-                                                 mountainsM: theme == "Mountains" ? MountainsM : 0f);
+                                                 VergeWidthM, $"Assets/Scenes/Track {track.name}/Ground.asset", theme);
 
             // The surroundings in the circuit's theme, on that ground and clear of the barriers.
             SceneryBuilder.Build(root, theme, centre, right,
@@ -281,6 +272,11 @@ namespace CarRace.UnityGame.EditorTools
             if (camera != null) camera.farClipPlane = 5000f;
             GraphicsSetup.AddPostProcessing(root, camera);
 
+            // At night every car lights the road ahead of it.
+            if (theme.Night)
+                foreach (var each in UnityEngine.Object.FindObjectsByType<CarController>(FindObjectsSortMode.None))
+                    Headlight(each.transform);
+
             if (road.GetComponent<MeshCollider>().sharedMaterial != asphalt)
                 throw new InvalidOperationException("Road has lost its Asphalt material.");
 
@@ -290,7 +286,9 @@ namespace CarRace.UnityGame.EditorTools
 
             // The sky and sun last: the environment bake needs the scene saved, since it
             // writes the scene's lighting data beside it, and the scene is saved again after.
-            GraphicsSetup.SetUpSkyAndSun(UnityEngine.Object.FindAnyObjectByType<Light>());
+            // The scene's own directional light: the night city's floodlights are lights too.
+            Light sun = Array.Find(UnityEngine.Object.FindObjectsByType<Light>(FindObjectsSortMode.None), l => l.type == LightType.Directional);
+            GraphicsSetup.SetUpSkyAndSun(sun, theme.Night);
             EditorSceneManager.SaveScene(scene, scenePath);
             SkidpadSceneBuilder.AddToBuildSettings(scenePath);
             RecordInCatalog($"Track {track.name}", track.name, circuit, Length(centre), centre);
@@ -323,7 +321,7 @@ namespace CarRace.UnityGame.EditorTools
             var entry = catalog.entries.Find(e => e.scene == scene);
             if (entry == null) catalog.entries.Add(entry = new TrackCatalog.Entry { scene = scene });
             entry.displayName = name;
-            entry.theme = Themes.TryGetValue(circuit, out string theme) ? theme : "";
+            entry.theme = Theme.For(circuit).Name;
             entry.lengthKm = lengthM / 1000f;
             entry.outline = outline.ToArray();
             catalog.entries.Sort((a, b) => string.CompareOrdinal(a.displayName, b.displayName));
@@ -338,6 +336,23 @@ namespace CarRace.UnityGame.EditorTools
         /// right-hand edge, and in Unity that put the right-hand cars partly on the grass. The
         /// AI read their place from where they stand, so they need nothing else.
         /// </summary>
+        /// <summary>One spot lamp at the car's nose, a little down the road ahead: enough to
+        /// read the road between the floodlights and to pick out the car itself.</summary>
+        static void Headlight(Transform car)
+        {
+            var lamp = new GameObject("Headlight").AddComponent<Light>();
+            lamp.transform.SetParent(car, false);
+            lamp.transform.localPosition = new Vector3(0f, 0.6f, 2.2f);
+            lamp.transform.localRotation = Quaternion.Euler(6f, 0f, 0f);
+            lamp.type = LightType.Spot;
+            lamp.spotAngle = 70f;
+            lamp.innerSpotAngle = 40f;
+            lamp.range = 70f;
+            lamp.intensity = 120f;
+            lamp.color = new Color(1f, 0.96f, 0.88f);
+            lamp.shadows = LightShadows.None;
+        }
+
         static (Vector3, Quaternion) GridSlot(int slot, Vector3[] centre, Vector3[] right, float spacing, float cgHeight)
         {
             int n = centre.Length;
