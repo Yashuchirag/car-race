@@ -1,5 +1,4 @@
 using UnityEngine;
-using UnityEngine.SceneManagement;
 using CarRace.Harness;
 using CarRace.Track;
 using CarRace.Vehicle;
@@ -17,7 +16,8 @@ namespace CarRace.UnityGame
     /// brakes; then raceLaps laps kept by the headless RaceControl, the same bookkeeping the
     /// harness race is judged by, with the clock starting at GO. The grid is behind the line,
     /// so every car starts on lap -1 and crossing the line begins lap one. When the player
-    /// takes the flag a results table appears and fills in as the AI finish; Enter restarts.
+    /// takes the flag a results table appears and fills in as the AI finish, with Race again
+    /// (or Enter) and Main menu. A hint under the banner points at Esc, the pause menu.
     /// The AI keep driving after their flag, since a car parked on the racing line is a hazard.
     ///
     /// An AI car that has been stopped for StuckSeconds, pushed into a wall or turned round in
@@ -63,7 +63,7 @@ namespace CarRace.UnityGame
         float _raceTime;
         RaceControl _control;
         CarController[] _cars;     // RaceControl's order: the AI in grid order, then the player
-        GUIStyle _style, _bigStyle, _tableStyle;
+        GUIStyle _style, _bigStyle, _tableStyle, _hintStyle, _buttonStyle;
 
         void Start()
         {
@@ -324,7 +324,7 @@ namespace CarRace.UnityGame
         {
             // Not while paused: the settings menu outlives the scene, and so would its pause.
             if (_control != null && PlayerEntry.Finished && Time.timeScale > 0f && Input.GetKeyDown(KeyCode.Return))
-                SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
+                SettingsMenu.RestartRace();
         }
 
         RaceControl.Entry PlayerEntry => _control.Entries[aiCars.Length];
@@ -353,6 +353,9 @@ namespace CarRace.UnityGame
             var box = new Rect(Screen.width * 0.5f - Hud.Px(160f), Hud.Px(10f), Hud.Px(320f), Hud.Px(56f));
             GUI.Box(box, GUIContent.none);
             GUI.Label(box, $"P{me.Position} / {_cars.Length}    Lap {lap} / {raceLaps}", _style);
+            _hintStyle ??= new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter, normal = { textColor = new Color(1f, 1f, 1f, 0.7f) } };
+            _hintStyle.fontSize = Hud.Font(15);
+            GUI.Label(new Rect(box.x, box.yMax + Hud.Px(2f), box.width, Hud.Px(22f)), "Esc: pause, restart or main menu", _hintStyle);
 
             if (!_started)
             {
@@ -390,15 +393,26 @@ namespace CarRace.UnityGame
                 text.AppendLine($"{e.Position,-4}{e.Name,-8}{e.Grid,5}{(gained == 0 ? "0" : gained.ToString("+0;-0")),5}{best,11}{time,11}{gap,10}{e.Contacts,6}");
             }
             text.AppendLine();
-            text.Append("* fastest lap        Enter: race again");
+            text.Append("* fastest lap");
 
-            float width = Hud.Px(640f), height = Hud.Px(30f + 26f * (order.Length + 5));
+            float buttons = Hud.Px(64f);
+            float width = Hud.Px(640f), height = Hud.Px(30f + 26f * (order.Length + 5)) + buttons;
             var panel = new Rect(Screen.width * 0.5f - width * 0.5f, Screen.height * 0.5f - height * 0.5f, width, height);
             GUI.Box(panel, GUIContent.none);
             GUI.Box(panel, GUIContent.none);   // twice: one box is too faint to read a table over
             GUI.Label(new Rect(panel.x, panel.y + Hud.Px(6f), width, Hud.Px(34f)), "RESULTS", _style);
-            GUI.Label(new Rect(panel.x + Hud.Px(20f), panel.y + Hud.Px(46f), width - Hud.Px(40f), height - Hud.Px(50f)),
+            GUI.Label(new Rect(panel.x + Hud.Px(20f), panel.y + Hud.Px(46f), width - Hud.Px(40f), height - Hud.Px(50f) - buttons),
                       text.ToString(), _tableStyle);
+
+            // Not while paused: the pause menu is over the table then.
+            if (Time.timeScale <= 0f) return;
+            _buttonStyle ??= new GUIStyle(GUI.skin.button);
+            _buttonStyle.fontSize = Hud.Font(18);
+            float half = (width - Hud.Px(52f)) * 0.5f, top = panel.yMax - buttons + Hud.Px(4f);
+            if (GUI.Button(new Rect(panel.x + Hud.Px(20f), top, half, Hud.Px(46f)), "Race again (Enter)", _buttonStyle))
+                SettingsMenu.RestartRace();
+            if (SettingsMenu.InRace && GUI.Button(new Rect(panel.x + Hud.Px(32f) + half, top, half, Hud.Px(46f)), "Main menu", _buttonStyle))
+                SettingsMenu.MainMenu();
         }
 
         static string Format(float seconds)
