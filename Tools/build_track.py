@@ -179,6 +179,13 @@ def build(args):
         elevation_source = "SRTM 30 m via OpenTopoData, smoothed"
         print(f"  elevation: {cz.min():.1f} m to {cz.max():.1f} m "
               f"(range {cz.max() - cz.min():.1f} m)")
+        if spec.get("self_intersects"):
+            cz, lifted = elev.lift_crossings(cx, cy, cz, geom["spacing"],
+                                             over=spec.get("bridge_over", "later"))
+            for upper, lower, need in lifted:
+                print(f"  bridge: {upper * geom['spacing']:.0f} m passes over "
+                      f"{lower * geom['spacing']:.0f} m, raised {need:.1f} m")
+            elevation_source += ", raised into a bridge where the lap crosses itself"
 
     # --- racing line and speed profile ------------------------------------
     car = rl.car_presets()[args.car]

@@ -163,6 +163,7 @@ namespace CarRace.UnityGame.EditorTools
             var barrierMaterial = SkidpadSceneBuilder.EnsureMaterial(BarrierMaterialPath, new Color(0.85f, 0.85f, 0.85f), null, Vector2.one);
             Wall("Barrier Left", root, leftOuter, right, +1f, barrierMaterial, barrierSurface, barrierLayer);
             Wall("Barrier Right", root, rightOuter, right, -1f, barrierMaterial, barrierSurface, barrierLayer);
+            Bridges(root, centre, right, track.centerline.width_left, track.centerline.width_right, barrierMaterial);
 
             // Ground out to the horizon, held under the road and verges.
             Terrain terrain = GroundBuilder.Build(root, centre, track.centerline.width_left, track.centerline.width_right,
@@ -336,6 +337,52 @@ namespace CarRace.UnityGame.EditorTools
         /// right-hand edge, and in Unity that put the right-hand cars partly on the grass. The
         /// AI read their place from where they stand, so they need nothing else.
         /// </summary>
+        /// <summary>
+        /// A concrete deck under the road wherever the lap passes over itself (Ise Bay's
+        /// figure of eight; the track pipeline lifts the upper road 7.5 m clear).
+        /// The road and verges are one-sided, so from beneath the bridge was two walls in the
+        /// air. The deck spans the lower road, its verges and a margin, as wide as the upper
+        /// road with its verges, and has no collider: it is well above anything below.
+        /// </summary>
+        static void Bridges(GameObject root, Vector3[] centre, Vector3[] right, float[] widthLeft, float[] widthRight, Material material)
+        {
+            const float DeckM = 1.2f, MinGapM = 4f;
+            int n = centre.Length;
+            for (int i = 0; i < n; i++)
+            for (int j = i + 2; j < n; j++)
+            {
+                if (i == 0 && j == n - 1) continue;
+                if (!Crosses(centre[i], centre[(i + 1) % n], centre[j], centre[(j + 1) % n])) continue;
+                int upper = centre[i].y > centre[j].y ? i : j, lower = upper == i ? j : i;
+                if (centre[upper].y - centre[lower].y < MinGapM) continue;
+
+                Vector3 along = centre[(upper + 1) % n] - centre[(upper - 1 + n) % n];
+                along.y = 0f;
+                float span = widthLeft[lower] + widthRight[lower] + 2f * VergeWidthM + 20f;
+                float width = widthLeft[upper] + widthRight[upper] + 2f * VergeWidthM;
+                var deck = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                deck.name = "Bridge";
+                UnityEngine.Object.DestroyImmediate(deck.GetComponent<Collider>());
+                deck.transform.SetParent(root.transform, false);
+                deck.transform.rotation = Quaternion.LookRotation(along.normalized, Vector3.up);
+                float offset = (widthRight[upper] - widthLeft[upper]) * 0.5f;
+                deck.transform.position = centre[upper] + right[upper] * offset + Vector3.down * (DeckM * 0.5f + 0.05f);
+                deck.transform.localScale = new Vector3(width, DeckM, span);
+                deck.GetComponent<MeshRenderer>().sharedMaterial = material;
+                GameObjectUtility.SetStaticEditorFlags(deck, StaticEditorFlags.BatchingStatic);
+            }
+        }
+
+        static bool Crosses(Vector3 a, Vector3 b, Vector3 c, Vector3 d)
+        {
+            float d1x = b.x - a.x, d1z = b.z - a.z, d2x = d.x - c.x, d2z = d.z - c.z;
+            float den = d1x * d2z - d1z * d2x;
+            if (Mathf.Abs(den) < 1e-9f) return false;
+            float ex = c.x - a.x, ez = c.z - a.z;
+            float t = (ex * d2z - ez * d2x) / den, u = (ex * d1z - ez * d1x) / den;
+            return t >= 0f && t <= 1f && u >= 0f && u <= 1f;
+        }
+
         /// <summary>One spot lamp at the car's nose, a little down the road ahead: enough to
         /// read the road between the floodlights and to pick out the car itself.</summary>
         static void Headlight(Transform car)

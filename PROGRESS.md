@@ -310,11 +310,12 @@ Known, deliberate, and not blocking. Recorded so they are not rediscovered.
 
 **Scenery**
 
-- In a 175 s benchmark on Ise Bay (2026-09-24) the player's car, driven by the AI for the
-  benchmark, left the road around 2:10 into the lap and sat on the grass at 0 km/h in 6th
-  with the engine near the limit until the run ended. Not the scenery (none of it has a
-  collider); the recovery that puts a stopped AI car back on its line covers the three AI
-  cars, not the player's car when the benchmark drives it. Only matters for benchmarks.
+- Ise Bay: every AI car (and the player's car under the benchmark's autopilot) runs wide
+  and ends against the wall between 4.8 and 4.95 km, on the uphill 243 m radius left after
+  the long fast section (Suzuka's 130R). Seen in two benchmarks, before and after the
+  bridge; the profile there has no crest, and no other section's walls are near it. The
+  headless race passes on this circuit, but it drives on flat ground, so it cannot see
+  what the 5% climb does in the engine. Not yet investigated.
 
 **Vehicle physics**
 
@@ -628,6 +629,15 @@ learned, so context is not lost between sessions.
   lighting the night; URP drops the emission keyword when the GI flag is None; and lamps aimed
   from the tower lit dark asphalt at a grazing angle, so they hang over the road instead.
   Frame rates fall 10 to 30% when the laptop is hot (86 C): compare runs taken cool.
+
+- You hit a block on Ise Bay twice: the figure of eight crossed itself with the two roads
+  1.7 m apart, so each one's walls stood across the other. SRTM sees the ground, not the
+  bridge. `trackgen/elevation.lift_crossings` now raises the road that passes over (the
+  later one, 3,855 m, as at Suzuka) 9.2 m with a 300 m raised-cosine either side, 7.5 m
+  clear; only z changed in `suzuka.json`. `TrackSceneBuilder.Bridges` puts a concrete deck
+  under it. In Unity all four cars passed under at 28.9 m and over at 36.5 m. A check of
+  every circuit for sections whose walls reach each other's road found no others. The
+  headless harness drives on flat ground, so heights never reach it.
 
 ### 2026-09-23, ninth session
 

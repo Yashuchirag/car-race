@@ -107,3 +107,54 @@ def profile_for_centerline(frame, cx, cy, spacing_m, sample_every_m=25.0,
     xp = np.concatenate([idx, [n]])
     fp = np.concatenate([z_coarse, [z_coarse[0]]])
     return CubicSpline(xp, fp, bc_type="periodic")(np.arange(n))
+
+
+def crossings(cx, cy):
+    """Sample pairs (i, j), i < j, where the closed centreline crosses itself."""
+    n = len(cx)
+    ax, ay = cx, cy
+    bx, by = np.roll(cx, -1), np.roll(cy, -1)
+    found = []
+    for i in range(n):
+        # Segment i against every later segment that is not its neighbour.
+        j = np.arange(i + 2, n)
+        if i == 0:
+            j = j[j != n - 1]
+        if len(j) == 0:
+            continue
+        d1x, d1y = bx[i] - ax[i], by[i] - ay[i]
+        d2x, d2y = bx[j] - ax[j], by[j] - ay[j]
+        den = d1x * d2y - d1y * d2x
+        ok = np.abs(den) > 1e-12
+        ex, ey = ax[j] - ax[i], ay[j] - ay[i]
+        with np.errstate(divide="ignore", invalid="ignore"):
+            t = (ex * d2y - ey * d2x) / den
+            u = (ex * d1y - ey * d1x) / den
+        hit = ok & (t >= 0) & (t <= 1) & (u >= 0) & (u <= 1)
+        found += [(i, int(k)) for k in j[hit]]
+    return found
+
+
+def lift_crossings(cx, cy, cz, spacing_m, clearance_m=7.5, ramp_m=300.0, over="later"):
+    """Make a bridge where the lap crosses itself: raise the road that passes over until it
+    clears the one beneath by clearance_m.
+
+    SRTM sees the ground, not the bridge, so both roads came out at nearly the same height
+    (1.7 m apart at Suzuka) and each one's walls stood across the other. The lift is a
+    raised cosine over ramp_m either side of the crossing, on the upper road only: at
+    Suzuka about a 2.5% grade, and 0.2 g of vertical load at 216 km/h over its crest.
+    `over` says which road is the bridge: the one later in the lap, or the earlier.
+    """
+    cz = np.array(cz, dtype=float)
+    n = len(cz)
+    half = max(int(round(ramp_m / spacing_m)), 1)
+    offsets = np.arange(-half, half + 1)
+    window = 0.5 * (1.0 + np.cos(np.pi * offsets / half))
+    lifted = []
+    for i, j in crossings(cx, cy):
+        upper, lower = (j, i) if over == "later" else (i, j)
+        need = cz[lower] + clearance_m - cz[upper]
+        if need > 0:
+            cz[(upper + offsets) % n] += need * window
+        lifted.append((upper, lower, max(need, 0.0)))
+    return cz, lifted
