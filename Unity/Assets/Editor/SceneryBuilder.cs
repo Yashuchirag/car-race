@@ -402,29 +402,46 @@ namespace CarRace.UnityGame.EditorTools
             return material;
         }
 
-        /// <summary>Floodlight towers along the circuit, alternate sides, FloodlightEveryM
-        /// apart, each with a lamp LampHeightM over the road's edge shining straight down. Aimed
-        /// from the tower instead, the light reached the dark asphalt at a grazing angle and
-        /// barely showed. No shadows: a lap of them would be dozens of shadow maps.</summary>
+        /// <summary>Street lights along the circuit, alternate sides, FloodlightEveryM apart:
+        /// a post behind the barrier, an arm out over the road's edge, and a glowing lamp head
+        /// LampHeightM up shining straight down, in wide pools that overlap so the whole road is
+        /// lit, not patches of it. Aimed from the post instead, the light reached the dark
+        /// asphalt at a grazing angle and barely showed. No shadows: a lap of them would be
+        /// dozens of shadow maps.</summary>
         static int Floodlights(GameObject parent, Land land, Circuit circuit)
         {
             GameObject post = KenneyModels.Load("Racing", "lightPostLarge");
+            var arm = AssetDatabase.LoadAssetAtPath<Material>($"{KenneyModels.Folder}/Racing/Materials/grey.mat");
+            Material head = NeonMaterial(new Color(1f, 0.93f, 0.8f));
             int every = Mathf.RoundToInt(FloodlightEveryM / circuit.Spacing);
             int placed = 0, side = 1;
             for (int k = 0; k < circuit.N; k += every, side = -side)
             {
                 Vector3 toTrack = -circuit.Right[k] * side;
+                Vector3 lampAt = circuit.Edge(k, side) + Vector3.up * LampHeightM;
+                // Where the stands and garages leave no room for a post the lamp still hangs
+                // over the road, as if fixed to them, so the start straight is lit like the rest.
                 GameObject tower = Place(parent, land, post, circuit.Outside(k, side, StructureClearM + 1f), toTrack, 5f);
-                if (tower == null) continue;
-                placed++;
+                if (tower != null)
+                {
+                    placed++;
+                    Bounds b = tower.GetComponent<MeshRenderer>().bounds;
+                    Vector3 top = new Vector3(b.center.x, Mathf.Min(b.max.y, lampAt.y), b.center.z);
+                    Vector3 reach = lampAt - top;
+                    // Beside the post, not under it: the post is scaled, which would stretch it.
+                    Bar(parent, (top + lampAt) * 0.5f, Quaternion.LookRotation(reach.normalized),
+                        new Vector3(0.3f, 0.3f, reach.magnitude), arm);
+                }
+                Bar(parent, lampAt, Quaternion.LookRotation(circuit.Tangent(k)), new Vector3(0.9f, 0.3f, 2.2f), head);
+
                 var lamp = new GameObject("Floodlight").AddComponent<Light>();
-                lamp.transform.SetParent(tower.transform, true);
-                lamp.transform.position = circuit.Edge(k, side) + Vector3.up * LampHeightM;
+                lamp.transform.SetParent(parent.transform, true);
+                lamp.transform.position = lampAt + Vector3.down * 0.3f;
                 lamp.transform.rotation = Quaternion.LookRotation(Vector3.down, circuit.Tangent(k));
                 lamp.type = LightType.Spot;
-                lamp.spotAngle = 150f;
-                lamp.innerSpotAngle = 100f;
-                lamp.range = 45f;
+                lamp.spotAngle = 160f;
+                lamp.innerSpotAngle = 120f;
+                lamp.range = 60f;
                 lamp.intensity = FloodlightIntensity;
                 lamp.color = new Color(1f, 0.94f, 0.84f);
                 lamp.shadows = LightShadows.None;
@@ -432,8 +449,8 @@ namespace CarRace.UnityGame.EditorTools
             return placed;
         }
 
-        const float FloodlightEveryM = 40f;
-        const float FloodlightIntensity = 500f;   // falls with distance squared: about 3 on the road below
+        const float FloodlightEveryM = 25f;
+        const float FloodlightIntensity = 1400f;  // falls with distance squared: 2.5 or more anywhere on the road
         const float LampHeightM = 12f;
 
         /// <summary>At night the buildings' windows glow: each Commercial material has a copy

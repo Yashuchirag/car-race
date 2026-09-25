@@ -273,10 +273,10 @@ namespace CarRace.UnityGame.EditorTools
             if (camera != null) camera.farClipPlane = 5000f;
             GraphicsSetup.AddPostProcessing(root, camera);
 
-            // At night every car lights the road ahead of it.
+            // At night every car lights the road ahead of it, and itself.
             if (theme.Night)
                 foreach (var each in UnityEngine.Object.FindObjectsByType<CarController>(FindObjectsSortMode.None))
-                    Headlight(each.transform);
+                    CarLights(each.transform);
 
             if (road.GetComponent<MeshCollider>().sharedMaterial != asphalt)
                 throw new InvalidOperationException("Road has lost its Asphalt material.");
@@ -383,10 +383,20 @@ namespace CarRace.UnityGame.EditorTools
             return t >= 0f && t <= 1f && u >= 0f && u <= 1f;
         }
 
-        /// <summary>One spot lamp at the car's nose, a little down the road ahead: enough to
-        /// read the road between the floodlights and to pick out the car itself.</summary>
-        static void Headlight(Transform car)
+        /// <summary>A spot lamp at the car's nose, a little down the road ahead, and a soft
+        /// light above the car, which lights its body and the road round it: a dark car's paint
+        /// gives back almost nothing, so it shows as a shape against lit road instead.</summary>
+        static void CarLights(Transform car)
         {
+            var fill = new GameObject("Car Light").AddComponent<Light>();
+            fill.transform.SetParent(car, false);
+            fill.transform.localPosition = new Vector3(0f, 3f, -0.5f);
+            fill.type = LightType.Point;
+            fill.range = 12f;
+            fill.intensity = 18f;
+            fill.color = new Color(0.9f, 0.92f, 1f);
+            fill.shadows = LightShadows.None;
+
             var lamp = new GameObject("Headlight").AddComponent<Light>();
             lamp.transform.SetParent(car, false);
             lamp.transform.localPosition = new Vector3(0f, 0.6f, 2.2f);

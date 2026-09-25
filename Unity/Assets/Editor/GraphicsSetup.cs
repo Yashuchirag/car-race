@@ -52,7 +52,7 @@ namespace CarRace.UnityGame.EditorTools
         const string NightSkyMaterialPath = "Assets/Materials/NightSky.mat";
         static readonly Vector3 TowardsMoon = new Vector3(-0.4f, 0.6f, 0.5f);
         static readonly Color MoonColour = new Color(0.62f, 0.72f, 1f);
-        const float MoonIntensity = 0.18f;
+        const float MoonIntensity = 0.4f;
         static readonly Color NightFog = new Color(0.035f, 0.04f, 0.085f);
 
         public const string TrackProfilePath = "Assets/Settings/TrackPostProcessing.asset";
@@ -345,8 +345,8 @@ namespace CarRace.UnityGame.EditorTools
             }
 
             RenderSettings.ambientMode = AmbientMode.Trilight;
-            RenderSettings.ambientSkyColor = new Color(0.16f, 0.18f, 0.32f);
-            RenderSettings.ambientEquatorColor = new Color(0.12f, 0.10f, 0.18f);
+            RenderSettings.ambientSkyColor = new Color(0.2f, 0.22f, 0.38f);
+            RenderSettings.ambientEquatorColor = new Color(0.14f, 0.12f, 0.2f);
             RenderSettings.ambientGroundColor = new Color(0.03f, 0.03f, 0.04f);
             RenderSettings.defaultReflectionMode = DefaultReflectionMode.Skybox;
             RenderSettings.reflectionIntensity = 1f;
