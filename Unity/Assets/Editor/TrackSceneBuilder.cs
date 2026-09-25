@@ -101,6 +101,8 @@ namespace CarRace.UnityGame.EditorTools
             ["suzuka"] = "Coast", ["silverstone"] = "City", ["testcircuit"] = "Night City",
         };
 
+        const float MountainsM = 260f;   // the Ardennes' ridges, see GroundBuilder
+
         [Serializable] class Polyline { public float[] x, y, z, width_left, width_right; }
         [Serializable] class TrackFile { public string name; public float sample_spacing_m, length_m; public Polyline centerline, racing_line; }
 
@@ -170,11 +172,13 @@ namespace CarRace.UnityGame.EditorTools
             Wall("Barrier Right", root, rightOuter, right, -1f, barrierMaterial, barrierSurface, barrierLayer);
 
             // Ground out to the horizon, held under the road and verges.
+            string theme = Themes.TryGetValue(circuit, out string named) ? named : "";
             Terrain terrain = GroundBuilder.Build(root, centre, track.centerline.width_left, track.centerline.width_right,
-                                                 VergeWidthM, $"Assets/Scenes/Track {track.name}/Ground.asset");
+                                                 VergeWidthM, $"Assets/Scenes/Track {track.name}/Ground.asset",
+                                                 mountainsM: theme == "Mountains" ? MountainsM : 0f);
 
             // The surroundings in the circuit's theme, on that ground and clear of the barriers.
-            SceneryBuilder.Build(root, Themes.TryGetValue(circuit, out string theme) ? theme : "", centre, right,
+            SceneryBuilder.Build(root, theme, centre, right,
                                  track.centerline.width_left, track.centerline.width_right, VergeWidthM, terrain);
 
             // The racing line is drawn by RacingLineGuide, added below once the player's car

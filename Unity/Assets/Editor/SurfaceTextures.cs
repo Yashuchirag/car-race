@@ -7,7 +7,8 @@ namespace CarRace.UnityGame.EditorTools
     /// <summary>
     /// The surfaces' textures, set up and applied in one place so every scene gets the same:
     /// grass, ambientCG's Grass005 (CC0), on the circuits' verges, the terrain out to the
-    /// horizon and the lobby's lawn; asphalt, Poly Haven's Asphalt Track (CC0), on the road. Import settings are written here too, since a normal
+    /// horizon and the lobby's lawn; asphalt, Poly Haven's Asphalt Track (CC0), on the road; rock, ambientCG's Rock030 (CC0), on
+    /// the mountains' steep ground. Import settings are written here too, since a normal
     /// map imported as a colour texture shades wrongly and nothing says so.
     ///
     /// The verge meshes carry texture coordinates in metres, so a texture tiles at a real
@@ -30,6 +31,11 @@ namespace CarRace.UnityGame.EditorTools
         const string AsphaltSmoothness = AsphaltFolder + "/asphalt_track_metallic_smoothness_2k.png";
         const float AsphaltTileM = 2f;      // the texture's real size, 2 m square
         const float TerrainTileM = 4f;      // a little larger far away, where repeats show most
+
+        const string RockFolder = "Assets/Art/Ground/Rock030";
+        const string RockColour = RockFolder + "/Rock030_2K-JPG_Color.jpg";
+        const string RockNormal = RockFolder + "/Rock030_2K-JPG_NormalGL.jpg";
+        const float RockTileM = 12f;        // seen on mountainsides hundreds of metres away
 
         /// <summary>Grass on a material whose mesh is in metres, or whose tiling is given.</summary>
         public static void ApplyGrass(Material material, Vector2? tiling = null)
@@ -73,6 +79,17 @@ namespace CarRace.UnityGame.EditorTools
             layer.normalScale = 1f;
             layer.tileSize = new Vector2(TerrainTileM, TerrainTileM);
             layer.smoothness = 0.08f;
+            EditorUtility.SetDirty(layer);
+        }
+
+        /// <summary>Rock, ambientCG's Rock030 (CC0), for the steep ground of the mountains.</summary>
+        public static void ApplyRock(TerrainLayer layer)
+        {
+            layer.diffuseTexture = Texture(RockColour, TextureKind.Colour);
+            layer.normalMapTexture = Texture(RockNormal, TextureKind.Normal);
+            layer.normalScale = 1f;
+            layer.tileSize = new Vector2(RockTileM, RockTileM);
+            layer.smoothness = 0.1f;
             EditorUtility.SetDirty(layer);
         }
 

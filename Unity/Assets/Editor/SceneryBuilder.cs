@@ -8,8 +8,8 @@ namespace CarRace.UnityGame.EditorTools
 {
     /// <summary>
     /// Trackside scenery in the circuit's theme (TrackSceneBuilder.Themes), from the Kenney
-    /// kits (KenneyModels). Countryside so far, for Royal Park; the other themes follow once
-    /// this one is agreed.
+    /// kits (KenneyModels). Countryside for Royal Park and mountains and forest for the
+    /// Ardennes so far; the other themes follow.
     ///
     /// Everything is placed by its distance from the circuit. Land is a grid over the ground,
     /// CellM across, holding each cell's distance beyond the barriers (a chamfer distance
@@ -24,8 +24,10 @@ namespace CarRace.UnityGame.EditorTools
     /// GameObjects, static for batching.
     ///
     /// Trees and bushes are the terrain's trees, drawn instanced and kept in its data, not a
-    /// GameObject each, all as meshes. Woods cover ForestShare of the land, where two octaves of noise are
-    /// highest, with bushes on their edges, and single trees stand in the fields between.
+    /// GameObject each, all as meshes. What grows is the theme's Planting: woods cover its
+    /// share of the land, where two octaves of noise are highest, with bushes on their edges,
+    /// and single trees and boulders stand in the open between. Trees keep off ground steep
+    /// enough to be rock; boulders do not.
     /// From ThinFromM out to ReachM the woods thin to nothing. Past NearM the woods use only
     /// the simplest trees (under 135 triangles against up to 400), since they are a few pixels
     /// tall there and triangles, not pixels, were what the trees cost.
@@ -40,12 +42,43 @@ namespace CarRace.UnityGame.EditorTools
         const float StructureClearM = 3f;
         const float TreeClearM = 6f;
         const float TreeSpacingM = 9f;
-        const float ForestShare = 0.3f;
+        const float SteepDegrees = 24f;     // where GroundBuilder's rock starts
+
+        /// <summary>What grows in a theme: the woods' trees near the circuit and past NearM,
+        /// their share of the land and heights, and what stands at their edges and in the open.</summary>
+        sealed class Planting
+        {
+            public string[] Near, Far, Lone, Edge, Boulders = new string[0];
+            public float Share, MinM, MaxM, LoneChance = 0.03f, BoulderChance;
+        }
+
+        static readonly Planting Countryside = new Planting
+        {
+            Near = new[] { "tree_default", "tree_default_dark", "tree_detailed", "tree_detailed_dark",
+                           "tree_oak", "tree_oak_dark", "tree_cone", "tree_cone_dark", "tree_pineRoundA" },
+            Far = new[] { "tree_default", "tree_default_dark", "tree_fat", "tree_cone", "tree_pineTallA" },
+            Lone = new[] { "tree_oak", "tree_detailed", "tree_fat", "tree_default" },
+            Edge = new[] { "plant_bush", "plant_bushLarge", "plant_bushDetailed" },
+            Share = 0.3f, MinM = 10f, MaxM = 17f,
+        };
+
+        /// <summary>The Ardennes: dense conifer forest, pines at its edges, boulders.</summary>
+        static readonly Planting Mountains = new Planting
+        {
+            Near = new[] { "tree_pineDefaultA", "tree_pineDefaultB", "tree_pineRoundA", "tree_pineRoundC",
+                           "tree_pineRoundE", "tree_pineTallA_detailed", "tree_pineTallB_detailed", "tree_pineTallC_detailed" },
+            Far = new[] { "tree_pineTallA", "tree_pineTallB", "tree_pineTallC", "tree_pineTallD", "tree_pineSmallC" },
+            Lone = new[] { "tree_pineRoundD", "tree_pineTallB_detailed", "tree_pineDefaultA" },
+            Edge = new[] { "tree_pineGroundA", "tree_pineGroundB", "tree_pineSmallC" },
+            Boulders = new[] { "rock_tallC", "rock_tallG", "rock_tallI", "rock_largeB", "rock_largeD", "rock_largeF" },
+            Share = 0.5f, MinM = 12f, MaxM = 22f, LoneChance = 0.04f, BoulderChance = 0.015f,
+        };
 
         public static void Build(GameObject root, string theme, Vector3[] centre, Vector3[] right,
                                  float[] widthLeft, float[] widthRight, float vergeWidthM, Terrain terrain)
         {
-            if (theme != "Countryside") return;
+            Planting planting = theme == "Countryside" ? Countryside : theme == "Mountains" ? Mountains : null;
+            if (planting == null) return;
             KenneyModels.Ensure();
 
             var circuit = new Circuit(centre, right, widthLeft, widthRight, vergeWidthM + BarrierThicknessM);
@@ -56,12 +89,13 @@ namespace CarRace.UnityGame.EditorTools
 
             var structures = new GameObject("Structures");
             structures.transform.SetParent(parent.transform, false);
-            int placed = Countryside(structures, land, circuit);
-            int trees = Trees(land, circuit, terrain, rng);
+            int placed = Furniture(structures, land, circuit);
+            int trees = Trees(land, terrain, planting, rng);
             Debug.Log($"Scenery, {theme}: {placed} structures, {trees} trees and bushes.");
         }
 
-        static int Countryside(GameObject parent, Land land, Circuit circuit)
+        /// <summary>The racing circuit's own buildings, the same in every theme.</summary>
+        static int Furniture(GameObject parent, Land land, Circuit circuit)
         {
             GameObject garage = KenneyModels.Load("Racing", "pitsGarage");
             GameObject covered = KenneyModels.Load("Racing", "grandStandCovered");
@@ -195,28 +229,21 @@ namespace CarRace.UnityGame.EditorTools
 
         // ---------------------------------------------------------------- trees
 
-        static readonly string[] Forest =
+        static int Trees(Land land, Terrain terrain, Planting planting, Random rng)
         {
-            "tree_default", "tree_default_dark", "tree_detailed", "tree_detailed_dark",
-            "tree_oak", "tree_oak_dark", "tree_cone", "tree_cone_dark", "tree_pineRoundA",
-        };
-        static readonly string[] FarForest = { "tree_default", "tree_default_dark", "tree_fat", "tree_cone", "tree_pineTallA" };
-        static readonly string[] Lone = { "tree_oak", "tree_detailed", "tree_fat", "tree_default" };
-        static readonly string[] Bushes = { "plant_bush", "plant_bushLarge", "plant_bushDetailed" };
-
-        static int Trees(Land land, Circuit circuit, Terrain terrain, Random rng)
-        {
+            TerrainData data = terrain.terrainData;
             var names = new List<string>();
-            foreach (var set in new[] { Forest, FarForest, Lone, Bushes })
+            foreach (var set in new[] { planting.Near, planting.Far, planting.Lone, planting.Edge, planting.Boulders })
                 foreach (string name in set)
                     if (!names.Contains(name)) names.Add(name);
             var models = names.ConvertAll(name => KenneyModels.Load("Nature", name));
             var heights = models.ConvertAll(m => m.GetComponent<MeshFilter>().sharedMesh.bounds.size.y);
 
             // Candidates on a jittered grid, with their noise, so the woods' threshold can be
-            // set to cover ForestShare of the land whatever the noise's spread.
+            // set to cover the planting's share of the land whatever the noise's spread.
             float ox = (float)rng.NextDouble() * 1000f, oz = (float)rng.NextDouble() * 1000f;
-            var candidates = new List<(Vector3 p, float beyond, float noise)>();
+            Vector3 origin = terrain.transform.position, size = data.size;
+            var candidates = new List<(Vector3 p, float beyond, float noise, bool steep)>();
             for (float x = land.MinX; x < land.MaxX; x += TreeSpacingM)
             for (float z = land.MinZ; z < land.MaxZ; z += TreeSpacingM)
             {
@@ -227,13 +254,13 @@ namespace CarRace.UnityGame.EditorTools
                 float noise = 0.7f * Mathf.PerlinNoise(p.x / 230f + ox, p.z / 230f + oz)
                             + 0.3f * Mathf.PerlinNoise(p.x / 60f + oz, p.z / 60f + ox);
                 noise -= 0.2f * Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(ThinFromM, ReachM, beyond));
-                candidates.Add((p, beyond, noise));
+                bool steep = data.GetSteepness((p.x - origin.x) / size.x, (p.z - origin.z) / size.z) > SteepDegrees;
+                candidates.Add((p, beyond, noise, steep));
             }
             var sorted = candidates.ConvertAll(c => c.noise);
             sorted.Sort();
-            float woods = sorted.Count > 0 ? sorted[(int)((1f - ForestShare) * (sorted.Count - 1))] : 1f;
+            float woods = sorted.Count > 0 ? sorted[(int)((1f - planting.Share) * (sorted.Count - 1))] : 1f;
 
-            Vector3 origin = terrain.transform.position, size = terrain.terrainData.size;
             var instances = new List<TreeInstance>();
             void Add(string[] set, float minM, float maxM, Vector3 p)
             {
@@ -251,15 +278,16 @@ namespace CarRace.UnityGame.EditorTools
                     lightmapColor = Color.white,
                 });
             }
-            foreach (var (p, beyond, noise) in candidates)
+            foreach (var (p, beyond, noise, steep) in candidates)
             {
                 double roll = rng.NextDouble();
-                if (noise >= woods) { if (roll < 0.85) Add(beyond < NearM ? Forest : FarForest, 10f, 17f, p); }
-                else if (noise >= woods - 0.03f) { if (roll < 0.35) Add(Bushes, 1.2f, 2.2f, p); }
-                else if (roll < 0.03) Add(Lone, 8f, 14f, p);
+                if (roll < planting.BoulderChance) Add(planting.Boulders, 1.5f, 4f, p);
+                else if (steep) continue;
+                else if (noise >= woods) { if (roll < 0.85) Add(beyond < NearM ? planting.Near : planting.Far, planting.MinM, planting.MaxM, p); }
+                else if (noise >= woods - 0.03f) { if (roll < 0.35) Add(planting.Edge, 1.2f, 2.2f, p); }
+                else if (roll < planting.LoneChance) Add(planting.Lone, 8f, 14f, p);
             }
 
-            TerrainData data = terrain.terrainData;
             data.treePrototypes = models.ConvertAll(m => new TreePrototype { prefab = m }).ToArray();
             data.SetTreeInstances(instances.ToArray(), snapToHeightmap: true);
             // Meshes all the way: Unity's defaults (50 mesh trees, billboards past 50 m) need
