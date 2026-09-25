@@ -317,6 +317,17 @@ Known, deliberate, and not blocking. Recorded so they are not rediscovered.
   bridge; the profile there has no crest, and no other section's walls are near it. The
   headless race passes on this circuit, but it drives on flat ground, so it cannot see
   what the 5% climb does in the engine. Not yet investigated.
+  2026-09-25, a first look at the data (nothing changed): the racing line profile does
+  crest there. `racing_line.z` climbs from 52.0 m at 4.75 km to 59.2 m at 4.95 km, and
+  the vertical radius is 770 to 1300 m over 4.90 to 4.97 km, while the line still turns
+  at 263 to 513 m. At the 160 to 165 km/h the headless lap carries there, a crest like
+  that takes 16 to 27% of the tyre load away, and with it about that much grip, just
+  where the flat-ground plan counts on all of it. Before the crest is a compression
+  (+11 to +15% at 4.75 to 4.85 km). The headless lap on flat ground already sits 1.1 to
+  1.9 m off its aimed line through 130R, with the rear sliding up to 6 degrees at
+  4.83 km, and the line runs 1.6 m from the edge at the exit. First suspect: the plan
+  ignores vertical curvature. Fix to try: scale the planned lateral limit by
+  (1 + v² · vertical curvature / g), the same way downforce would be added.
 
 **Vehicle physics**
 
