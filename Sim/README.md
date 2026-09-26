@@ -28,6 +28,9 @@ dotnet run --project Sim/CarRace.Harness -c Release -- --race monza --cars 16 --
 dotnet run --project Sim/CarRace.Harness -c Release -- --race testcircuit --cars 8 --csv race.csv
 dotnet run --project Sim/CarRace.Harness -c Release -- --race monza --reverse-grid
 dotnet run --project Sim/CarRace.Harness -c Release -- --race monza --fastest-last
+
+dotnet run --project Sim/CarRace.Harness -c Release -- --lan monza --seconds 30   # a LAN race, host and bots
+dotnet run --project Sim/CarRace.Harness -c Release -- --lan spa --players 3 --ai 5 --latency 25 --loss 5
 ```
 
 Exit code is 0 when all five checks pass, and 0 from `--lap` when the car gets

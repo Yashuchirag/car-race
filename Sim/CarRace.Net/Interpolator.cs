@@ -104,6 +104,8 @@ namespace CarRace.Net
             // through a slightly wrong path, which reads as a twitch at high yaw rates.
             Orientation = Quaternion.Slerp(a.Orientation, b.Orientation, t),
             Velocity = Vector3.Lerp(a.Velocity, b.Velocity, t),
+            AngularVelocity = Vector3.Lerp(a.AngularVelocity, b.AngularVelocity, t),
+            TimeSeconds = a.TimeSeconds + (b.TimeSeconds - a.TimeSeconds) * t,
             Steer = a.Steer + (b.Steer - a.Steer) * t,
             EngineRpm = a.EngineRpm + (b.EngineRpm - a.EngineRpm) * t,
             Gear = t < 0.5f ? a.Gear : b.Gear,

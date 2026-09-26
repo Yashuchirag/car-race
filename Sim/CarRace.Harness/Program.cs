@@ -56,6 +56,20 @@ namespace CarRace.Harness
                                   Array.IndexOf(args, "--verbose") >= 0);
             }
 
+            int lanIndex = Array.IndexOf(args, "--lan");
+            if (lanIndex >= 0)
+            {
+                string circuit = lanIndex + 1 < args.Length && !args[lanIndex + 1].StartsWith("--")
+                    ? args[lanIndex + 1] : "monza";
+                return LanRun.Run(config, circuit,
+                                  Option(args, "--players", 6),
+                                  Option(args, "--ai", 2),
+                                  Option(args, "--seconds", 60),
+                                  Option(args, "--latency", 2),
+                                  Option(args, "--jitter", 1),
+                                  Option(args, "--loss", 1));
+            }
+
             int raceIndex = Array.IndexOf(args, "--race");
             if (raceIndex >= 0)
             {

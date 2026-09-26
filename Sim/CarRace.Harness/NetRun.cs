@@ -286,6 +286,8 @@ namespace CarRace.Harness
                     Position = body.Position,
                     Orientation = body.Orientation,
                     Velocity = body.Velocity,
+                    AngularVelocity = body.AngularVelocity,
+                    TimeSeconds = time,
                     Steer = rigs[i].Sim.SteerPosition,
                     EngineRpm = rigs[i].Sim.Drivetrain.EngineRpm,
                     Gear = (byte)Math.Max(rigs[i].Sim.Drivetrain.Gear, 0),

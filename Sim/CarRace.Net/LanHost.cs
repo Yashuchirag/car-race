@@ -1,0 +1,336 @@
+using System;
+using System.Collections.Generic;
+using System.Net;
+using System.Net.Sockets;
+
+namespace CarRace.Net
+{
+    /// <summary>
+    /// The machine that owns a LAN race. It is a player too, with its own car, and it also
+    /// drives the AI cars, keeps the lobby and says when the race starts. Everyone else only
+    /// simulates their own car: the host collects those states and passes every car on to
+    /// every client.
+    ///
+    /// Nothing here blocks or starts a thread. The game calls Poll once a frame with the
+    /// time, which keeps every state change on the game's own thread and lets the harness
+    /// run it on a simulated clock.
+    /// </summary>
+    public sealed class LanHost : IDisposable
+    {
+        public const int DefaultPort = 47902;
+        public const int MaxPlayers = 6;
+        public const int MaxCars = 8;
+        public const byte FirstAiId = 32;
+
+        /// <summary>A client heard nothing from for this long has gone, even if its TCP
+        /// connection never said so, as happens when a cable is pulled.</summary>
+        public const float TimeoutSeconds = 5f;
+
+        sealed class Client
+        {
+            public FrameSocket Tcp;
+            public PlayerInfo Player;          // null until Hello
+            public IPEndPoint Udp;             // null until its first datagram
+            public float LastHeard;
+            public bool HasCar;
+            public CarState Car;
+        }
+
+        readonly Socket _listener;
+        readonly UdpClient _udp;
+        readonly UdpClient _beacon;
+        readonly List<Client> _clients = new List<Client>();
+        readonly BitWriter _writer = new BitWriter(new byte[SnapshotCodec.MaxBytes(MaxCars) + 16]);
+        readonly string _hostName;
+        byte _nextId = 1;
+        float _nextBeacon;
+        uint _tick;
+
+        public readonly int Port;
+        public readonly LobbyState Lobby = new LobbyState();
+
+        /// <summary>The other players' cars, carried forward to the present.</summary>
+        public readonly Extrapolator Cars = new Extrapolator();
+
+        public RaceStart Race { get; private set; }
+        public bool Started => Race != null;
+
+        /// <summary>Set whenever someone joins, leaves or changes the lobby, for the menu to
+        /// redraw from. The host clears it.</summary>
+        public bool LobbyChanged;
+
+        /// <summary>Ids of players who have left since the host last looked, whose cars it
+        /// should take off the track.</summary>
+        public readonly List<byte> Left = new List<byte>();
+
+        public LanHost(string hostName, PlayerInfo me, string track, int port = DefaultPort)
+        {
+            _hostName = hostName;
+            Port = port;
+
+            me.Id = 0;
+            Lobby.Track = track;
+            Lobby.Players.Add(me);
+
+            _listener = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+            _listener.Bind(new IPEndPoint(IPAddress.Any, port));
+            _listener.Listen(8);
+            _listener.Blocking = false;
+
+            _udp = new UdpClient(new IPEndPoint(IPAddress.Any, port));
+            _udp.Client.ReceiveBufferSize = 1 << 20;
+            _beacon = new UdpClient { EnableBroadcast = true };
+        }
+
+        public int Humans => Lobby.Players.Count;
+
+        public void SetTrack(string track) { Lobby.Track = track; SendLobby(); }
+        public void SetLaps(int laps) { Lobby.Laps = (byte)Math.Clamp(laps, 1, 99); SendLobby(); }
+
+        /// <summary>As many as asked for, as long as the grid does not pass MaxCars.</summary>
+        public void SetAiCars(int count)
+        {
+            Lobby.AiCars = (byte)Math.Clamp(count, 0, MaxCars - Humans);
+            SendLobby();
+        }
+
+        public void SetMySetup(byte colour, byte design)
+        {
+            Lobby.Players[0].Colour = colour;
+            Lobby.Players[0].Design = design;
+            SendLobby();
+        }
+
+        public void Poll(float now)
+        {
+            if (!Started && now >= _nextBeacon)
+            {
+                _nextBeacon = now + 1f;
+                Announce();
+            }
+
+            Accept(now);
+            foreach (Client client in _clients.ToArray()) ReadControl(client, now);
+            ReadDatagrams(now);
+
+            foreach (Client client in _clients.ToArray())
+            {
+                client.Tcp.Flush();
+                if (client.Tcp.Closed || now - client.LastHeard > TimeoutSeconds) Drop(client);
+            }
+        }
+
+        /// <summary>
+        /// Closes the lobby and fixes the grid: people in the order they joined, then the AI.
+        /// GO falls countdownSeconds from now on the host's clock.
+        /// </summary>
+        public RaceStart Start(float now, float countdownSeconds)
+        {
+            var grid = new List<PlayerInfo>(Lobby.Players);
+            for (int i = 0; i < Lobby.AiCars; i++)
+                grid.Add(new PlayerInfo { Id = (byte)(FirstAiId + i), Name = $"AI {i + 1}", Ai = true, Colour = 255 });
+
+            Race = new RaceStart
+            {
+                Track = Lobby.Track, Laps = Lobby.Laps,
+                GoAtHostSeconds = now + countdownSeconds, Grid = grid.ToArray(),
+            };
+            byte[] message = Control.Start(Race);
+            foreach (Client client in _clients)
+                if (client.Player != null) client.Tcp.Send(message);
+            return Race;
+        }
+
+        /// <summary>
+        /// Sends every car to every client: the ones the host simulates, stamped now, and
+        /// each client's latest, with the time it was true, so that every machine can carry
+        /// them all forward to the same present.
+        /// </summary>
+        public int SendSnapshot(IReadOnlyList<CarState> hostCars, float now)
+        {
+            var cars = new List<CarState>(hostCars.Count + _clients.Count);
+            foreach (CarState car in hostCars)
+            {
+                CarState stamped = car;
+                stamped.TimeSeconds = now;
+                cars.Add(stamped);
+            }
+            foreach (Client client in _clients)
+                if (client.HasCar) cars.Add(client.Car);
+
+            var snapshot = new Snapshot { Tick = _tick++, TimeSeconds = now, Cars = cars.ToArray() };
+            byte[] packet = Datagram.Pack(Datagram.Kind.Snapshot, snapshot, _writer);
+            foreach (Client client in _clients)
+                if (client.Udp != null) Send(packet, client.Udp);
+            return packet.Length;
+        }
+
+        void Announce()
+        {
+            byte[] bytes = new Beacon
+            {
+                HostName = _hostName, Track = Lobby.Track, GamePort = (ushort)Port,
+                Players = (byte)Humans, Capacity = MaxPlayers,
+            }.ToBytes();
+
+            // Loopback as well as broadcast, so a second copy of the game on this machine
+            // finds it wherever the broadcast is filtered.
+            foreach (IPAddress to in new[] { IPAddress.Broadcast, IPAddress.Loopback })
+            {
+                try { _beacon.Send(bytes, bytes.Length, new IPEndPoint(to, Beacon.Port)); }
+                catch (SocketException) { }
+            }
+        }
+
+        void Accept(float now)
+        {
+            while (true)
+            {
+                Socket socket;
+                try { socket = _listener.Accept(); }
+                catch (SocketException) { return; }   // nobody waiting
+                _clients.Add(new Client { Tcp = new FrameSocket(socket), LastHeard = now });
+            }
+        }
+
+        void ReadControl(Client client, float now)
+        {
+            while (client.Tcp.TryReceive(out byte[] message))
+            {
+                client.LastHeard = now;
+                try { Handle(client, message); }
+                catch (Exception) { client.Tcp.Dispose(); return; }   // malformed: not one of ours
+            }
+        }
+
+        void Handle(Client client, byte[] message)
+        {
+            switch (Control.TypeOf(message))
+            {
+                case Control.Type.Hello when client.Player == null:
+                {
+                    PlayerInfo player = Control.ReadHello(message, out byte version);
+                    RejectReason? refuse = version != Control.Version ? RejectReason.Version
+                                         : Started ? RejectReason.Started
+                                         : Humans >= MaxPlayers ? RejectReason.Full
+                                         : (RejectReason?)null;
+                    if (refuse != null)
+                    {
+                        client.Tcp.Send(Control.Reject(refuse.Value));
+                        client.Tcp.Flush();
+                        client.Tcp.Dispose();
+                        return;
+                    }
+
+                    player.Id = _nextId++;
+                    client.Player = player;
+                    Lobby.Players.Add(player);
+                    if (Humans + Lobby.AiCars > MaxCars) Lobby.AiCars = (byte)(MaxCars - Humans);
+                    client.Tcp.Send(Control.Welcome(player.Id));
+                    SendLobby();
+                    break;
+                }
+                case Control.Type.Setup when client.Player != null && !Started:
+                {
+                    using var r = Control.Body(message);
+                    client.Player.Colour = r.ReadByte();
+                    client.Player.Design = r.ReadByte();
+                    SendLobby();
+                    break;
+                }
+            }
+        }
+
+        void ReadDatagrams(float now)
+        {
+            var from = new IPEndPoint(IPAddress.Any, 0);
+            while (_udp.Available > 0)
+            {
+                byte[] data;
+                try { data = _udp.Receive(ref from); }
+                catch (SocketException) { continue; }   // e.g. an ICMP unreachable from a client that left
+                if (data.Length < 2) continue;
+
+                try
+                {
+                    switch ((Datagram.Kind)data[0])
+                    {
+                        case Datagram.Kind.Ping:
+                        {
+                            Client client = Known(data[1], from);
+                            if (client == null) break;
+                            client.Udp = from;
+                            client.LastHeard = now;
+                            Send(Datagram.Pong(BitConverter.ToSingle(data, 2), now), from);
+                            break;
+                        }
+                        case Datagram.Kind.Car:
+                        {
+                            Snapshot snapshot = Datagram.Unpack(data, data.Length);
+                            if (snapshot.Cars.Length != 1) break;
+                            CarState car = snapshot.Cars[0];
+                            Client client = Known(car.Id, from);
+                            if (client == null || !Started) break;
+                            client.Udp = from;
+                            client.LastHeard = now;
+                            if (client.HasCar && car.TimeSeconds <= client.Car.TimeSeconds) break;
+                            client.Car = car;
+                            client.HasCar = true;
+                            Cars.Add(car, now);
+                            break;
+                        }
+                    }
+                }
+                catch (Exception) { }   // a short or garbled datagram: drop it
+            }
+        }
+
+        /// <summary>The client this id belongs to, if the datagram came from its machine.
+        /// Anything else on the port is ignored.</summary>
+        Client Known(byte id, IPEndPoint from)
+        {
+            foreach (Client client in _clients)
+            {
+                if (client.Player == null || client.Player.Id != id) continue;
+                var tcp = (IPEndPoint)client.Tcp.Socket.RemoteEndPoint;
+                return tcp.Address.Equals(from.Address) ? client : null;
+            }
+            return null;
+        }
+
+        void Drop(Client client)
+        {
+            _clients.Remove(client);
+            client.Tcp.Dispose();
+            if (client.Player == null) return;
+
+            Lobby.Players.Remove(client.Player);
+            Cars.Remove(client.Player.Id);
+            Left.Add(client.Player.Id);
+            SendLobby();
+        }
+
+        void SendLobby()
+        {
+            LobbyChanged = true;
+            byte[] message = Control.Lobby(Lobby);
+            foreach (Client client in _clients)
+                if (client.Player != null) client.Tcp.Send(message);
+        }
+
+        void Send(byte[] packet, IPEndPoint to)
+        {
+            try { _udp.Send(packet, packet.Length, to); }
+            catch (SocketException) { }
+        }
+
+        public void Dispose()
+        {
+            foreach (Client client in _clients) client.Tcp.Dispose();
+            _clients.Clear();
+            _listener.Close();
+            _udp.Dispose();
+            _beacon.Dispose();
+        }
+    }
+}

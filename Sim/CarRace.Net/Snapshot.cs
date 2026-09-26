@@ -10,6 +10,8 @@ namespace CarRace.Net
         public Vector3 Position;
         public Quaternion Orientation;
         public Vector3 Velocity;
+        public Vector3 AngularVelocity;  // world space, rad/s: carries a car's turn forward in time
+        public float TimeSeconds;        // host clock time this state was true, see SnapshotCodec
         public float Steer;        // -1..1, for turning the front wheels on the client
         public float EngineRpm;    // for engine audio, which is most of what speed feels like
         public byte Gear;          // 0 neutral, 1..N forward, 15 for reverse
@@ -27,22 +29,30 @@ namespace CarRace.Net
     /// <summary>
     /// Packs and unpacks snapshots.
     ///
+    /// Each car carries its own time. A player's car is simulated on that player's machine,
+    /// so the host only relays its latest state, which was true a few milliseconds before
+    /// the snapshot went out. The age is sent rather than dropped so that a client can carry
+    /// every car forward to the same present, see Extrapolator.
+    ///
     /// Every field is quantised to what it is worth rather than sent as a float. The ranges
     /// below are the contract: a position outside them is clamped, not wrapped, so the
     /// failure is a car pinned at the edge of the world rather than one that teleports
-    /// across it. At 20 Hz with sixteen cars this is about 6 kB/s to each client, which is
-    /// nothing on a LAN and leaves room for the things that matter more later, like inputs
-    /// and collisions.
+    /// across it. At 20 Hz with sixteen cars this is about 8 kB/s to each client, and at
+    /// 30 Hz with eight about 6 kB/s, which is nothing on a LAN.
     /// </summary>
     public static class SnapshotCodec
     {
         public const float WorldExtentM = 4096f;     // circuits are a few km across
         public const float WorldHeightM = 1024f;
         public const float MaxSpeedMs = 150f;        // 540 km/h, well past anything drivable
+        public const float MaxTurnRate = 8f;         // rad/s, a fast spin
+        public const float MaxAgeSeconds = 0.255f;
 
         const int PositionBits = 20;                 // 8 mm over the extent
         const int HeightBits = 16;
         const int VelocityBits = 12;                 // 3.7 cm/s
+        const int TurnRateBits = 10;                 // 0.016 rad/s
+        const int AgeBits = 8;                       // whole milliseconds
         const int SteerBits = 8;
         const int RpmBits = 12;
         const int GearBits = 4;
@@ -51,7 +61,7 @@ namespace CarRace.Net
         const int CountBits = 6;
 
         /// <summary>Bytes needed for a snapshot of this many cars, worst case.</summary>
-        public static int MaxBytes(int cars) => 16 + cars * 16;
+        public static int MaxBytes(int cars) => 16 + cars * 26;
 
         public static int Write(BitWriter writer, Snapshot snapshot)
         {
@@ -70,6 +80,10 @@ namespace CarRace.Net
                 writer.WriteFloat(car.Velocity.X, -MaxSpeedMs, MaxSpeedMs, VelocityBits);
                 writer.WriteFloat(car.Velocity.Y, -MaxSpeedMs, MaxSpeedMs, VelocityBits);
                 writer.WriteFloat(car.Velocity.Z, -MaxSpeedMs, MaxSpeedMs, VelocityBits);
+                writer.WriteFloat(car.AngularVelocity.X, -MaxTurnRate, MaxTurnRate, TurnRateBits);
+                writer.WriteFloat(car.AngularVelocity.Y, -MaxTurnRate, MaxTurnRate, TurnRateBits);
+                writer.WriteFloat(car.AngularVelocity.Z, -MaxTurnRate, MaxTurnRate, TurnRateBits);
+                writer.WriteFloat(snapshot.TimeSeconds - car.TimeSeconds, 0f, MaxAgeSeconds, AgeBits);
                 writer.WriteFloat(car.Steer, -1f, 1f, SteerBits);
                 writer.WriteFloat(car.EngineRpm, 0f, 16000f, RpmBits);
                 writer.WriteBits(car.Gear, GearBits);
@@ -104,6 +118,11 @@ namespace CarRace.Net
                         reader.ReadFloat(-MaxSpeedMs, MaxSpeedMs, VelocityBits),
                         reader.ReadFloat(-MaxSpeedMs, MaxSpeedMs, VelocityBits),
                         reader.ReadFloat(-MaxSpeedMs, MaxSpeedMs, VelocityBits)),
+                    AngularVelocity = new Vector3(
+                        reader.ReadFloat(-MaxTurnRate, MaxTurnRate, TurnRateBits),
+                        reader.ReadFloat(-MaxTurnRate, MaxTurnRate, TurnRateBits),
+                        reader.ReadFloat(-MaxTurnRate, MaxTurnRate, TurnRateBits)),
+                    TimeSeconds = snapshot.TimeSeconds - reader.ReadFloat(0f, MaxAgeSeconds, AgeBits),
                     Steer = reader.ReadFloat(-1f, 1f, SteerBits),
                     EngineRpm = reader.ReadFloat(0f, 16000f, RpmBits),
                     Gear = (byte)reader.ReadBits(GearBits),
