@@ -153,12 +153,16 @@ namespace CarRace.UnityGame.EditorTools
         /// <summary>The racing circuit's own buildings, the same in every theme.</summary>
         static int Furniture(GameObject parent, Land land, Circuit circuit)
         {
-            GameObject garage = KenneyModels.Load("Racing", "pitsGarage");
-            GameObject covered = KenneyModels.Load("Racing", "grandStandCovered");
-            GameObject stand = KenneyModels.Load("Racing", "grandStand");
-            GameObject tent = KenneyModels.Load("Racing", "tent");
-            GameObject billboard = KenneyModels.Load("Racing", "billboard");
-            GameObject[] towers = { KenneyModels.Load("Racing", "bannerTowerRed"), KenneyModels.Load("Racing", "bannerTowerGreen") };
+            GameObject garage = StructureModels.Load("garage");
+            GameObject covered = StructureModels.Load("stand_covered");
+            GameObject stand = StructureModels.Load("stand_open");
+            GameObject tent = StructureModels.Load("marquee");
+            GameObject[] billboards = { StructureModels.Load("billboard_0"), StructureModels.Load("billboard_1"),
+                                        StructureModels.Load("billboard_2"), StructureModels.Load("billboard_3") };
+            (int metres, GameObject model)[] boards =
+            {
+                (150, StructureModels.Load("board_150")), (100, StructureModels.Load("board_100")), (50, StructureModels.Load("board_50")),
+            };
 
             // The start: garages on the right, a covered stand on the left.
             int placed = Row(parent, land, circuit, garage, 0, +1, -100f, 100f, 9f, StructureClearM);
@@ -179,23 +183,33 @@ namespace CarRace.UnityGame.EditorTools
                 placed += Row(parent, land, circuit, tent, k, outside, -12f, 12f, 8f, behind);
             }
 
-            // A banner tower on the outside where the braking starts for every corner.
+            // Braking boards, 150, 100 and 50 m before the turn in (taken as 30 m before the
+            // apex) of every corner that has a run up to it, on the outside, turned to face
+            // the cars coming.
             List<int> braking = Corners(circuit, 150f, 150f);
             for (int i = 0; i < braking.Count; i++)
             {
-                int k = circuit.Wrap(braking[i] - Mathf.RoundToInt(80f / circuit.Spacing));
-                int outside = -circuit.Turn(braking[i]);
-                placed += Row(parent, land, circuit, towers[i % 2], k, outside, 0f, 0f, 3f, StructureClearM);
+                int apex = braking[i];
+                if (braking.Count > 1 && circuit.ArcM(braking[(i - 1 + braking.Count) % braking.Count], apex) < 280f) continue;
+                int outside = -circuit.Turn(apex);
+                foreach (var (metres, model) in boards)
+                {
+                    int k = circuit.Wrap(apex - Mathf.RoundToInt((30f + metres) / circuit.Spacing));
+                    Vector3 toTrack = -circuit.Right[k] * outside;
+                    Vector3 facing = (toTrack * 0.5f - circuit.Tangent(k) * 0.87f).normalized;
+                    if (Place(parent, land, model, circuit.Outside(k, outside, StructureClearM + 0.5f), facing, 1.5f) != null) placed++;
+                }
             }
 
             // Billboards on the straights, alternate sides, angled to face the cars coming.
             int every = Mathf.RoundToInt(300f / circuit.Spacing);
-            int side = +1;
+            int side = +1, ad = 0;
             for (int k = every / 2; k < circuit.N; k += every)
             {
                 if (circuit.Radius(k) < 300f || circuit.ArcM(k, 0) < 150f) continue;
                 Vector3 toTrack = -circuit.Right[k] * side;
                 Vector3 facing = (toTrack * Mathf.Cos(25f * Mathf.Deg2Rad) - circuit.Tangent(k) * Mathf.Sin(25f * Mathf.Deg2Rad)).normalized;
+                GameObject billboard = billboards[ad++ % billboards.Length];
                 float depth = Scaled(billboard, 10f).z;
                 Vector3 at = circuit.Outside(k, side, StructureClearM + depth * 0.5f + 1f);
                 if (Place(parent, land, billboard, at, facing, 10f) != null) placed++;
@@ -285,17 +299,9 @@ namespace CarRace.UnityGame.EditorTools
 
         // ---------------------------------------------------------------- the city
 
-        static readonly string[] Shops =
-            { "building-a", "building-b", "building-c", "building-d", "building-e", "building-f", "building-g", "building-h" };
-        static readonly string[] Towers =
-            { "building-skyscraper-a", "building-skyscraper-b", "building-skyscraper-c", "building-skyscraper-d", "building-skyscraper-e" };
-        static readonly string[] Blocks =
-        {
-            "low-detail-building-a", "low-detail-building-b", "low-detail-building-c", "low-detail-building-d",
-            "low-detail-building-e", "low-detail-building-f", "low-detail-building-g", "low-detail-building-h",
-            "low-detail-building-i", "low-detail-building-j", "low-detail-building-k", "low-detail-building-l",
-            "low-detail-building-m", "low-detail-building-wide-a", "low-detail-building-wide-b",
-        };
+        static readonly string[] Shops = StructureModels.Shops;
+        static readonly string[] Towers = StructureModels.Towers;
+        static readonly string[] Blocks = StructureModels.Blocks;
         static readonly string[] ParkTrees = TreeModels.Names("broadleaf", 0, 1, 2, 3);
         const float LotM = 44f;             // a building and its share of the streets
         const float CityClearM = 22f;       // open ground between the barriers and the first buildings
@@ -350,17 +356,16 @@ namespace CarRace.UnityGame.EditorTools
                 }
 
                 string[] set = beyond < ShopsWithinM ? Shops : beyond < TowersWithinM && rng.NextDouble() < 0.5 ? Towers : Blocks;
-                GameObject model = KenneyModels.Load("Commercial", set[rng.Next(set.Length)]);
+                GameObject model = StructureModels.Load(set[rng.Next(set.Length)]);
                 Bounds bounds = model.GetComponent<MeshFilter>().sharedMesh.bounds;
-                float footprint = Mathf.Lerp(22f, 30f, (float)rng.NextDouble());
-                float s = footprint / Mathf.Max(bounds.size.x, bounds.size.z);
+                const float s = 1f;      // built at its real size, so its storeys stay 3.6 m
                 // Every corner of it clear of the circuit, not only its middle.
                 float r = 0.5f * Mathf.Sqrt(bounds.size.x * bounds.size.x + bounds.size.z * bounds.size.z) * s;
                 if (beyond - r < CityClearM * 0.5f) continue;
                 float turn = yaw + rng.Next(4) * Mathf.PI * 0.5f;
                 growth.Add(model, c, s, 1f, turn);
                 buildings++;
-                if (neonMaterials != null && beyond < NeonWithinM)
+                if (neonMaterials != null && beyond < NeonWithinM && set != Towers)
                     Neon(neon, c + Vector3.up * land.Height(c), Quaternion.Euler(0f, turn * Mathf.Rad2Deg, 0f), bounds, s,
                          neonMaterials[rng.Next(neonMaterials.Length)], neonMaterials[rng.Next(neonMaterials.Length)], rng);
             }
@@ -488,6 +493,11 @@ namespace CarRace.UnityGame.EditorTools
                 // Realtime rather than None: URP reads None as no emission and drops the keyword.
                 night.globalIlluminationFlags = MaterialGlobalIlluminationFlags.RealtimeEmissive;
                 EditorUtility.SetDirty(night);
+                from.Add(day);
+                to.Add(night);
+            }
+            foreach (var (day, night) in StructureModels.FacadeNights())
+            {
                 from.Add(day);
                 to.Add(night);
             }

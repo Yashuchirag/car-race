@@ -226,7 +226,7 @@ namespace CarRace.UnityGame.EditorTools
                 var (position, rotation) = GridSlot(slot, centre, right, track.sample_spacing_m, definition.cgHeight);
                 ai.transform.SetPositionAndRotation(position, rotation);
                 var body = SkidpadSceneBuilder.EnsureMaterial($"Assets/Materials/AiBody{slot + 1}.mat", AiColours[slot % AiColours.Length], null, Vector2.one);
-                body.SetFloat("_Smoothness", CarModel.PaintSmoothness);
+                CarModel.MakePaint(body);
                 foreach (var r in ai.GetComponentsInChildren<Renderer>())
                     if (r.name == "Body") r.sharedMaterial = body;
                 aiCars[slot] = ai.GetComponent<CarController>();

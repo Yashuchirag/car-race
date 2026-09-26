@@ -6,8 +6,8 @@ using UnityEngine;
 namespace CarRace.UnityGame.EditorTools
 {
     /// <summary>
-    /// The car's looks: low-poly bodies built to the car's own dimensions, in the same stylised
-    /// style as the scenery, in four designs the lobby offers (Designs): a GT coupe with a big
+    /// The car's looks: bodies built to the car's own dimensions in four designs the lobby
+    /// offers (Designs): a GT coupe with a big
     /// wing, a muscle car with a long bonnet and a ducktail, a wedge supercar with its cabin
     /// forward, and a tall hot hatch with a roof spoiler. They replaced a box on four cylinders.
     /// The designs are looks only: wheels, wheelbase and handling are the same for all.
@@ -17,13 +17,21 @@ namespace CarRace.UnityGame.EditorTools
     /// shoulder, then a top that blends from a flat deck (bonnet, boot) to the cabin (glass and
     /// roof) by Cabin, which gives each design its rear window and windscreen. Wheel
     /// arches are stations whose bottom edge rises over the tyre, placed from the wheelbase and
-    /// the weight split so the wheels always sit in them. Faces are flat shaded.
+    /// the weight split so the wheels always sit in them.
+    ///
+    /// The stations are only the design. The surface is drawn smooth through them: every
+    /// station's values eased along the car by monotone cubic interpolation (no overshoot, so
+    /// an arch stays an arch) every 5 cm, each cross-section a Catmull-Rom curve through its
+    /// points across both sides, and normals taken from the resulting grid, so the body
+    /// shades as one continuous surface. The paint is URP's Complex Lit with a clear coat
+    /// (MakePaint), a glossy layer over a slightly metallic base, as car paint is.
     ///
     /// Only the painted panels are on "Body", so the colour picker's property block and the AI
     /// cars' materials recolour the paint and nothing else. Glass, black trim (underbody,
-    /// splitter, rear wing, mirrors) and the lights are on "Body Details". Each wheel pivot,
-    /// which CarController spins and steers, holds a tyre and a rim with five spokes, so the
-    /// wheels are seen to turn. None of it has a collider: the car's box does that.
+    /// splitter, intake, exhausts, rear wing, mirrors) and the lights are on "Body Details".
+    /// Each wheel pivot, which CarController spins and steers, holds a tyre turned on a lathe
+    /// with rounded shoulders and a bulging sidewall, a ten-spoke alloy rim and a brake disc,
+    /// mirrored for the left side. None of it has a collider: the car's box does that.
     ///
     /// Every design's meshes are saved under Assets/Cars and listed in the CarDesigns asset in
     /// Resources, which the game uses to put the chosen design on the player's car.
@@ -37,9 +45,11 @@ namespace CarRace.UnityGame.EditorTools
         const string GlassPath = "Assets/Materials/CarGlass.mat";
         const string TrimPath = "Assets/Materials/CarTrim.mat";
         const string RimPath = "Assets/Materials/CarRim.mat";
+        const string DarkRimPath = "Assets/Materials/CarRimDark.mat";
+        const string DiscPath = "Assets/Materials/CarBrakeDisc.mat";
         const string HeadlightPath = "Assets/Materials/CarHeadlight.mat";
         const string TaillightPath = "Assets/Materials/CarTaillight.mat";
-        public const float PaintSmoothness = 0.62f;
+        public const float PaintSmoothness = 0.55f;
         const float TyreWidthM = 0.26f;
 
         /// <summary>One cross-section, in metres above the road and out from the centreline.</summary>
@@ -188,6 +198,18 @@ namespace CarRace.UnityGame.EditorTools
                 _triangles[submesh].Add(i); _triangles[submesh].Add(i + 1); _triangles[submesh].Add(i + 2);
             }
 
+            /// <summary>A triangle with its own vertex normals, wound to face the way they do.</summary>
+            public void Smooth(int submesh, Vector3 a, Vector3 b, Vector3 c, Vector3 na, Vector3 nb, Vector3 nc)
+            {
+                Vector3 n = Vector3.Cross(b - a, c - a);
+                if (n.sqrMagnitude < 1e-12f) return;
+                if (Vector3.Dot(n, na + nb + nc) < 0f) { (b, c) = (c, b); (nb, nc) = (nc, nb); }
+                int i = _vertices.Count;
+                _vertices.Add(a); _vertices.Add(b); _vertices.Add(c);
+                _normals.Add(na); _normals.Add(nb); _normals.Add(nc);
+                _triangles[submesh].Add(i); _triangles[submesh].Add(i + 1); _triangles[submesh].Add(i + 2);
+            }
+
             public void Quad(int submesh, Vector3 a, Vector3 b, Vector3 c, Vector3 d, Vector3 inside)
             {
                 Triangle(submesh, a, b, c, inside);
@@ -231,38 +253,7 @@ namespace CarRace.UnityGame.EditorTools
 
             var body = new Builder(1);
             var details = new Builder(4);
-            var profiles = stations.ConvertAll(st => Profile(st, cabin.Crown));
-            for (int i = 0; i + 1 < stations.Count; i++)
-            {
-                Station a = stations[i], b = stations[i + 1];
-                Vector2[] pa = profiles[i], pb = profiles[i + 1];
-                var inside = new Vector3(0f, (a.Bottom + b.Bottom + a.ShoulderY + b.ShoulderY) * 0.25f - down, (a.Z + b.Z) * 0.5f);
-                bool inCabin = Mathf.Min(a.Cabin, b.Cabin) >= 0.5f;
-                bool screen = Mathf.Max(a.Cabin, b.Cabin) > 0.3f && Mathf.Min(a.Cabin, b.Cabin) < 0.95f;
-                foreach (float side in new[] { 1f, -1f })
-                {
-                    for (int k = 0; k + 1 < pa.Length; k++)
-                    {
-                        bool glass = (k == 3 && inCabin) || (k >= 4 && screen);
-                        Vector3 q0 = At(pa[k], a.Z, side), q1 = At(pa[k + 1], a.Z, side), q2 = At(pb[k + 1], b.Z, side), q3 = At(pb[k], b.Z, side);
-                        if (glass) details.Quad(Glass, q0, q1, q2, q3, inside);
-                        else body.Quad(0, q0, q1, q2, q3, inside);
-                    }
-                }
-                // The underside, black, and over the wheels the arch's roof.
-                details.Quad(Trim, At(pa[0], a.Z, 1f), At(pa[0], a.Z, -1f), At(pb[0], b.Z, -1f), At(pb[0], b.Z, 1f), inside + Vector3.up * 0.3f);
-            }
-
-            // Tail and nose panels, closing the ends.
-            foreach (int end in new[] { 0, stations.Count - 1 })
-            {
-                Station st = stations[end];
-                Vector2[] p = profiles[end];
-                var inside = new Vector3(0f, (st.Bottom + st.ShoulderY) * 0.5f - down, st.Z - Mathf.Sign(st.Z) * 0.5f);
-                for (int k = 0; k + 1 < p.Length; k++)
-                    body.Quad(0, At(p[k], st.Z, 1f), At(p[k + 1], st.Z, 1f), At(p[k + 1], st.Z, -1f), At(p[k], st.Z, -1f), inside);
-            }
-
+            Surface(stations, cabin, down, body, details);
             // Front splitter, diffuser lip, mirrors, and the design's wing or spoiler.
             float y(float road) => road - down;
             Station nose = stations[stations.Count - 1], tail = stations[0];
@@ -302,13 +293,167 @@ namespace CarRace.UnityGame.EditorTools
                     break;
             }
 
-            // Lights: headlights set into the nose, tail lights across the tail.
+            // Lights: headlights set into the nose with a daytime-running strip above each,
+            // tail lamps and an LED bar across the tail.
             foreach (float side in new[] { -1f, 1f })
             {
                 details.Box(Headlight, new Vector3(0.52f * side, y(nose.ShoulderY - 0.1f), nose.Z - 0.12f), new Vector3(0.34f, 0.07f, 0.3f), Quaternion.Euler(-18f, 0f, 0f));
+                details.Box(Headlight, new Vector3(0.55f * side, y(nose.ShoulderY - 0.04f), nose.Z - 0.2f), new Vector3(0.3f, 0.015f, 0.2f), Quaternion.Euler(-18f, 0f, 0f));
                 details.Box(Taillight, new Vector3(0.58f * side, y(tail.ShoulderY - 0.1f), tail.Z - 0.005f), new Vector3(0.36f, 0.07f, 0.03f), Quaternion.identity);
             }
+            details.Box(Taillight, new Vector3(0f, y(tail.ShoulderY - 0.05f), tail.Z - 0.004f), new Vector3(1.3f, 0.018f, 0.02f), Quaternion.identity);
+
+            // The front intake, dark, low in the nose; twin exhaust tips under the tail.
+            details.Box(Trim, new Vector3(0f, y(nose.Bottom + 0.14f), nose.Z - 0.04f), new Vector3(1.1f, 0.16f, 0.1f), Quaternion.identity);
+            foreach (float side in new[] { -1f, 1f })
+                Tube(details, Trim, new Vector3(0.42f * side, y(tail.Bottom + 0.12f), tail.Z - 0.02f), 0.045f, 0.12f);
             return (body.Build($"Car Body {Designs[design]}"), details.Build($"Car Details {Designs[design]}"));
+        }
+
+        const float StepZ = 0.05f;
+        const int CurveSteps = 4;
+
+        /// <summary>The painted body and its glass, smooth: the design's stations eased along
+        /// the car every StepZ, each cross-section a Catmull-Rom curve through its points from
+        /// the left sill over the top to the right sill, and the normals from the grid. Glass is
+        /// where the old faces were: the side window (profile segment 3) wherever the cabin is
+        /// full height, the roof segments where the cabin blends into the deck (windscreen and
+        /// rear window). Underside strips and end caps close it.</summary>
+        static void Surface(List<Station> stations, Cabin cabin, float down, Builder body, Builder details)
+        {
+            float z0 = stations[0].Z, z1 = stations[stations.Count - 1].Z;
+            int rows = Mathf.CeilToInt((z1 - z0) / StepZ) + 1;
+            float[] zs = stations.ConvertAll(st => st.Z).ToArray();
+            float[] Field(System.Func<Station, float> f) => stations.ConvertAll(st => f(st)).ToArray();
+            float[] bottom = Field(st => st.Bottom), beltX = Field(st => st.BeltX), beltY = Field(st => st.BeltY);
+            float[] shoulderX = Field(st => st.ShoulderX), shoulderY = Field(st => st.ShoulderY);
+
+            var grid = new List<Vector3[]>();
+            var segmentOf = new List<int>();
+            var cabinAt = new float[rows];
+            for (int r = 0; r < rows; r++)
+            {
+                float z = Mathf.Min(z0 + r * StepZ, z1);
+                var st = new Station(z, Pchip(zs, bottom, z), Pchip(zs, beltX, z), Pchip(zs, beltY, z), Pchip(zs, shoulderX, z), Pchip(zs, shoulderY, z));
+                st.Cabin = Mathf.Min(Mathf.InverseLerp(cabin.RearFrom, cabin.RoofFrom, z), Mathf.InverseLerp(cabin.ScreenTo, cabin.RoofTo, z));
+                st.Roof = cabin.Roof;
+                cabinAt[r] = st.Cabin;
+                Vector2[] half = Profile(st, cabin.Crown);
+                var across = new List<Vector2>();
+                for (int k = 0; k < half.Length - 1; k++) across.Add(new Vector2(-half[k].x, half[k].y));
+                for (int k = half.Length - 1; k >= 0; k--) across.Add(half[k]);
+                var row = new List<Vector3>();
+                segmentOf.Clear();
+                for (int k = 0; k + 1 < across.Count; k++)
+                    for (int t = 0; t < CurveSteps; t++)
+                    {
+                        Vector2 p = CatmullRom(across, k, t / (float)CurveSteps);
+                        row.Add(new Vector3(p.x, p.y - down, z));
+                        segmentOf.Add(k < half.Length - 1 ? k : 2 * (half.Length - 1) - 1 - k);
+                    }
+                Vector2 last = across[across.Count - 1];
+                row.Add(new Vector3(last.x, last.y - down, z));
+                grid.Add(row.ToArray());
+            }
+
+            int columns = grid[0].Length;
+            var normals = new Vector3[rows, columns];
+            for (int r = 0; r < rows; r++)
+                for (int c = 0; c < columns; c++)
+                {
+                    Vector3 along = grid[Mathf.Min(r + 1, rows - 1)][c] - grid[Mathf.Max(r - 1, 0)][c];
+                    Vector3 around = grid[r][Mathf.Min(c + 1, columns - 1)] - grid[r][Mathf.Max(c - 1, 0)];
+                    Vector3 n = Vector3.Cross(around, along).normalized;
+                    Vector3 centre = new Vector3(0f, (grid[r][0].y + grid[r][columns / 2].y) * 0.5f, grid[r][c].z);
+                    if (Vector3.Dot(n, grid[r][c] - centre) < 0f) n = -n;
+                    normals[r, c] = n;
+                }
+
+            for (int r = 0; r + 1 < rows; r++)
+            {
+                bool inCabin = Mathf.Min(cabinAt[r], cabinAt[r + 1]) >= 0.5f;
+                bool screen = Mathf.Max(cabinAt[r], cabinAt[r + 1]) > 0.3f && Mathf.Min(cabinAt[r], cabinAt[r + 1]) < 0.95f;
+                for (int c = 0; c + 1 < columns; c++)
+                {
+                    int k = segmentOf[c];
+                    bool glass = (k == 3 && inCabin) || (k >= 4 && screen);
+                    Vector3 a = grid[r][c], b = grid[r][c + 1], cc = grid[r + 1][c + 1], d = grid[r + 1][c];
+                    Vector3 na = normals[r, c], nb = normals[r, c + 1], nc = normals[r + 1, c + 1], nd = normals[r + 1, c];
+                    if (glass)
+                    {
+                        details.Smooth(Glass, a, b, cc, na, nb, nc);
+                        details.Smooth(Glass, a, cc, d, na, nc, nd);
+                    }
+                    else
+                    {
+                        body.Smooth(0, a, b, cc, na, nb, nc);
+                        body.Smooth(0, a, cc, d, na, nc, nd);
+                    }
+                }
+                // The underside, black, and over the wheels the arch's roof.
+                Vector3 inside = new Vector3(0f, grid[r][columns / 2].y, grid[r][0].z);
+                details.Quad(Trim, grid[r][0], grid[r][columns - 1], grid[r + 1][columns - 1], grid[r + 1][0], inside);
+            }
+
+            // Nose and tail, closed with a fan from the middle of the end section.
+            foreach (int r in new[] { 0, rows - 1 })
+            {
+                Vector3[] row = grid[r];
+                Vector3 middle = Vector3.zero;
+                foreach (Vector3 v in row) middle += v;
+                middle /= row.Length;
+                Vector3 outward = new Vector3(0f, 0f, r == 0 ? -1f : 1f);
+                for (int c = 0; c + 1 < row.Length; c++) body.Smooth(0, middle, row[c], row[c + 1], outward, outward, outward);
+                body.Smooth(0, middle, row[row.Length - 1], row[0], outward, outward, outward);
+            }
+        }
+
+        /// <summary>Monotone cubic interpolation (Fritsch-Carlson): smooth, and never beyond
+        /// its neighbours, so a wheel arch or the nose cannot bulge past the design.</summary>
+        static float Pchip(float[] xs, float[] ys, float x)
+        {
+            int n = xs.Length;
+            if (x <= xs[0]) return ys[0];
+            if (x >= xs[n - 1]) return ys[n - 1];
+            int i = 0;
+            while (i < n - 2 && x > xs[i + 1]) i++;
+            float Slope(int j) => (ys[j + 1] - ys[j]) / Mathf.Max(xs[j + 1] - xs[j], 1e-5f);
+            float Tangent(int j)
+            {
+                if (j == 0) return Slope(0);
+                if (j == n - 1) return Slope(n - 2);
+                float a = Slope(j - 1), b = Slope(j);
+                return a * b <= 0f ? 0f : 2f / (1f / a + 1f / b);
+            }
+            float h = xs[i + 1] - xs[i], t = (x - xs[i]) / Mathf.Max(h, 1e-5f);
+            float t2 = t * t, t3 = t2 * t;
+            return (2f * t3 - 3f * t2 + 1f) * ys[i] + (t3 - 2f * t2 + t) * h * Tangent(i)
+                 + (-2f * t3 + 3f * t2) * ys[i + 1] + (t3 - t2) * h * Tangent(i + 1);
+        }
+
+        /// <summary>A point t of the way from points[k] to points[k + 1] on a Catmull-Rom
+        /// curve through them all, the ends held.</summary>
+        static Vector2 CatmullRom(List<Vector2> points, int k, float t)
+        {
+            Vector2 p0 = points[Mathf.Max(k - 1, 0)], p1 = points[k], p2 = points[k + 1], p3 = points[Mathf.Min(k + 2, points.Count - 1)];
+            float t2 = t * t, t3 = t2 * t;
+            return 0.5f * (2f * p1 + (-p0 + p2) * t + (2f * p0 - 5f * p1 + 4f * p2 - p3) * t2 + (-p0 + 3f * p1 - 3f * p2 + p3) * t3);
+        }
+
+        /// <summary>A short tube along the car, open at the back, for an exhaust tip.</summary>
+        static void Tube(Builder builder, int submesh, Vector3 centre, float radius, float length)
+        {
+            const int Sides = 14;
+            for (int i = 0; i < Sides; i++)
+            {
+                float a0 = i * Mathf.PI * 2f / Sides, a1 = (i + 1) * Mathf.PI * 2f / Sides;
+                var n0 = new Vector3(Mathf.Cos(a0), Mathf.Sin(a0), 0f);
+                var n1 = new Vector3(Mathf.Cos(a1), Mathf.Sin(a1), 0f);
+                Vector3 back = centre - Vector3.forward * (length * 0.5f), front = centre + Vector3.forward * (length * 0.5f);
+                builder.Smooth(submesh, back + n0 * radius, front + n0 * radius, front + n1 * radius, n0, n0, n1);
+                builder.Smooth(submesh, back + n0 * radius, front + n1 * radius, back + n1 * radius, n0, n1, n1);
+                builder.Smooth(submesh, back + n0 * radius * 0.8f, back + n1 * radius * 0.8f, back + n1 * radius, -Vector3.forward, -Vector3.forward, -Vector3.forward);
+            }
         }
 
         /// <summary>Every design's meshes, saved, and the catalogue the game reads them from.
@@ -348,7 +493,7 @@ namespace CarRace.UnityGame.EditorTools
             CarDesigns catalog = EnsureDesigns(definition);
             Mesh bodyMesh = catalog.designs[design].body, detailsMesh = catalog.designs[design].details;
 
-            paint.SetFloat("_Smoothness", PaintSmoothness);
+            MakePaint(paint);
             Part(car, "Body", bodyMesh, layer, paint);
             Part(car, "Body Details", detailsMesh, layer,
                  Lit(GlassPath, new Color(0.06f, 0.08f, 0.11f), 0.92f, 0f),
@@ -356,9 +501,12 @@ namespace CarRace.UnityGame.EditorTools
                  Glow(HeadlightPath, new Color(1f, 0.97f, 0.9f) * 2.2f),
                  Glow(TaillightPath, new Color(1.3f, 0.02f, 0.02f)));   // brighter and the bloom turns it orange
 
-            Material tyre = SkidpadSceneBuilder.EnsureMaterial(SkidpadSceneBuilder.TyreMaterialPath, new Color(0.08f, 0.08f, 0.08f), null, Vector2.one);
-            Material rim = Lit(RimPath, new Color(0.72f, 0.73f, 0.76f), 0.7f, 0.85f);
-            Material dark = Lit(TrimPath, new Color(0.035f, 0.035f, 0.04f), 0.35f, 0f);
+            Material tyre = Lit(SkidpadSceneBuilder.TyreMaterialPath, new Color(0.055f, 0.055f, 0.06f), 0.28f, 0f);
+            bool darkRims = design == Supercar || design == HotHatch;
+            Material rim = darkRims ? Lit(DarkRimPath, new Color(0.16f, 0.16f, 0.17f), 0.6f, 0.9f)
+                                    : Lit(RimPath, new Color(0.8f, 0.81f, 0.83f), 0.78f, 1f);
+            Material disc = Lit(DiscPath, new Color(0.42f, 0.42f, 0.43f), 0.5f, 0.9f);
+            var wheels = EnsureWheels(definition.tyreFront.radius);
 
             float halfTrack = definition.trackWidth * 0.5f;
             float front = definition.wheelbase * (1f - definition.frontWeightBias);
@@ -381,22 +529,13 @@ namespace CarRace.UnityGame.EditorTools
                 pivot.transform.localPosition = positions[i];
                 float outward = Mathf.Sign(positions[i].x);
 
-                Cylinder(pivot.transform, "Tyre", Vector3.zero, new Vector3(radius * 2f, TyreWidthM * 0.5f, radius * 2f), layer, tyre);
-                float face = outward * (TyreWidthM * 0.5f + 0.004f);
-                Cylinder(pivot.transform, "Rim", new Vector3(face, 0f, 0f), new Vector3(radius * 1.3f, 0.006f, radius * 1.3f), layer, dark);
-                for (int spoke = 0; spoke < 5; spoke++)
-                {
-                    var bar = GameObject.CreatePrimitive(PrimitiveType.Cube);
-                    Object.DestroyImmediate(bar.GetComponent<Collider>());
-                    bar.name = "Spoke";
-                    bar.layer = layer;
-                    bar.transform.SetParent(pivot.transform, false);
-                    Quaternion turn = Quaternion.Euler(spoke * 72f, 0f, 0f);
-                    bar.transform.localRotation = turn;
-                    bar.transform.localPosition = new Vector3(face + outward * 0.008f, 0f, 0f) + turn * new Vector3(0f, radius * 0.33f, 0f);
-                    bar.transform.localScale = new Vector3(0.012f, radius * 0.62f, 0.05f);
-                    bar.GetComponent<MeshRenderer>().sharedMaterial = rim;
-                }
+                // Built for the right side; the left wheels are the same mirrored.
+                var wheel = new GameObject("Wheel") { layer = layer };
+                wheel.transform.SetParent(pivot.transform, false);
+                wheel.transform.localScale = new Vector3(outward, 1f, 1f);
+                Part(wheel.transform, "Tyre", wheels.tyre, layer, tyre);
+                Part(wheel.transform, "Rim", wheels.rim, layer, rim);
+                Part(wheel.transform, "Brake Disc", wheels.disc, layer, disc);
                 pivots[i] = pivot.transform;
             }
             return pivots;
@@ -410,17 +549,120 @@ namespace CarRace.UnityGame.EditorTools
             part.AddComponent<MeshRenderer>().sharedMaterials = materials;
         }
 
-        static void Cylinder(Transform parent, string name, Vector3 position, Vector3 scale, int layer, Material material)
+        static (Mesh tyre, Mesh rim, Mesh disc) _wheels;
+
+        /// <summary>The wheel's parts, for the right side (outward +X), turned about the axle
+        /// from profiles in (x across the tyre, r out from the axle): a tyre with a flat tread,
+        /// rounded shoulders and a sidewall that bulges and tucks into the rim; a rim of barrel,
+        /// lip and ten spokes in five pairs dished back to the hub, with a centre cap; and a
+        /// brake disc inboard of the spokes.</summary>
+        static (Mesh tyre, Mesh rim, Mesh disc) EnsureWheels(float radius)
         {
-            var cylinder = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-            Object.DestroyImmediate(cylinder.GetComponent<Collider>());
-            cylinder.name = name;
-            cylinder.layer = layer;
-            cylinder.transform.SetParent(parent, false);
-            cylinder.transform.localPosition = position;
-            cylinder.transform.localRotation = Quaternion.Euler(0f, 0f, 90f);
-            cylinder.transform.localScale = scale;
-            cylinder.GetComponent<MeshRenderer>().sharedMaterial = material;
+            if (_wheels.tyre != null) return _wheels;
+            float w = TyreWidthM * 0.5f, rimR = radius * 0.7f;
+            var tyre = new Builder(1);
+            Lathe(tyre, 0, new[]
+            {
+                new Vector2(-w * 0.92f, rimR), new Vector2(-w * 1.04f, rimR + (radius - rimR) * 0.45f),
+                new Vector2(-w * 0.98f, radius - 0.03f), new Vector2(-w * 0.85f, radius - 0.008f), new Vector2(-w * 0.7f, radius),
+                new Vector2(w * 0.7f, radius), new Vector2(w * 0.85f, radius - 0.008f), new Vector2(w * 0.98f, radius - 0.03f),
+                new Vector2(w * 1.04f, rimR + (radius - rimR) * 0.45f), new Vector2(w * 0.92f, rimR),
+            }, 48, new Vector2(0f, (radius + rimR) * 0.5f));
+            var rim = new Builder(1);
+            Lathe(rim, 0, new[] { new Vector2(w * 0.95f, rimR + 0.012f), new Vector2(w * 0.95f, rimR - 0.004f), new Vector2(-w * 0.9f, rimR - 0.004f) }, 48, new Vector2(0f, rimR + 1f));
+            Lathe(rim, 0, new[] { new Vector2(w * 0.5f, 0f), new Vector2(w * 0.5f, 0.055f), new Vector2(w * 0.3f, 0.075f) }, 20, Vector2.zero);
+            float face = w * 0.9f, hub = w * 0.3f;
+            for (int k = 0; k < 10; k++)
+            {
+                float angle = (k / 2) * 72f + (k % 2 == 0 ? -6f : 6f);
+                Quaternion turn = Quaternion.Euler(angle, 0f, 0f);
+                Vector3 inner = new Vector3(hub, 0.07f, 0f), outer = new Vector3(face, rimR - 0.01f, 0f);
+                Vector3 mid = (inner + outer) * 0.5f;
+                Vector3 along = outer - inner;
+                rim.Box(0, turn * mid, new Vector3(0.022f, along.magnitude, 0.03f),
+                        turn * Quaternion.FromToRotation(Vector3.up, along.normalized));
+            }
+            var disc = new Builder(1);
+            Lathe(disc, 0, new[] { new Vector2(-0.015f, radius * 0.3f), new Vector2(-0.015f, radius * 0.56f), new Vector2(0.015f, radius * 0.56f), new Vector2(0.015f, radius * 0.3f) }, 32, new Vector2(0f, radius * 0.43f));
+            Mesh Save(Builder b, string name) => SaveMesh(b.Build(name), $"{Folder}/{name}.asset");
+            _wheels = (Save(tyre, "Wheel Tyre"), Save(rim, "Wheel Rim"), Save(disc, "Wheel Disc"));
+            return _wheels;
+        }
+
+        /// <summary>A profile (x along the axle, r from it) turned round the X axis, its
+        /// normals pointing away from `centre` in the profile's plane: the middle of the tyre's
+        /// section for the tyre, a point beyond the barrel for the rim's inside.</summary>
+        static void Lathe(Builder builder, int submesh, Vector2[] profile, int sides, Vector2 centre)
+        {
+            for (int s = 0; s < sides; s++)
+            {
+                float a0 = s * Mathf.PI * 2f / sides, a1 = (s + 1) * Mathf.PI * 2f / sides;
+                Vector3 P(Vector2 p, float a) => new Vector3(p.x, Mathf.Cos(a) * p.y, Mathf.Sin(a) * p.y);
+                for (int i = 0; i + 1 < profile.Length; i++)
+                {
+                    Vector2 p0 = profile[i], p1 = profile[i + 1];
+                    Vector2 edge = p1 - p0;
+                    var n2 = new Vector2(edge.y, -edge.x).normalized;      // perpendicular in the profile
+                    if (Vector2.Dot(n2, (p0 + p1) * 0.5f - centre) < 0f) n2 = -n2;
+                    Vector3 N(float a) => new Vector3(n2.x, Mathf.Cos(a) * n2.y, Mathf.Sin(a) * n2.y);
+                    builder.Smooth(submesh, P(p0, a0), P(p1, a0), P(p1, a1), N(a0), N(a0), N(a1));
+                    builder.Smooth(submesh, P(p0, a0), P(p1, a1), P(p0, a1), N(a0), N(a1), N(a1));
+                }
+            }
+        }
+
+        /// <summary>The four designs on a stretch of road under the circuits' sky, from the
+        /// front three quarters and the rear, written to Builds/cars.png. -executeMethod
+        /// CarRace.UnityGame.EditorTools.CarModel.Preview</summary>
+        public static void Preview()
+        {
+            UnityEditor.SceneManagement.EditorSceneManager.NewScene(UnityEditor.SceneManagement.NewSceneSetup.EmptyScene);
+            CarDefinition definition = SkidpadSceneBuilder.EnsureDefinition();
+            _designs = null;
+            _wheels = default;
+            RenderSettings.skybox = GraphicsSetup.EnsureSkyMaterial();
+            RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Skybox;
+            var sun = new GameObject("Sun").AddComponent<Light>();
+            sun.type = LightType.Directional;
+            sun.intensity = 1.44f;
+            sun.shadows = LightShadows.Soft;
+            sun.transform.rotation = Quaternion.LookRotation(-new Vector3(0.5543f, 0.7416f, -0.3778f));
+            var road = GameObject.CreatePrimitive(PrimitiveType.Plane);
+            road.transform.localScale = new Vector3(10f, 1f, 10f);
+            road.GetComponent<MeshRenderer>().sharedMaterial = AssetDatabase.LoadAssetAtPath<Material>("Assets/Materials/Road.mat");
+            DynamicGI.UpdateEnvironment();
+
+            Color[] paints = { new Color(0.75f, 0.05f, 0.05f), new Color(0.05f, 0.18f, 0.55f), new Color(0.95f, 0.72f, 0.05f), new Color(0.9f, 0.9f, 0.9f) };
+            for (int d = 0; d < Designs.Length; d++)
+            {
+                var car = new GameObject(Designs[d]);
+                var paint = new Material(Shader.Find("Universal Render Pipeline/Lit")) { color = paints[d] };
+                paint.SetColor("_BaseColor", paints[d]);
+                Build(car.transform, definition, 0, paint, d);
+                car.transform.position = new Vector3(-6.6f + d * 4.4f, definition.cgHeight, 0f);
+                car.transform.rotation = Quaternion.Euler(0f, d % 2 == 0 ? 150f : 30f, 0f);
+            }
+            var probe = new GameObject("Reflections").AddComponent<ReflectionProbe>();
+            probe.transform.position = new Vector3(0f, 1.5f, 0f);
+            probe.size = new Vector3(60f, 20f, 60f);
+            probe.mode = UnityEngine.Rendering.ReflectionProbeMode.Realtime;
+            probe.refreshMode = UnityEngine.Rendering.ReflectionProbeRefreshMode.ViaScripting;
+            probe.RenderProbe();
+
+            var camera = new GameObject("Camera").AddComponent<Camera>();
+            camera.transform.position = new Vector3(0f, 1.8f, -7f);
+            camera.transform.LookAt(new Vector3(0f, 0.5f, 0f));
+            camera.fieldOfView = 60f;
+            camera.clearFlags = CameraClearFlags.Skybox;
+            var target = new RenderTexture(2400, 1000, 24) { antiAliasing = 8 };
+            camera.targetTexture = target;
+            camera.Render();
+            RenderTexture.active = target;
+            var image = new Texture2D(target.width, target.height, TextureFormat.RGB24, false);
+            image.ReadPixels(new Rect(0, 0, target.width, target.height), 0, 0);
+            RenderTexture.active = null;
+            File.WriteAllBytes("Builds/cars.png", image.EncodeToPNG());
+            Debug.Log("Car preview written to Builds/cars.png.");
         }
 
         /// <summary>Replaces the saved mesh's contents, so every car and scene shares one asset.</summary>
@@ -436,6 +678,22 @@ namespace CarRace.UnityGame.EditorTools
             EditorUtility.CopySerialized(mesh, saved);
             EditorUtility.SetDirty(saved);
             return saved;
+        }
+
+        /// <summary>Turns a body material into car paint: Complex Lit's clear coat, a glossy
+        /// layer with its own reflections over a base with a little metallic flake. The colour
+        /// stays in _BaseColor, where the lobby and the AI liveries set it.</summary>
+        public static void MakePaint(Material paint)
+        {
+            Shader complex = Shader.Find("Universal Render Pipeline/Complex Lit");
+            if (complex != null && paint.shader != complex) paint.shader = complex;
+            paint.SetFloat("_Smoothness", PaintSmoothness);
+            paint.SetFloat("_Metallic", 0.3f);
+            paint.SetFloat("_ClearCoat", 1f);
+            paint.SetFloat("_ClearCoatMask", 1f);
+            paint.SetFloat("_ClearCoatSmoothness", 0.94f);
+            paint.EnableKeyword("_CLEARCOAT");
+            EditorUtility.SetDirty(paint);
         }
 
         static Material Lit(string path, Color colour, float smoothness, float metallic)
