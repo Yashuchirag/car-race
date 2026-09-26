@@ -164,6 +164,9 @@ namespace CarRace.UnityGame.EditorTools
             Wall("Barrier Left", root, leftOuter, right, +1f, barrierMaterial, barrierSurface, barrierLayer);
             Wall("Barrier Right", root, rightOuter, right, -1f, barrierMaterial, barrierSurface, barrierLayer);
             Bridges(root, centre, right, track.centerline.width_left, track.centerline.width_right, barrierMaterial);
+            var slots = new List<(int, float)>();
+            for (int slot = 0; slot <= AiCars; slot++) slots.Add(GridPlace(slot, n, track.sample_spacing_m));
+            StartFinishBuilder.Build(root, centre, leftEdge, rightEdge, slots, barrierLayer, barrierSurface);
 
             // Ground out to the horizon, held under the road and verges.
             Terrain terrain = GroundBuilder.Build(root, centre, track.centerline.width_left, track.centerline.width_right,
@@ -446,12 +449,17 @@ namespace CarRace.UnityGame.EditorTools
             lamp.shadows = LightShadows.None;
         }
 
+        /// <summary>Grid slot <paramref name="slot"/>'s centreline sample and its distance right of it.</summary>
+        static (int index, float lateral) GridPlace(int slot, int n, float spacing)
+        {
+            float back = (slot / 2) * RowGapM + RowGapM;
+            return (((-Mathf.RoundToInt(back / spacing)) % n + n) % n, slot % 2 == 0 ? -GridLateralM : GridLateralM);
+        }
+
         static (Vector3, Quaternion) GridSlot(int slot, Vector3[] centre, Vector3[] right, float spacing, float cgHeight)
         {
             int n = centre.Length;
-            float back = (slot / 2) * RowGapM + RowGapM;
-            float lateral = slot % 2 == 0 ? -GridLateralM : GridLateralM;
-            int index = ((-Mathf.RoundToInt(back / spacing)) % n + n) % n;
+            var (index, lateral) = GridPlace(slot, n, spacing);
             Vector3 position = centre[index] + right[index] * lateral + Vector3.up * (cgHeight + 0.05f);
             Vector3 heading = centre[(index + 1) % n] - centre[(index - 1 + n) % n];
             heading.y = 0f;
@@ -565,8 +573,7 @@ namespace CarRace.UnityGame.EditorTools
 
         /// <summary>
         /// What makes the strip of tarmac read as a circuit: a solid white line just inside
-        /// each edge for the whole lap, a white start line across the road at sample 0, and
-        /// red and white kerbs outside both edges wherever the road bends tighter than
+        /// each edge for the whole lap, and red and white kerbs outside both edges wherever the road bends tighter than
         /// KerbBelowRadiusM, running on KerbRunOnSamples either side. The kerbs carry an
         /// asphalt collider, so a car riding one keeps its grip instead of dropping onto the
         /// grass beneath. The lines are paint: no collider.
@@ -592,20 +599,6 @@ namespace CarRace.UnityGame.EditorTools
                 outer[i] = rightEdge[i] - right[i] * EdgeLineInsetM + lift;
             }
             Strip("Edge Line Right", root, inner, outer, white, null);
-
-            // The start line: half a metre deep, edge to edge, at sample 0.
-            Vector3 along = new Vector3(-right[0].z, 0f, right[0].x) * 0.25f;
-            var start = new Mesh { name = "Start Line" };
-            start.SetVertices(new List<Vector3>
-            {
-                leftEdge[0] - along + lift, rightEdge[0] - along + lift, leftEdge[0] + along + lift, rightEdge[0] + along + lift,
-            });
-            start.SetTriangles(FacingUp(start.vertices, new List<int> { 0, 2, 1, 1, 2, 3 }), 0);
-            start.RecalculateNormals();
-            var startLine = new GameObject("Start Line");
-            startLine.transform.SetParent(root.transform, false);
-            startLine.AddComponent<MeshFilter>().sharedMesh = start;
-            startLine.AddComponent<MeshRenderer>().sharedMaterial = white;
 
             // Kerbs where the centreline's radius, over three samples either side, is tight.
             var kerbed = new bool[n];

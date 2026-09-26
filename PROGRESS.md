@@ -10,11 +10,10 @@ concrete action is. Everything below it is detail.
 
 ## 1. Resume here
 
-**Last updated:** 2026-09-24 (circuit choice in the lobby)
+**Last updated:** 2026-09-26 (start line, grid and timing points)
 
-**Last completed:** Your four fixes of 2026-09-25, all DONE and checked in the built
-game: passing lanes, far fewer AI crashes, AI recovery from grass (and the bends that sent
-every AI onto it), and the standing start with W and A or D.
+**Last completed:** Start line, grid boxes, START FINISH gantry and sector boards on
+every circuit (section 3), built into all six scenes and the Windows build.
 
 **Next action:** Your drive. Then, from section 3: flags, penalties and pit stops, or LAN
 play, or sound.
@@ -222,6 +221,7 @@ physics has never driven a corner the track pipeline produced.
 | Passing lanes | DONE | 2026-09-25, your request (overtake better, crash less). `TrackData` has two lanes fixed on the road, 2.4 m either side of the centreline (less where the road is narrow), each with its own curvature and, per driver, its own speed plan; `PathDriver.Lane` drives one, the aim moving sideways at no more than 1.5 m/s. `RaceDriver`: passing takes the lane on the passing side; side by side with anyone (12 m along, 5.5 m across) a car takes the lane on its own side, the opposite one if the other has chosen already, and keeps its lane while every car alongside allows it; it leaves a lane only when nobody has been alongside for 1 s and the racing line is within 1.5 m of the lane. Side by side into a corner tighter than 60 m radius the car behind gives up the corner; a car that cannot take its lane at its speed gives way instead; a car ahead is in the way if the two paths come within 2.2 m before this car would catch it; a released speed cap rises away rather than vanishing; the start offset holds while a car moves into a lane. Headless, 8 cars, 3 laps, six circuits, both grids, 8 seeds: 142 contacts at the old code's rate, 8 now; 40 spins at the first lane version, 8 now; 128 places gained by passing at the old rate, 162 now. In the built game, AI only, six circuits x 3 min and three x 7 min: old AI 3 contacts, 132 car-seconds off the road; now 0 contacts, 0 recoveries, 0 s off the road. |
 | Standing start with lock on | DONE | 2026-09-25, your report: at a standstill W with A or D sometimes stood still or rolled back. Two causes, both the throttle assist cutting power by sideslip, which is meaningless at walking pace: pulling away with lock the car moves sideways against its nose, so the cut left it at 3 to 5 km/h for six seconds; and in reverse gear W is the brake, so cutting it left the car rolling backwards with W held. `DriverInput` now fades the cut and the slip counter-steer in between 4 and 10 m/s of forward speed, never while reversing. Reproduced and checked in the built game with `-driveScript` (timed throttle, steer, brake in place of the keyboard, logging speed and gear): before, stuck at 3 to 5 km/h and rolling back with W held; after, 0 to 35 km/h in 3 s, and W in reverse stops the car and selects first within half a second. |
 | AI recovery from grass | DONE | 2026-09-25, your request. The AI now knows the grip under its wheels (`PathDriver.SurfaceGrip`, from `RaceDirector` each step): with three wheels or more on grass it asks for the plan's speed times the square root of the grip and steers back at no more than 20 degrees; crawling off the road or facing more than 100 degrees wrong it is put back on its line after 3 s rather than 5. The real cause of the grass trips was upstream, one bend per circuit where every AI left the road (Desert Park 3.9 km, Ise Bay 4.7 km, the Ardennes 3.4 km): the speed plan ignored crests (`TrackData.VerticalCurvature`; the plan now takes the load a crest leaves on the tyres), the AI ran a steady metre wide in fast bends (a small slow cross-track correction, and a 4% lift per metre run wide), braked harder mid-bend than the tyres had left (road braking now squeezed, 6 per second, and kept inside the friction ellipse), and floored it while sliding (traction control, power eased from 4 to 12 degrees of sideslip). In the built game those three circuits now run seven minutes with every car on the road. |
+| Start line, grid and timing points | DONE | 2026-09-26, your request: show where the race starts and where it is timed. `StartFinishBuilder` (Editor), called from `TrackSceneBuilder.Build`, replaces the thin white start line: a chequered line two squares deep across the road at sample 0, the point where `LapTimer` counts each lap; a steel gantry over it reading START FINISH both ways above a chequered band; a painted box for each grid slot (`TrackSceneBuilder.GridPlace`, shared with `GridSlot`); and a yellow line with a yellow `S1 \| S2` or `S2 \| S3` board either side at the two sector gates, a third and two thirds of the lap. Paint has no collider; the gantry legs and sector posts stand 3 and 4 m off the road, solid, on the barrier layer. Letters are built as 5x7 pixel squares: TextMesh's font would need its own shader. Signs are unlit: a street lamp over the Airfield gantry burned lit white out to a glare. Checked in screenshots on the Airfield at night (grid, gantry, S1 board) and Royal Park by day. AI only, six circuits x 3 min: 0 contacts, 0 recoveries, 0 s off the road, as before. |
 | Race telemetry | DONE | `--race ... --csv <path>`. One row per car every 20 ms: the `--lap` columns plus blocked by, following, overtaking, wanted and driven offset, and the cap. |
 | Catching a slide | WIP | Partial. `PathDriver` counter-steers and lifts above 12 degrees of sideslip, which stopped spun cars crawling for the rest of the race, but 11 crawl reports in a ten-lap race still show more than 25 degrees. |
 | Flags, penalties, pit stops | TODO | Not started. |
@@ -514,6 +514,13 @@ learned, so context is not lost between sessions.
   work existed with no history and no backup.
 - Added this file, and a rule in `CLAUDE.md` section 5 to keep it current during
   work rather than at the end.
+
+### 2026-09-26, eleventh session
+
+- Start line, grid boxes, a START FINISH gantry and sector boards, so the lap's start and
+  its timing points are visible. Two things learned: Unity's legacy 3D text does not suit
+  URP here, so the letters are geometry; and anything lit and white under a street lamp
+  at night blooms into a glare that hides the gantry, so signs are unlit.
 
 ### 2026-09-24, tenth session
 
