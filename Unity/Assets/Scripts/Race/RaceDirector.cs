@@ -68,6 +68,8 @@ namespace CarRace.UnityGame
         float _sinceReaction;
         bool _started;
         float _countdown = CountdownSeconds;
+        int _beeped = int.MaxValue;
+        readonly GameAudio.HoverTracker _hover = new GameAudio.HoverTracker();
         float _raceTime;
         RaceControl _control;
         CarController[] _cars;     // RaceControl's order: the AI in grid order, then the player
@@ -80,6 +82,9 @@ namespace CarRace.UnityGame
                 enabled = false;
                 return;
             }
+
+            CarAudio.Attach(player, player: true);
+            foreach (CarController car in aiCars) CarAudio.Attach(car, player: false);
 
             _track = track.ToTrackData();
             _drivers = new RaceDriver[aiCars.Length];
@@ -223,9 +228,13 @@ namespace CarRace.UnityGame
             TrackPlayer();
             if (!_started)
             {
+                // A beep as each number shows, a higher one for GO.
+                int showing = Mathf.CeilToInt(_countdown);
+                if (showing < _beeped && showing >= 1) { GameAudio.Countdown(go: false); _beeped = showing; }
                 _countdown -= dt;
                 if (_countdown > 0f) return;
                 _started = true;
+                GameAudio.Countdown(go: true);
                 player.Autopilot = _playerDriver != null ? (body, t) => Logged(aiCars.Length, _playerDriver.Drive(body, t)) : null;
             }
 
@@ -350,7 +359,10 @@ namespace CarRace.UnityGame
         {
             // Not while paused: the settings menu outlives the scene, and so would its pause.
             if (_control != null && PlayerEntry.Finished && Time.timeScale > 0f && Input.GetKeyDown(KeyCode.Return))
+            {
+                GameAudio.Confirm();
                 SettingsMenu.RestartRace();
+            }
         }
 
         RaceControl.Entry PlayerEntry => _control.Entries[aiCars.Length];
@@ -435,10 +447,21 @@ namespace CarRace.UnityGame
             _buttonStyle ??= new GUIStyle(GUI.skin.button);
             _buttonStyle.fontSize = Hud.Font(18);
             float half = (width - Hud.Px(52f)) * 0.5f, top = panel.yMax - buttons + Hud.Px(4f);
-            if (GUI.Button(new Rect(panel.x + Hud.Px(20f), top, half, Hud.Px(46f)), "Race again (Enter)", _buttonStyle))
+            _hover.Begin();
+            var again = new Rect(panel.x + Hud.Px(20f), top, half, Hud.Px(46f));
+            var menu = new Rect(panel.x + Hud.Px(32f) + half, top, half, Hud.Px(46f));
+            _hover.Watch(again);
+            if (SettingsMenu.InRace) _hover.Watch(menu);
+            if (GUI.Button(again, "Race again (Enter)", _buttonStyle))
+            {
+                GameAudio.Confirm();
                 SettingsMenu.RestartRace();
-            if (SettingsMenu.InRace && GUI.Button(new Rect(panel.x + Hud.Px(32f) + half, top, half, Hud.Px(46f)), "Main menu", _buttonStyle))
+            }
+            if (SettingsMenu.InRace && GUI.Button(menu, "Main menu", _buttonStyle))
+            {
+                GameAudio.Back();
                 SettingsMenu.MainMenu();
+            }
         }
 
         static string Format(float seconds)

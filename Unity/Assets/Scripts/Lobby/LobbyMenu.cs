@@ -88,7 +88,9 @@ namespace CarRace.UnityGame
             string[] args = Environment.GetCommandLineArgs();
             int i = Array.IndexOf(args, "-track");
             string scene = i >= 0 && i + 1 < args.Length ? args[i + 1] : ChosenScene;
-            if (!string.IsNullOrEmpty(scene)) SceneManager.LoadScene(scene);
+            if (string.IsNullOrEmpty(scene)) return;
+            GameAudio.Confirm();
+            SceneManager.LoadScene(scene);
         }
 
         System.Collections.IEnumerator ScreenshotAndQuit(string path)
@@ -99,9 +101,12 @@ namespace CarRace.UnityGame
             Application.Quit();
         }
 
+        readonly GameAudio.HoverTracker _hover = new GameAudio.HoverTracker();
+
         void OnGUI()
         {
             Styles();
+            _hover.Begin();
 
             // Title, top left.
             float margin = Hud.Px(40f);
@@ -144,8 +149,10 @@ namespace CarRace.UnityGame
                     Hud.Rounded(button, chosen ? Accent : hover ? new Color(1f, 1f, 1f, 0.16f) : Row);
                     _cardName.normal.textColor = chosen ? Color.white : new Color(1f, 1f, 1f, 0.8f);
                     GUI.Label(button, CarDesigns.NameOf(i).ToUpperInvariant(), _cardName);
+                    _hover.Watch(button);
                     if (GUI.Button(button, GUIContent.none, GUIStyle.none))
                     {
+                        GameAudio.Select();
                         PlayerSetup.DesignIndex = i;
                         CarDesigns.Apply(displayCar, i);
                     }
@@ -171,8 +178,10 @@ namespace CarRace.UnityGame
                                 new Color(1f, 1f, 1f, 0.18f));
                 }
                 Hud.Rounded(swatch, PlayerSetup.Colours[i].colour);
+                _hover.Watch(swatch);
                 if (GUI.Button(swatch, GUIContent.none, GUIStyle.none))
                 {
+                    GameAudio.Select();
                     PlayerSetup.ColourIndex = i;
                     PlayerSetup.Paint(displayCar != null ? displayCar.Find("Body") : null, PlayerSetup.Colour);
                 }
@@ -186,6 +195,7 @@ namespace CarRace.UnityGame
             bool over = play.Contains(Event.current.mousePosition);
             Hud.Rounded(play, over ? AccentLight : Accent);
             GUI.Label(play, "PLAY  ▶", _play);
+            _hover.Watch(play);
             if (GUI.Button(play, GUIContent.none, GUIStyle.none)) Play();
 
             _small.alignment = TextAnchor.MiddleRight;
@@ -241,7 +251,12 @@ namespace CarRace.UnityGame
                           $"{entry.lengthKm:0.0} km  ·  {entry.theme}", _small);
                 _small.alignment = TextAnchor.UpperLeft;
 
-                if (GUI.Button(card, GUIContent.none, GUIStyle.none)) ChosenScene = entry.scene;
+                _hover.Watch(card);
+                if (GUI.Button(card, GUIContent.none, GUIStyle.none))
+                {
+                    GameAudio.Select();
+                    ChosenScene = entry.scene;
+                }
             }
         }
 

@@ -55,6 +55,7 @@ namespace UnityEngine
         public const float Rad2Deg = 57.29578f;
         public const float Deg2Rad = 0.0174532924f;
         public static float Clamp01(float v) => throw new NotImplementedException();
+        public static float PerlinNoise(float x, float y) => throw new NotImplementedException();
         public static float Clamp(float v, float lo, float hi) => throw new NotImplementedException();
         public static float Max(float a, float b) => throw new NotImplementedException();
         public static int Max(int a, int b) => throw new NotImplementedException();
@@ -69,6 +70,7 @@ namespace UnityEngine
         public static float fixedDeltaTime => throw new NotImplementedException();
         public static float deltaTime => throw new NotImplementedException();
         public static float timeSinceLevelLoad => throw new NotImplementedException();
+        public static float time => throw new NotImplementedException();
     }
 
     public static class Debug

@@ -44,6 +44,7 @@ namespace CarRace.UnityGame
         {
             _open = false;
             Time.timeScale = 1f;
+            GameAudio.SetPaused(false);
         }
 
         void Update()
@@ -53,16 +54,22 @@ namespace CarRace.UnityGame
             if (!Input.GetKeyDown(KeyCode.Escape)) return;
             _open = !_open;
             Time.timeScale = _open ? 0f : 1f;
+            GameAudio.SetPaused(_open);
+            if (_open) GameAudio.Select(); else GameAudio.Back();
         }
 
         void OnDestroy()
         {
             if (_open) Time.timeScale = 1f;
+            GameAudio.SetPaused(false);
         }
+
+        readonly GameAudio.HoverTracker _hover = new GameAudio.HoverTracker();
 
         void OnGUI()
         {
             if (!_open) return;
+            _hover.Begin();
             _title ??= new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, normal = { textColor = Color.white } };
             _text ??= new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter, normal = { textColor = Color.white } };
             _button ??= new GUIStyle(GUI.skin.button);
@@ -85,7 +92,11 @@ namespace CarRace.UnityGame
             float gridWidth = width - Hud.Px(40f);
             int quality = GUI.SelectionGrid(new Rect(panel.x + Hud.Px(20f), y, gridWidth, Hud.Px(40f)),
                                             DisplaySettings.Quality, DisplaySettings.QualityNames, 3, _button);
-            if (quality != DisplaySettings.Quality) DisplaySettings.ApplyQuality(quality, save: true);
+            if (quality != DisplaySettings.Quality)
+            {
+                GameAudio.Select();
+                DisplaySettings.ApplyQuality(quality, save: true);
+            }
             y += Hud.Px(56f);
 
             GUI.Label(new Rect(panel.x, y, width, Hud.Px(28f)), "Frame rate", _text);
@@ -93,7 +104,11 @@ namespace CarRace.UnityGame
 
             int chosen = GUI.SelectionGrid(new Rect(panel.x + Hud.Px(20f), y, gridWidth, Hud.Px(84f)),
                                            DisplaySettings.Current, DisplaySettings.Names, 3, _button);
-            if (chosen != DisplaySettings.Current) DisplaySettings.Apply(chosen, save: true);
+            if (chosen != DisplaySettings.Current)
+            {
+                GameAudio.Select();
+                DisplaySettings.Apply(chosen, save: true);
+            }
             y += Hud.Px(96f);
 
             GUI.Label(new Rect(panel.x, y, width, Hud.Px(28f)),
@@ -101,10 +116,20 @@ namespace CarRace.UnityGame
 
             if (!lobby) return;
             float half = (width - Hud.Px(52f)) * 0.5f;
-            if (GUI.Button(new Rect(panel.x + Hud.Px(20f), y + Hud.Px(44f), half, Hud.Px(48f)), "Restart race", _button))
+            var restart = new Rect(panel.x + Hud.Px(20f), y + Hud.Px(44f), half, Hud.Px(48f));
+            var menu = new Rect(panel.x + Hud.Px(32f) + half, y + Hud.Px(44f), half, Hud.Px(48f));
+            _hover.Watch(restart);
+            _hover.Watch(menu);
+            if (GUI.Button(restart, "Restart race", _button))
+            {
+                GameAudio.Confirm();
                 RestartRace();
-            if (GUI.Button(new Rect(panel.x + Hud.Px(32f) + half, y + Hud.Px(44f), half, Hud.Px(48f)), "Main menu", _button))
+            }
+            if (GUI.Button(menu, "Main menu", _button))
+            {
+                GameAudio.Back();
                 MainMenu();
+            }
         }
     }
 }

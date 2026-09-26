@@ -68,6 +68,10 @@ namespace CarRace.UnityGame
 
         public float SpeedKph => _body != null ? _body.linearVelocity.magnitude * 3.6f : 0f;
 
+        /// <summary>What the model was last driven with, after the reverse logic: the sound
+        /// reads its throttle.</summary>
+        public VehicleInputs LastInputs { get; private set; }
+
         Rigidbody _body;
         UnityGround _ground;
         CarConfig _config;
@@ -158,6 +162,7 @@ namespace CarRace.UnityGame
                 inputs = BrakeToReverse(inputs, dt);
             if (DriverInput.Scripted && driver != null) LogScripted(inputs, dt);
 
+            LastInputs = inputs;
             int substeps = Mathf.Max(1, Mathf.RoundToInt(modelHz * dt));
             float subDt = dt / substeps;
 

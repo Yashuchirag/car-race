@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Renders the game's synthesised car sounds (Unity/Assets/Scripts/Audio/Synth) to WAV files
+    from a scripted drive, so the sound can be measured and listened to without building the
+    game. Never referenced by the game.
+
+      dotnet run -c Release -project Sim/CarRace.AudioRender - OUT_DIR
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <AssemblyName>CarRace.AudioRender</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="../../Unity/Assets/Scripts/Audio/Synth/*.cs" />
+  </ItemGroup>
+
+</Project>
