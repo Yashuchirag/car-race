@@ -67,6 +67,7 @@ namespace CarRace.UnityGame
         {
             string[] args = Environment.GetCommandLineArgs();
             if (Array.IndexOf(args, "-benchmark") >= 0) { Play(); return; }
+            CarDesigns.Apply(displayCar, PlayerSetup.DesignIndex);
             PlayerSetup.Paint(displayCar != null ? displayCar.Find("Body") : null, PlayerSetup.Colour);
 
             // -lobbyScreenshot <file>: a picture of the lobby after a few seconds, then quit.
@@ -124,12 +125,33 @@ namespace CarRace.UnityGame
 
             CircuitPanel(new Rect(margin, Hud.Px(440f), Hud.Px(400f), Hud.Px(560f)));
 
-            // Car, right: colour swatches, the colour's name and PLAY.
-            float width = Hud.Px(460f), height = Hud.Px(380f);
+            // Car, right: the body designs, colour swatches, the colour's name and PLAY.
+            int designs = CarDesigns.Count;
+            float designRow = designs > 0 ? Hud.Px(62f) : 0f;
+            float width = Hud.Px(460f), height = Hud.Px(380f) + designRow;
             var car = new Rect(Screen.width - margin - width, Screen.height - margin - height, width, height);
             PanelWithHeader(car, "YOUR CAR");
             float size = Hud.Px(80f), gap = Hud.Px(20f);
             float left = car.x + (width - (4f * size + 3f * gap)) * 0.5f, top = car.y + Hud.Px(56f);
+            if (designs > 0)
+            {
+                float buttonWidth = (4f * size + 3f * gap - (designs - 1) * Hud.Px(8f)) / designs;
+                for (int i = 0; i < designs; i++)
+                {
+                    var button = new Rect(left + i * (buttonWidth + Hud.Px(8f)), top, buttonWidth, Hud.Px(44f));
+                    bool chosen = i == PlayerSetup.DesignIndex;
+                    bool hover = button.Contains(Event.current.mousePosition);
+                    Hud.Rounded(button, chosen ? Accent : hover ? new Color(1f, 1f, 1f, 0.16f) : Row);
+                    _cardName.normal.textColor = chosen ? Color.white : new Color(1f, 1f, 1f, 0.8f);
+                    GUI.Label(button, CarDesigns.NameOf(i).ToUpperInvariant(), _cardName);
+                    if (GUI.Button(button, GUIContent.none, GUIStyle.none))
+                    {
+                        PlayerSetup.DesignIndex = i;
+                        CarDesigns.Apply(displayCar, i);
+                    }
+                }
+                top += designRow;
+            }
             for (int i = 0; i < PlayerSetup.Colours.Length; i++)
             {
                 var swatch = new Rect(left + (i % 4) * (size + gap), top + (i / 4) * (size + gap), size, size);

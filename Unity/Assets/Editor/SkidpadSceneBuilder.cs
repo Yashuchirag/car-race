@@ -149,8 +149,9 @@ namespace CarRace.UnityGame.EditorTools
         }
 
         /// <summary>A car with no DriverInput when <paramref name="withDriver"/> is false: an AI
-        /// car, driven through CarController.Autopilot instead of the keyboard.</summary>
-        internal static GameObject BuildCar(int carLayer, CarDefinition definition, bool withDriver = true)
+        /// car, driven through CarController.Autopilot instead of the keyboard. Its body is
+        /// CarModel's <paramref name="design"/>.</summary>
+        internal static GameObject BuildCar(int carLayer, CarDefinition definition, bool withDriver = true, int design = CarModel.GT)
         {
             // The transform origin has to be the centre of mass: the model measures every
             // wheel and aero offset from it. So the car sits at its CG height, not at 0.
@@ -180,7 +181,7 @@ namespace CarRace.UnityGame.EditorTools
             // wheels especially: the model does the suspension, and a collider on a wheel would
             // be a second, fighting suspension.
             var paint = EnsureMaterial(BodyMaterialPath, new Color(0.8f, 0.1f, 0.08f), null, Vector2.one);
-            Transform[] visuals = CarModel.Build(car.transform, definition, carLayer, paint);
+            Transform[] visuals = CarModel.Build(car.transform, definition, carLayer, paint, design);
 
             var settings = new SerializedObject(controller);
             settings.FindProperty("definition").objectReferenceValue = definition;

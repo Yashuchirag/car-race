@@ -15,7 +15,7 @@ namespace CarRace.UnityGame.EditorTools
         public Surface Ground = Surface.Grass;   // the terrain and the verges
         public Surface Steep = Surface.Rock;     // steep terrain, where there are mountains
         public float MountainsM;                 // see GroundBuilder
-        public bool Sea;                         // along the circuit's east side
+        public bool Sea;                         // along the circuit's longer side
         public bool Night;
         public bool City;                        // streets and buildings, see SceneryBuilder
 

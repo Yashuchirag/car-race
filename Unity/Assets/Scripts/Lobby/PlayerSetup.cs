@@ -5,9 +5,9 @@ namespace CarRace.UnityGame
 {
     /// <summary>
     /// The local player's choices from the lobby, kept between sessions, and put onto their
-    /// car whenever a scene loads: for now the body colour. The player's car is the
+    /// car whenever a scene loads: the body design and colour. The player's car is the
     /// CarController with a DriverInput; its body is the child named "Body", recoloured with
-    /// a property block so no material asset is changed. When LAN play comes, this is the
+    /// a property block so no material asset is changed, and reshaped by CarDesigns. When LAN play comes, this is the
     /// record each player sends the host.
     /// </summary>
     public static class PlayerSetup
@@ -25,12 +25,14 @@ namespace CarRace.UnityGame
         };
 
         const string ColourKey = "CarRace.CarColour";
-        static readonly int CommandLineColour = ReadCommandLineColour();
+        const string DesignKey = "CarRace.CarDesign";
+        static readonly int CommandLineColour = ReadCommandLine("-carColour");
+        static readonly int CommandLineDesign = ReadCommandLine("-carDesign");
 
-        static int ReadCommandLineColour()
+        static int ReadCommandLine(string flag)
         {
             string[] args = System.Environment.GetCommandLineArgs();
-            int i = System.Array.IndexOf(args, "-carColour");
+            int i = System.Array.IndexOf(args, flag);
             return i >= 0 && i + 1 < args.Length && int.TryParse(args[i + 1], out int chosen) ? chosen : -1;
         }
         static readonly int BaseColour = Shader.PropertyToID("_BaseColor");
@@ -49,6 +51,17 @@ namespace CarRace.UnityGame
 
         public static Color Colour => Colours[ColourIndex].colour;
 
+        /// <summary>The saved body design, or `-carDesign 2` for one session.</summary>
+        public static int DesignIndex
+        {
+            get => Mathf.Clamp(CommandLineDesign >= 0 ? CommandLineDesign : PlayerPrefs.GetInt(DesignKey, 0), 0, Mathf.Max(CarDesigns.Count - 1, 0));
+            set
+            {
+                PlayerPrefs.SetInt(DesignKey, Mathf.Clamp(value, 0, Mathf.Max(CarDesigns.Count - 1, 0)));
+                PlayerPrefs.Save();
+            }
+        }
+
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void Initialise()
         {
@@ -66,7 +79,11 @@ namespace CarRace.UnityGame
             var cars = Object.FindObjectsByType<CarController>(FindObjectsSortMode.None);
             var taken = new System.Collections.Generic.List<Color> { Colour };
             foreach (var car in cars)
-                if (car.GetComponent<DriverInput>() != null) Paint(car.transform.Find("Body"), Colour);
+                if (car.GetComponent<DriverInput>() != null)
+                {
+                    CarDesigns.Apply(car.transform, DesignIndex);
+                    Paint(car.transform.Find("Body"), Colour);
+                }
                 else taken.Add(BodyColour(car.transform.Find("Body")));
 
             foreach (var car in cars)

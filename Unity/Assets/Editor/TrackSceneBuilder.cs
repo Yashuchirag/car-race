@@ -211,12 +211,14 @@ namespace CarRace.UnityGame.EditorTools
             recoverySettings.FindProperty("cgHeight").floatValue = definition.cgHeight;
             recoverySettings.ApplyModifiedPropertiesWithoutUndo();
 
-            // The AI, in the slots in front, each its own colour. RaceDirector drives them.
+            // The AI, in the slots in front, each its own colour and one of the other body
+            // designs, so the grid is mixed. RaceDirector drives them.
             var cars = new List<CarController> { car.GetComponent<CarController>() };
             var aiCars = new CarController[AiCars];
             for (int slot = 0; slot < AiCars; slot++)
             {
-                GameObject ai = SkidpadSceneBuilder.BuildCar(carLayer, definition, withDriver: false);
+                GameObject ai = SkidpadSceneBuilder.BuildCar(carLayer, definition, withDriver: false,
+                                                             design: (slot + 1) % CarModel.Designs.Length);
                 ai.name = $"AI {slot + 1}";
                 var (position, rotation) = GridSlot(slot, centre, right, track.sample_spacing_m, definition.cgHeight);
                 ai.transform.SetPositionAndRotation(position, rotation);
@@ -342,7 +344,8 @@ namespace CarRace.UnityGame.EditorTools
         /// figure of eight; the track pipeline lifts the upper road 7.5 m clear).
         /// The road and verges are one-sided, so from beneath the bridge was two walls in the
         /// air. The deck spans the lower road, its verges and a margin, as wide as the upper
-        /// road with its verges, and has no collider: it is well above anything below.
+        /// road with its verges, just under it all the way, and has no collider: it is well
+        /// above anything below. Its mesh lives in the scene, a few kilobytes.
         /// </summary>
         static void Bridges(GameObject root, Vector3[] centre, Vector3[] right, float[] widthLeft, float[] widthRight, Material material)
         {
@@ -356,19 +359,52 @@ namespace CarRace.UnityGame.EditorTools
                 int upper = centre[i].y > centre[j].y ? i : j, lower = upper == i ? j : i;
                 if (centre[upper].y - centre[lower].y < MinGapM) continue;
 
-                Vector3 along = centre[(upper + 1) % n] - centre[(upper - 1 + n) % n];
-                along.y = 0f;
+                // A slab under the upper road and its verges, following the road's own height
+                // sample by sample. A flat box here stood up through the road wherever the
+                // bridge's ramp dipped below the crossing's height: a white patch on the road.
                 float span = widthLeft[lower] + widthRight[lower] + 2f * VergeWidthM + 20f;
-                float width = widthLeft[upper] + widthRight[upper] + 2f * VergeWidthM;
-                var deck = GameObject.CreatePrimitive(PrimitiveType.Cube);
-                deck.name = "Bridge";
-                UnityEngine.Object.DestroyImmediate(deck.GetComponent<Collider>());
+                float spacing = Vector3.Distance(centre[upper], centre[(upper + 1) % n]);
+                int half = Mathf.CeilToInt(span * 0.5f / Mathf.Max(spacing, 0.1f));
+                var vertices = new List<Vector3>();
+                var triangles = new List<int>();
+                // Each face turned away from a point inside the slab, whatever order its corners come in.
+                void Quad(Vector3 a, Vector3 b, Vector3 c, Vector3 d, Vector3 inside)
+                {
+                    if (Vector3.Dot(Vector3.Cross(b - a, c - a), (a + b + c + d) * 0.25f - inside) < 0f) { (b, d) = (d, b); }
+                    int v = vertices.Count;
+                    vertices.Add(a); vertices.Add(b); vertices.Add(c); vertices.Add(d);
+                    triangles.AddRange(new[] { v, v + 1, v + 2, v, v + 2, v + 3 });
+                }
+                Vector3 Middle(Vector3[] a, Vector3[] b) => (a[0] + a[1] + a[2] + a[3] + b[0] + b[1] + b[2] + b[3]) / 8f;
+                Vector3[] Corners(int k)
+                {
+                    k = ((k % n) + n) % n;
+                    Vector3 top = centre[k] + Vector3.down * 0.05f;
+                    Vector3 l = top - right[k] * (widthLeft[k] + VergeWidthM), r = top + right[k] * (widthRight[k] + VergeWidthM);
+                    return new[] { l, r, r + Vector3.down * DeckM, l + Vector3.down * DeckM };   // top left, top right, bottom right, bottom left
+                }
+                for (int k = upper - half; k < upper + half; k++)
+                {
+                    Vector3[] a = Corners(k), b = Corners(k + 1);
+                    Vector3 inside = Middle(a, b);
+                    Quad(a[0], b[0], b[1], a[1], inside);   // top
+                    Quad(a[3], a[2], b[2], b[3], inside);   // underside
+                    Quad(a[1], b[1], b[2], a[2], inside);   // right side
+                    Quad(a[0], a[3], b[3], b[0], inside);   // left side
+                }
+                Vector3[] first = Corners(upper - half), last = Corners(upper + half);
+                Quad(first[0], first[1], first[2], first[3], Middle(first, Corners(upper - half + 1)));
+                Quad(last[0], last[1], last[2], last[3], Middle(last, Corners(upper + half - 1)));
+                var mesh = new Mesh { name = "Bridge Deck" };
+                mesh.SetVertices(vertices);
+                mesh.SetTriangles(triangles, 0);
+                mesh.RecalculateNormals();
+                mesh.RecalculateBounds();
+
+                var deck = new GameObject("Bridge");
                 deck.transform.SetParent(root.transform, false);
-                deck.transform.rotation = Quaternion.LookRotation(along.normalized, Vector3.up);
-                float offset = (widthRight[upper] - widthLeft[upper]) * 0.5f;
-                deck.transform.position = centre[upper] + right[upper] * offset + Vector3.down * (DeckM * 0.5f + 0.05f);
-                deck.transform.localScale = new Vector3(width, DeckM, span);
-                deck.GetComponent<MeshRenderer>().sharedMaterial = material;
+                deck.AddComponent<MeshFilter>().sharedMesh = mesh;
+                deck.AddComponent<MeshRenderer>().sharedMaterial = material;
                 GameObjectUtility.SetStaticEditorFlags(deck, StaticEditorFlags.BatchingStatic);
             }
         }
