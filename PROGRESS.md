@@ -10,14 +10,13 @@ concrete action is. Everything below it is detail.
 
 ## 1. Resume here
 
-**Last updated:** 2026-09-26 (start line, grid and timing points)
+**Last updated:** 2026-09-26 (realistic pass, stage 1)
 
-**Last completed:** Start line, grid boxes, START FINISH gantry and sector boards on
-every circuit, then the sense of speed above 100 km/h (section 3). All six scenes and
-the Windows build are rebuilt.
+**Last completed:** Realistic pass, stage 1: generated realistic trees on every circuit,
+colour grading, stronger ambient occlusion, sharper shadows and natural grass (section 3).
 
-**Next action:** Your drive. Then, from section 3: flags, penalties and pit stops, or LAN
-play, or sound.
+**Next action:** Your look at stage 1. Then stage 2 of the realistic pass: buildings and
+grandstands, then stage 3, the cars.
 
 ---
 
@@ -224,6 +223,7 @@ physics has never driven a corner the track pipeline produced.
 | AI recovery from grass | DONE | 2026-09-25, your request. The AI now knows the grip under its wheels (`PathDriver.SurfaceGrip`, from `RaceDirector` each step): with three wheels or more on grass it asks for the plan's speed times the square root of the grip and steers back at no more than 20 degrees; crawling off the road or facing more than 100 degrees wrong it is put back on its line after 3 s rather than 5. The real cause of the grass trips was upstream, one bend per circuit where every AI left the road (Desert Park 3.9 km, Ise Bay 4.7 km, the Ardennes 3.4 km): the speed plan ignored crests (`TrackData.VerticalCurvature`; the plan now takes the load a crest leaves on the tyres), the AI ran a steady metre wide in fast bends (a small slow cross-track correction, and a 4% lift per metre run wide), braked harder mid-bend than the tyres had left (road braking now squeezed, 6 per second, and kept inside the friction ellipse), and floored it while sliding (traction control, power eased from 4 to 12 degrees of sideslip). In the built game those three circuits now run seven minutes with every car on the road. |
 | Start line, grid and timing points | DONE | 2026-09-26, your request: show where the race starts and where it is timed. `StartFinishBuilder` (Editor), called from `TrackSceneBuilder.Build`, replaces the thin white start line: a chequered line two squares deep across the road at sample 0, the point where `LapTimer` counts each lap; a steel gantry over it reading START FINISH both ways above a chequered band; a painted box for each grid slot (`TrackSceneBuilder.GridPlace`, shared with `GridSlot`); and a yellow line with a yellow `S1 \| S2` or `S2 \| S3` board either side at the two sector gates, a third and two thirds of the lap. Paint has no collider; the gantry legs and sector posts stand 3 and 4 m off the road, solid, on the barrier layer. Letters are built as 5x7 pixel squares: TextMesh's font would need its own shader. Signs are unlit: a street lamp over the Airfield gantry burned lit white out to a glare. Checked in screenshots on the Airfield at night (grid, gantry, S1 board) and Royal Park by day. AI only, six circuits x 3 min: 0 contacts, 0 recoveries, 0 s off the road, as before. |
 | Sense of speed above 100 km/h | DONE | 2026-09-26, your report: past 100 km/h the scenery stopped feeling faster. Frame rate was not it (114 fps). Three causes, all fixed. The chase camera's smoothing left it speed x 0.12 s behind the car, 7 m further back at 200 km/h than at rest, shrinking the car and the road round it as speed rose; `CarCamera` now leads its anchor by that much along the heading, so the distance holds and only acceleration and braking swing it. The field of view widened 14 degrees at 300 km/h; now 22. There was no motion blur, so trees stepped from frame to frame; `GraphicsSetup` adds URP motion blur, camera and objects (the followed car stays sharp), intensity 0.45, clamp 0.05, to the track profile, including one made before. And a fine camera shake from 100 km/h, growing with the square of the speed to 5 cm at 300. Checked in screenshots on Royal Park at 24, 100, 140 and 182 km/h (the trees at the edges streak at 182). Royal Park 25 s at 1080p: 116 and 107 fps with blur; runs at 60 both with and without blur were the machine, not the blur. |
+| Realistic pass, stage 1: trees and lighting | DONE | 2026-09-26, your request (trees too plain and cartoonish; graphics as realistic as possible). You chose a realistic pass in stages: stage 1 trees and bushes plus lighting, then buildings and grandstands, then cars. Trees: `TreeModels` (Editor) generates broadleaf (beech, lime; 4), conifer (spruce; 3), palm (3) and bush (2): tapered bark tubes in Poly Haven bark, twig cards whose normals point out of the crown so it shades as one mass; each has a far version (`TreeLod`) that `InstancedTrees` draws past 120 m, re-sorting a group's trees only when the camera has moved 8 m. Leaf textures composed from ambientCG leaf atlases by `Tools/foliage_textures.py`. `SceneryBuilder` plantings use them (Royal Park 22,886, Ardennes 36,290); cacti and boulders stay Kenney. `TreeModels.Preview` renders every model to `Builds/trees.png`. Broadleaf about 1,300 triangles near. Lighting: colour grading (contrast +12, saturation -14) added to the track profile; ambient occlusion 0.4 to 0.75, radius 0.3 to 0.5 m; High shadows 2048 to 4096; grass tinted from fluorescent to a summer olive (`SurfaceTextures.GrassTint`, verges and terrain). 1080p, 40 s each, all six rebuilt: Royal Park 107 fps (was 110 with Kenney trees), Ardennes 94, Desert Park 135, Ise Bay 102, Northants 135, Airfield 136; 1% lows 51 to 86. |
 | Race telemetry | DONE | `--race ... --csv <path>`. One row per car every 20 ms: the `--lap` columns plus blocked by, following, overtaking, wanted and driven offset, and the cap. |
 | Catching a slide | WIP | Partial. `PathDriver` counter-steers and lifts above 12 degrees of sideslip, which stopped spun cars crawling for the rest of the race, but 11 crawl reports in a ten-lap race still show more than 25 degrees. |
 | Flags, penalties, pit stops | TODO | Not started. |
@@ -301,6 +301,13 @@ Unity/          the integration layer, written, never run    Phase 1, WIP
 ---
 
 ## 6. Open issues and deferred decisions
+
+- The benchmark's autopilot, driving the player's car (car 4 in `ai.csv`), slides to 36 to 48
+  degrees of sideslip braking into the Airfield's first corner at about 13.7 s, in every run
+  since at least the lane work (`ai-final`); the AI opponents stay under 5 degrees. Not the
+  AI you race, and not your own driving, but it muddies benchmarks there. Found 2026-09-26.
+- Northants once froze for 1 s at 16.9 s into a benchmark (1% low 30 fps); two reruns had
+  no frame over 20 ms. A one-off load hitch, watch for it.
 
 Known, deliberate, and not blocking. Recorded so they are not rediscovered.
 
@@ -527,6 +534,10 @@ learned, so context is not lost between sessions.
   which fought every other cue; motion blur, a wider speed zoom and a little shake now
   add to it. Frame rate on this laptop swings between about 60 and 115 fps from run to
   run for reasons outside the game, so compare benchmarks in pairs run back to back.
+- Realistic pass, stage 1, your choice of scope. CC0 realistic trees are film assets
+  (0.3 to 7.8 million triangles), so trees are generated: twig textures composed from leaf
+  photographs, crown normals for shading, a far version for the 30,000. Gallery renders
+  (`TreeModels.Preview`) made shape work a two-minute loop instead of a six-minute build.
 
 ### 2026-09-24, tenth session
 

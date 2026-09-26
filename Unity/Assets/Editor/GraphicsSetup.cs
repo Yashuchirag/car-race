@@ -96,7 +96,7 @@ namespace CarRace.UnityGame.EditorTools
         /// left alone; it is excluded from PC builds.
         ///
         ///            MSAA  shadows                       AO   render scale        LOD bias
-        ///   High     4x    150 m, 4 cascades, 2048, soft  on   100%                2
+        ///   High     4x    150 m, 4 cascades, 4096, soft  on   100%                2
         ///   Medium   2x    100 m, 2 cascades, 2048, soft  off  100%                1.5
         ///   Low      off    60 m, 1 cascade, 1024, hard   off  80%, FSR upscaled   1
         /// </summary>
@@ -124,7 +124,8 @@ namespace CarRace.UnityGame.EditorTools
             low.upscalingFilter = UpscalingFilterSelection.FSR;
             SetShadowDetail(low, 1024, soft: false);
 
-            SetShadowDetail(high, 2048, soft: true);
+            SetShadowDetail(high, 4096, soft: true);
+            SetAmbientOcclusion(RendererPath, intensity: 0.75f, radius: 0.5f);
 
             var settings = new SerializedObject(AssetDatabase.LoadAllAssetsAtPath("ProjectSettings/QualitySettings.asset")[0]);
             var levels = settings.FindProperty("m_QualitySettings");
@@ -172,6 +173,21 @@ namespace CarRace.UnityGame.EditorTools
             return asset;
         }
 
+        /// <summary>Stronger and wider than URP's default, so trees, stands and cars sit in
+        /// the ground rather than on it. Only the High renderer has it.</summary>
+        static void SetAmbientOcclusion(string rendererPath, float intensity, float radius)
+        {
+            var renderer = AssetDatabase.LoadAssetAtPath<ScriptableRendererData>(rendererPath);
+            foreach (ScriptableRendererFeature feature in renderer.rendererFeatures)
+            {
+                if (feature == null || feature.GetType().Name != "ScreenSpaceAmbientOcclusion") continue;
+                var serialized = new SerializedObject(feature);
+                serialized.FindProperty("m_Settings.Intensity").floatValue = intensity;
+                serialized.FindProperty("m_Settings.Radius").floatValue = radius;
+                serialized.ApplyModifiedPropertiesWithoutUndo();
+            }
+        }
+
         /// <summary>Shadow map resolution and soft shadows have no public setters.</summary>
         static void SetShadowDetail(UniversalRenderPipelineAsset asset, int resolution, bool soft)
         {
@@ -214,6 +230,7 @@ namespace CarRace.UnityGame.EditorTools
             if (profile != null)
             {
                 if (!profile.Has<MotionBlur>()) AddMotionBlur(profile);
+                if (!profile.Has<ColorAdjustments>()) AddGrading(profile);
                 return profile;
             }
 
@@ -239,7 +256,22 @@ namespace CarRace.UnityGame.EditorTools
                 AssetDatabase.AddObjectToAsset(component, profile);
             }
             AddMotionBlur(profile);
+            AddGrading(profile);
             return profile;
+        }
+
+        /// <summary>A little more contrast and a little less colour: the photographed grass
+        /// and the flat paint read as saturated as a toy under ACES alone, where a camera
+        /// would render a sunny day more muted and with deeper shade.</summary>
+        static void AddGrading(VolumeProfile profile)
+        {
+            var grading = profile.Add<ColorAdjustments>(true);
+            grading.contrast.Override(12f);
+            grading.saturation.Override(-14f);
+            grading.name = nameof(ColorAdjustments);
+            AssetDatabase.AddObjectToAsset(grading, profile);
+            EditorUtility.SetDirty(profile);
+            AssetDatabase.SaveAssets();
         }
 
         /// <summary>Blur from the camera's motion and each object's own, so the car the camera

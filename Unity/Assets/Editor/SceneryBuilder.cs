@@ -30,9 +30,9 @@ namespace CarRace.UnityGame.EditorTools
     /// enough to be rock; boulders do not. Where there is sea nothing grows on the beach or
     /// in the water, a few boulders lie along the shore, and within OpenShoreM of the coast
     /// there are no woods, only single trees and bushes, so the sea can be seen.
-    /// From ThinFromM out to ReachM the woods thin to nothing. Past NearM the woods use only
-    /// the simplest trees (under 135 triangles against up to 400), since they are a few pixels
-    /// tall there and triangles, not pixels, were what the trees cost.
+    /// From ThinFromM out to ReachM the woods thin to nothing. Trees and bushes are
+    /// TreeModels' generated ones, each with a far version InstancedTrees draws past its LOD
+    /// distance; cacti and boulders are still Kenney's.
     /// </summary>
     public static class SceneryBuilder
     {
@@ -56,22 +56,20 @@ namespace CarRace.UnityGame.EditorTools
 
         static readonly Planting Countryside = new Planting
         {
-            Near = new[] { "tree_default", "tree_default_dark", "tree_detailed", "tree_detailed_dark",
-                           "tree_oak", "tree_oak_dark", "tree_cone", "tree_cone_dark", "tree_pineRoundA" },
-            Far = new[] { "tree_default", "tree_default_dark", "tree_fat", "tree_cone", "tree_pineTallA" },
-            Lone = new[] { "tree_oak", "tree_detailed", "tree_fat", "tree_default" },
-            Edge = new[] { "plant_bush", "plant_bushLarge", "plant_bushDetailed" },
+            Near = Mix(TreeModels.Names("broadleaf", 0, 1, 2, 3, 0, 1, 2, 3), TreeModels.Names("conifer", 0)),
+            Far = Mix(TreeModels.Names("broadleaf", 0, 1, 2, 3, 0, 1, 2, 3), TreeModels.Names("conifer", 0)),
+            Lone = TreeModels.Names("broadleaf", 0, 1, 2, 3),
+            Edge = TreeModels.Names("bush", 0, 1),
             Share = 0.3f, MinM = 10f, MaxM = 17f,
         };
 
         /// <summary>The Ardennes: dense conifer forest, pines at its edges, boulders.</summary>
         static readonly Planting Mountains = new Planting
         {
-            Near = new[] { "tree_pineDefaultA", "tree_pineDefaultB", "tree_pineRoundA", "tree_pineRoundC",
-                           "tree_pineRoundE", "tree_pineTallA_detailed", "tree_pineTallB_detailed", "tree_pineTallC_detailed" },
-            Far = new[] { "tree_pineTallA", "tree_pineTallB", "tree_pineTallC", "tree_pineTallD", "tree_pineSmallC" },
-            Lone = new[] { "tree_pineRoundD", "tree_pineTallB_detailed", "tree_pineDefaultA" },
-            Edge = new[] { "tree_pineGroundA", "tree_pineGroundB", "tree_pineSmallC" },
+            Near = TreeModels.Names("conifer", 0, 1, 2),
+            Far = TreeModels.Names("conifer", 0, 1, 2),
+            Lone = TreeModels.Names("conifer", 0, 1, 2),
+            Edge = Mix(TreeModels.Names("conifer", 0, 1, 2), TreeModels.Names("bush", 0)),
             Boulders = new[] { "rock_tallC", "rock_tallG", "rock_tallI", "rock_largeB", "rock_largeD", "rock_largeF" },
             Share = 0.5f, MinM = 12f, MaxM = 22f, LoneChance = 0.04f, BoulderChance = 0.015f,
         };
@@ -79,10 +77,10 @@ namespace CarRace.UnityGame.EditorTools
         /// <summary>Desert Park: sand, palm groves as oases, cacti and sandstone boulders.</summary>
         static readonly Planting Desert = new Planting
         {
-            Near = new[] { "tree_palm", "tree_palmTall", "tree_palmDetailedTall", "tree_palmBend" },
-            Far = new[] { "tree_palm", "tree_palmTall", "tree_palmShort" },
+            Near = TreeModels.Names("palm", 0, 1, 2),
+            Far = TreeModels.Names("palm", 0, 1, 2),
             Lone = new[] { "cactus_tall", "cactus_short" },
-            Edge = new[] { "plant_bushSmall", "plant_bushTriangle", "cactus_short" },
+            Edge = Mix(TreeModels.Names("bush", 1), new[] { "cactus_short" }),
             Boulders = new[] { "stone_tallC", "stone_tallG", "stone_tallI", "stone_largeB", "stone_largeD" },
             Share = 0.07f, MinM = 8f, MaxM = 14f, LoneChance = 0.02f, LoneMinM = 2.5f, LoneMaxM = 4.5f, BoulderChance = 0.012f,
         };
@@ -90,13 +88,24 @@ namespace CarRace.UnityGame.EditorTools
         /// <summary>Ise Bay: coastal pines mixed with broadleaf woods, rocks on the shore.</summary>
         static readonly Planting Coast = new Planting
         {
-            Near = new[] { "tree_pineRoundA", "tree_pineRoundC", "tree_pineRoundE", "tree_default", "tree_oak", "tree_detailed" },
-            Far = new[] { "tree_default", "tree_default_dark", "tree_pineTallA", "tree_cone", "tree_fat" },
-            Lone = new[] { "tree_pineRoundD", "tree_oak", "tree_pineRoundA" },
-            Edge = new[] { "plant_bush", "plant_bushLarge", "plant_bushDetailed" },
+            Near = Mix(TreeModels.Names("conifer", 0, 1, 2), TreeModels.Names("broadleaf", 0, 1, 2)),
+            Far = Mix(TreeModels.Names("conifer", 0, 1, 2), TreeModels.Names("broadleaf", 0, 1, 2)),
+            Lone = Mix(TreeModels.Names("conifer", 1), TreeModels.Names("broadleaf", 0, 2)),
+            Edge = TreeModels.Names("bush", 0, 1),
             Boulders = new[] { "rock_largeA", "rock_largeC", "rock_largeE", "rock_largeB" },
             Share = 0.3f, MinM = 10f, MaxM = 16f, BoulderChance = 0.004f,
         };
+
+        static string[] Mix(params string[][] sets)
+        {
+            var all = new List<string>();
+            foreach (string[] set in sets) all.AddRange(set);
+            return all.ToArray();
+        }
+
+        /// <summary>A generated tree (TreeModels) or a model from Kenney's nature kit.</summary>
+        static GameObject Model(string name) =>
+            name.StartsWith(TreeModels.Prefix) ? TreeModels.Load(name) : KenneyModels.Load("Nature", name);
 
         const float BeachAboveM = 2f;        // GroundBuilder's beach, and a little
         const float ShoreRockChance = 0.08f;
@@ -287,7 +296,7 @@ namespace CarRace.UnityGame.EditorTools
             "low-detail-building-i", "low-detail-building-j", "low-detail-building-k", "low-detail-building-l",
             "low-detail-building-m", "low-detail-building-wide-a", "low-detail-building-wide-b",
         };
-        static readonly string[] ParkTrees = { "tree_default", "tree_oak", "tree_detailed", "tree_fat" };
+        static readonly string[] ParkTrees = TreeModels.Names("broadleaf", 0, 1, 2, 3);
         const float LotM = 44f;             // a building and its share of the streets
         const float CityClearM = 22f;       // open ground between the barriers and the first buildings
         const float ShopsWithinM = 140f;    // then towers and blocks, then only blocks
@@ -333,7 +342,7 @@ namespace CarRace.UnityGame.EditorTools
                     {
                         Vector3 p = c + across * (float)(rng.NextDouble() - 0.5) * LotM * 0.7f + along * (float)(rng.NextDouble() - 0.5) * LotM * 0.7f;
                         if (land.Beyond(p) < TreeClearM) continue;
-                        GameObject tree = KenneyModels.Load("Nature", ParkTrees[rng.Next(ParkTrees.Length)]);
+                        GameObject tree = Model(ParkTrees[rng.Next(ParkTrees.Length)]);
                         float scale = Mathf.Lerp(8f, 13f, (float)rng.NextDouble()) / tree.GetComponent<MeshFilter>().sharedMesh.bounds.size.y;
                         growth.Add(tree, p, scale, 1f, (float)rng.NextDouble() * Mathf.PI * 2f);
                     }
@@ -522,7 +531,7 @@ namespace CarRace.UnityGame.EditorTools
 
             void Add(string[] set, float minM, float maxM, Vector3 p)
             {
-                GameObject model = KenneyModels.Load("Nature", set[rng.Next(set.Length)]);
+                GameObject model = Model(set[rng.Next(set.Length)]);
                 float height = Mathf.Lerp(minM, maxM, (float)rng.NextDouble());
                 float scale = height / model.GetComponent<MeshFilter>().sharedMesh.bounds.size.y;
                 float width = Mathf.Lerp(0.85f, 1.15f, (float)rng.NextDouble());

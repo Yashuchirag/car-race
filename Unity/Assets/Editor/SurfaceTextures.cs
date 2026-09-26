@@ -24,6 +24,9 @@ namespace CarRace.UnityGame.EditorTools
         const string GrassNormal = GrassFolder + "/Grass005_2K-JPG_NormalGL.jpg";
         const string GrassOcclusion = GrassFolder + "/Grass005_2K-JPG_AmbientOcclusion.jpg";
         public const float GrassTileM = 3f;
+        // Grass005 photographs a bright lawn; under a full sun it read almost fluorescent.
+        // Multiplied by this it is the olive of a mown verge in summer.
+        static readonly Color GrassTint = new Color(0.8f, 0.84f, 0.68f);
 
         const string AsphaltFolder = "Assets/Art/Ground/AsphaltTrack";
         const string AsphaltColour = AsphaltFolder + "/asphalt_track_diff_2k.jpg";
@@ -53,7 +56,7 @@ namespace CarRace.UnityGame.EditorTools
         /// <summary>Grass on a material whose mesh is in metres, or whose tiling is given.</summary>
         public static void ApplyGrass(Material material, Vector2? tiling = null)
         {
-            material.SetColor("_BaseColor", Color.white);
+            material.SetColor("_BaseColor", GrassTint);
             material.SetTexture("_BaseMap", Texture(GrassColour, TextureKind.Colour));
             material.SetTexture("_BumpMap", Texture(GrassNormal, TextureKind.Normal));
             material.SetFloat("_BumpScale", 1f);
@@ -91,6 +94,7 @@ namespace CarRace.UnityGame.EditorTools
             layer.normalMapTexture = Texture(GrassNormal, TextureKind.Normal);
             layer.normalScale = 1f;
             layer.tileSize = new Vector2(TerrainTileM, TerrainTileM);
+            layer.diffuseRemapMax = new Vector4(GrassTint.r, GrassTint.g, GrassTint.b, 1f);
             layer.smoothness = 0.08f;
             EditorUtility.SetDirty(layer);
         }
