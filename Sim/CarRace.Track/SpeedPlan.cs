@@ -33,7 +33,10 @@ namespace CarRace.Track
             public float TopSpeedMs;
         }
 
-        public static float[] Build(TrackData track, Limits limits)
+        public static float[] Build(TrackData track, Limits limits) => Build(track, limits, track.LineCurvature);
+
+        /// <summary>A plan for another path along the same samples, such as a passing lane.</summary>
+        public static float[] Build(TrackData track, Limits limits, float[] curvatureOfPath)
         {
             float lateralLimitMs2 = limits.LateralMs2;
             float brakingLimitMs2 = limits.BrakingMs2;
@@ -47,7 +50,7 @@ namespace CarRace.Track
             // 80 m/s, so the plan is a little slow there and never optimistic.
             for (int i = 0; i < n; i++)
             {
-                float curvature = MathF.Abs(track.LineCurvature[i]);
+                float curvature = MathF.Abs(curvatureOfPath[i]);
                 float corner = curvature > 1e-5f
                     ? MathF.Sqrt(lateralLimitMs2 / curvature)
                     : topSpeedMs;
@@ -73,7 +76,7 @@ namespace CarRace.Track
                 for (int i = n - 1; i >= 0; i--)
                 {
                     float entry = BrakingEntrySpeed(speed[track.Wrap(i + 1)],
-                                                    MathF.Abs(track.LineCurvature[i]),
+                                                    MathF.Abs(curvatureOfPath[i]),
                                                     lateralLimitMs2, brakingLimitMs2, ds);
                     if (speed[i] > entry) speed[i] = entry;
                 }
@@ -99,7 +102,7 @@ namespace CarRace.Track
                         if (powerLimited < accel) accel = powerLimited;
                     }
 
-                    float exit = BrakingEntrySpeed(speed[i], MathF.Abs(track.LineCurvature[next]),
+                    float exit = BrakingEntrySpeed(speed[i], MathF.Abs(curvatureOfPath[next]),
                                                    lateralLimitMs2, accel, ds);
                     if (speed[next] > exit) speed[next] = exit;
                 }

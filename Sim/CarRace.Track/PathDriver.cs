@@ -6,8 +6,8 @@ using CarRace.Vehicle;
 namespace CarRace.Track
 {
     /// <summary>
-    /// Drives a car along the racing line: pure pursuit for steering, a PI controller on
-    /// the speed plan for throttle and brake.
+    /// Drives a car along the racing line, or a passing lane (Lane): pure pursuit for
+    /// steering, a PI controller on the speed plan for throttle and brake.
     ///
     /// It knows nothing about other cars. Everything to do with racing one lives in
     /// RaceDriver, which steers this by moving the line it aims at and capping the speed it
@@ -49,9 +49,38 @@ namespace CarRace.Track
         /// second car is given somewhere else to be.</summary>
         public float LineOffsetM;
 
+        /// <summary>
+        /// A passing lane to drive instead of the racing line: -1 the left lane, +1 the right,
+        /// 0 the racing line. The car moves between them with the point it aims at going no
+        /// faster sideways than LaneRateMs, blending the curvature it steers for and the plan
+        /// it keeps to with it, and on the way out of a lane back onto the line keeps the
+        /// lane's side until it is there. A fixed time for the change instead moved the aim
+        /// 7 m in 1.4 s where a lane was far from the line, and at 190 km/h the car could not
+        /// follow it.
+        /// </summary>
+        public int Lane;
+        public float LaneRateMs = 2.2f;
+
+        /// <summary>How far into a lane the car is, 0 on the racing line, 1 in the lane.</summary>
+        public float LaneBlend => _laneBlend;
+        public int LaneSide => _laneSide;
+
         /// <summary>Ceiling on the speed asked for, whatever the plan says. Negative means
         /// no cap. This is how a car behind is made to sit behind.</summary>
         public float SpeedCapMs = -1f;
+
+        /// <summary>
+        /// Grip of the surface under the car, its wheels' average, 1 on asphalt and 0.45 on
+        /// grass; set by whoever owns the car before each Drive. Below OffRoadGrip the car is
+        /// off the road: it asks for the plan's speed scaled to what the grip will carry round
+        /// the same curve, the square root of the grip, and steers back towards its line at no
+        /// more than RejoinAngleDeg. On the plan's asphalt speed an AI on the grass could not
+        /// turn and slid on into the wall; aimed straight back at the road it spun where the
+        /// grass met the asphalt.
+        /// </summary>
+        public float SurfaceGrip = 1f;
+        public float OffRoadGrip = 0.9f;
+        public float RejoinAngleDeg = 20f;
 
         /// <summary>Where on the line the car is, and how many times it has been round.</summary>
         public int Index { get; private set; }
@@ -82,19 +111,23 @@ namespace CarRace.Track
         /// field's worth of overtaking and avoidance logic ran on zeros and looked merely
         /// badly tuned.
         /// </summary>
-        public float LateralFromLineM => LineOffsetM + LineErrorM;
+        public float LateralFromLineM { get; private set; }
         public float HeadingErrorDeg { get; private set; }
 
         /// <summary>How much of the driver is currently busy catching a slide, 0 to 1.</summary>
         public float Recovering { get; private set; }
 
         float _speedIntegral;
+        float _laneBlend;
+        int _laneSide = 1;
+        readonly float[][] _lanePlans;
 
-        public PathDriver(TrackData track, float[] plan, CarConfig car)
+        public PathDriver(TrackData track, float[] plan, CarConfig car, float[][] lanePlans = null)
         {
             _track = track;
             _plan = plan;
             _car = car;
+            _lanePlans = lanePlans;
         }
 
         /// <summary>Distance covered since the start, in metres, laps included.</summary>
@@ -102,6 +135,10 @@ namespace CarRace.Track
 
         /// <summary>What the plan asks for at a sample, before any cap or offset.</summary>
         public float PlanAt(int index) => _plan[_track.Wrap(index)];
+
+        /// <summary>What a passing lane's plan asks for at a sample: side -1 left, +1 right.</summary>
+        public float LanePlanAt(int side, int index) =>
+            _lanePlans != null ? _lanePlans[side > 0 ? 1 : 0][_track.Wrap(index)] : PlanAt(index);
 
         /// <summary>The whole plan, read only, for a driver weighing its plan against this one.</summary>
         public IReadOnlyList<float> Plan => _plan;
@@ -121,6 +158,8 @@ namespace CarRace.Track
         public VehicleInputs Drive(in BodyState body, float dt)
         {
             AdvanceAlongLine(body.Position);
+            MoveBetweenLanes(dt);
+            LateralFromLineM = _track.LateralOffset(_track.Line, Index, body.Position);
 
             float speed = Vector3.Dot(body.Velocity, body.Forward);
             float sideslip = Sideslip(body);
@@ -159,6 +198,42 @@ namespace CarRace.Track
         }
 
         static float Lerp(float a, float b, float t) => a + (b - a) * t;
+
+        /// <summary>Into the lane asked for, or back out to the line, at a steady rate. A
+        /// change of side goes back to the line first.</summary>
+        void MoveBetweenLanes(float dt)
+        {
+            if (_lanePlans == null || _track.LanePoints == null) { _laneBlend = 0f; return; }
+            int i = Index;
+            Vector3 racing = _track.Line[i] + TrackData.Right(_track.Tangent(_track.Line, i)) * LineOffsetM;
+            Vector3 apart = _track.LanePoints[LaneArray][i] - racing;
+            apart.Y = 0f;
+            float step = LaneRateMs * dt / MathF.Max(apart.Length(), 0.5f);
+            bool wanted = Lane != 0 && (Lane > 0 ? 1 : -1) == _laneSide;
+            if (Lane != 0 && _laneBlend <= 0f) { _laneSide = Lane > 0 ? 1 : -1; wanted = true; }
+            _laneBlend = Clamp(_laneBlend + (wanted ? step : -step), 0f, 1f);
+        }
+
+        int LaneArray => _laneSide > 0 ? 1 : 0;
+
+        /// <summary>The point the car aims at for a sample: the racing line, shifted by
+        /// LineOffsetM, blended towards the lane it is moving into.</summary>
+        Vector3 AimAt(int index)
+        {
+            index = _track.Wrap(index);
+            Vector3 racing = _track.Line[index] + TrackData.Right(_track.Tangent(_track.Line, index)) * LineOffsetM;
+            return _laneBlend > 0f ? Vector3.Lerp(racing, _track.LanePoints[LaneArray][index], _laneBlend) : racing;
+        }
+
+        /// <summary>The plan where the car is going: the racing line's, the lane's once in it,
+        /// and in between the slower of the two, since the car is on neither.</summary>
+        float PlanFor(int index)
+        {
+            index = _track.Wrap(index);
+            if (_laneBlend <= 0f) return _plan[index];
+            float lane = _lanePlans[LaneArray][index];
+            return _laneBlend >= 1f ? lane : MathF.Min(_plan[index], lane);
+        }
 
         /// <summary>
         /// Nearest sample, searched forward only from the last one. A search over the whole
@@ -201,10 +276,14 @@ namespace CarRace.Track
         {
             int lead = _track.Wrap(Index + (int)MathF.Round(
                 FeedforwardSeconds * MathF.Abs(speed) / _track.SampleSpacingM));
-            float roadCurvature = _track.LineCurvature[lead];
+            float roadCurvature = _laneBlend > 0f
+                ? Lerp(_track.LineCurvature[lead], _track.LaneCurvature[LaneArray][lead], _laneBlend)
+                : _track.LineCurvature[lead];
 
-            Vector3 tangent = _track.Tangent(_track.Line, Index);
-            Vector3 aimPoint = _track.Line[Index] + TrackData.Right(tangent) * LineOffsetM;
+            Vector3 tangent = AimAt(Index + 1) - AimAt(Index - 1);
+            tangent.Y = 0f;
+            tangent = tangent.LengthSquared() > 1e-8f ? Vector3.Normalize(tangent) : _track.Tangent(_track.Line, Index);
+            Vector3 aimPoint = AimAt(Index);
 
             // Error measured at the front axle, not at the centre of mass. This is the
             // Stanley form, and the axle is ahead of the mass, so the error it sees already
@@ -222,9 +301,15 @@ namespace CarRace.Track
             float headingError = MathF.Atan2(Vector3.Dot(forward, TrackData.Right(tangent)),
                                              Vector3.Dot(forward, tangent));
 
+            float correction = MathF.Atan(CrossTrackGain * crossTrack / (MathF.Abs(speed) + 2f));
+            if (SurfaceGrip < OffRoadGrip)
+            {
+                float most = RejoinAngleDeg * MathF.PI / 180f;
+                correction = Clamp(correction, -most, most);
+            }
             float wheelAngle = MathF.Atan(roadCurvature * _car.Wheelbase)
                              - HeadingGain * headingError
-                             - MathF.Atan(CrossTrackGain * crossTrack / (MathF.Abs(speed) + 2f));
+                             - correction;
 
             LineErrorM = crossTrack;
             HeadingErrorDeg = headingError * 180f / MathF.PI;
@@ -246,7 +331,8 @@ namespace CarRace.Track
 
         float Throttle(float speed, float dt, out float brake)
         {
-            PlannedSpeedMs = PlannedSpeed(speed) * OffsetSpeedScale();
+            PlannedSpeedMs = PlannedSpeed(speed) * OffsetSpeedScale()
+                           * (SurfaceGrip < OffRoadGrip ? MathF.Sqrt(Clamp(SurfaceGrip, 0.1f, 1f)) : 1f);
             TargetSpeedMs = SpeedCapMs >= 0f && PlannedSpeedMs > SpeedCapMs
                 ? SpeedCapMs : PlannedSpeedMs;
 
@@ -280,10 +366,10 @@ namespace CarRace.Track
         float PlannedSpeed(float speed)
         {
             int reach = (int)MathF.Round(ReactionSeconds * MathF.Abs(speed) / _track.SampleSpacingM);
-            float lowest = _plan[Index];
+            float lowest = PlanFor(Index);
             for (int step = 1; step <= reach; step++)
             {
-                float candidate = _plan[_track.Wrap(Index + step)];
+                float candidate = PlanFor(Index + step);
                 if (candidate < lowest) lowest = candidate;
             }
             return lowest;

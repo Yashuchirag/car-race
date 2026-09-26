@@ -156,6 +156,7 @@ namespace CarRace.UnityGame
             float dt = Time.fixedDeltaTime;
             if (brakeToReverse && automaticGearbox && Autopilot == null && driver != null)
                 inputs = BrakeToReverse(inputs, dt);
+            if (DriverInput.Scripted && driver != null) LogScripted(inputs, dt);
 
             int substeps = Mathf.Max(1, Mathf.RoundToInt(modelHz * dt));
             float subDt = dt / substeps;
@@ -233,6 +234,19 @@ namespace CarRace.UnityGame
                 inputs.Throttle = back * reverseThrottle;
             }
             return inputs;
+        }
+
+        float _logClock;
+
+        /// <summary>Under -driveScript, what the car did with the inputs, four times a second.</summary>
+        void LogScripted(VehicleInputs inputs, float dt)
+        {
+            _logClock += dt;
+            if (_logClock < 0.25f) return;
+            _logClock = 0f;
+            float forward = Vector3.Dot(_body.linearVelocity, transform.forward) * 3.6f;
+            Debug.Log($"DRIVE t {Time.timeSinceLevelLoad:0.00} kph {forward:0.0} gear {Sim.Drivetrain.Gear} " +
+                      $"throttle {inputs.Throttle:0.00} brake {inputs.Brake:0.00} steer {inputs.Steer:+0.00;-0.00}");
         }
 
         void TrackWheelSpin(float dt)

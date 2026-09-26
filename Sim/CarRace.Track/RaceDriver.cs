@@ -31,6 +31,11 @@ namespace CarRace.Track
             /// cars better than their places on the racing line do; see Gap.</summary>
             public Vector3 Position;
 
+            /// <summary>The passing lane its driver has chosen: -1 left, +1 right, 0 the racing
+            /// line. A human's car is always 0. How two drivers side by side avoid choosing the
+            /// same lane.</summary>
+            public int Lane;
+
             /// <summary>No longer on the road: retired, recovered, or finished. Say so with
             /// this rather than by moving it somewhere harmless. Index arithmetic wraps, so a
             /// car parked at a nonsense index reappears as a stationary obstacle at a real
@@ -77,9 +82,50 @@ namespace CarRace.Track
         /// </summary>
         public float MinimumGapM = 6.5f;
 
-        /// <summary>How far off line it will go to pass, and how quickly it moves there.</summary>
-        public float OvertakeOffsetM = 2.8f;
+        /// <summary>How quickly the offset it starts with (its grid slot's, or where a
+        /// recovery put it) eases back to the racing line.</summary>
         public float OffsetRateMPerS = 3.0f;
+
+        /// <summary>
+        /// How close two cars have to be, along the road and across it, to be side by side and
+        /// each take a passing lane.
+        /// </summary>
+        public float CompanyAlongM = 12f;
+        public float CompanyAcrossM = 5.5f;
+
+        /// <summary>
+        /// When it leaves a lane: nobody alongside for CompanyHoldSeconds, not passing, and the
+        /// racing line within RejoinNearM of the lane, which it is in every corner, so going
+        /// back is a short step. Leaving at once, wherever it was, sent a car 7 m across the
+        /// road on a straight at 190 km/h, and back again when the next car came alongside:
+        /// it spun.
+        /// </summary>
+        public float CompanyHoldSeconds = 1f;
+        public float RejoinNearM = 1.5f;
+
+        /// <summary>
+        /// Side by side with a corner tighter than this coming up within braking distance and
+        /// TightMarginM, the car behind gives up the corner: it treats the other as in the way
+        /// and drops in behind. Dead level, the higher car number does. Two lanes through a
+        /// chicane bend too hard to hold: at Royal Park's first, the pair off the front row ran
+        /// 2 m wide of their lanes and touched every race.
+        /// </summary>
+        public float TightCornerRadiusM = 60f;
+        public float TightMarginM = 40f;
+
+        /// <summary>
+        /// It moves into a lane only if it can take that lane at the speed it is doing: the
+        /// lane's plan over its braking distance ahead no lower than its speed less this. Short
+        /// of that it stays where it is and gives way to the car alongside instead. A car that
+        /// came up alongside at 110 km/h and turned into its lane in a bend the lane plans at
+        /// 88 slid 3 m off it and into the car it had come up beside.
+        /// </summary>
+        public float LaneEntryMarginMs = 2f;
+
+        /// <summary>How far ahead of a car PathsMeet always looks, and how fast a speed cap
+        /// that is no longer wanted rises away rather than vanishing.</summary>
+        public float PathsLookM = 40f;
+        public float CapReleaseMs2 = 8f;
 
         /// <summary>Half the car's width plus what it wants between itself and the grass.</summary>
         public float HalfWidthM = 1.25f;
@@ -156,9 +202,6 @@ namespace CarRace.Track
         /// </summary>
         public float SafetyWidthM = 4f;
 
-        /// <summary>Separation it wants from a car alongside.</summary>
-        public float SideBySideGapM = 3f;
-
         public bool IsFollowing { get; private set; }
         public bool IsOvertaking { get; private set; }
 
@@ -166,12 +209,13 @@ namespace CarRace.Track
         public int BlockedBy { get; private set; } = -1;
         public float BlockedGapM { get; private set; }
 
-        /// <summary>Where across the road it has decided to be, relative to the racing line,
-        /// for diagnostics. The line it drives moves towards this at a rate.</summary>
-        public float WantedOffsetM => _wantedOffset;
+        /// <summary>Where across the road it has decided to be, for diagnostics: the passing
+        /// lane it wants, -1 left, +1 right, 0 the racing line.</summary>
+        public float WantedOffsetM => Path.Lane;
 
-        float _wantedOffset;
         float _cap = -1f;
+        float _companyFor;          // seconds it stays in its lane after the car alongside has gone
+        int _giveWayTo = -1;        // a car alongside it could not make room for, so drops behind
 
         int _passing = -1;          // the car it is passing, or -1
         float _passSide;            // +1 passing on the right, -1 on the left
@@ -180,6 +224,7 @@ namespace CarRace.Track
         float _passSideSeen = -1f;  // sideways gap to it at the last look, -1 before one
         bool _passSecure;           // room to close on it this interval
         int _gaveUpOn = -1;
+        int _passingCandidate = -1;
         float _retryIn;
         readonly Dictionary<IReadOnlyList<float>, float> _lapSeconds =
             new Dictionary<IReadOnlyList<float>, float>();
@@ -202,7 +247,12 @@ namespace CarRace.Track
 
             _brakingMs2 = limits.BrakingMs2;
             _lateralMs2 = limits.LateralMs2;
-            Path = new PathDriver(track, SpeedPlan.Build(track, limits), car);
+            track.EnsureLanes(HalfWidthM);
+            Path = new PathDriver(track, SpeedPlan.Build(track, limits), car, new[]
+            {
+                SpeedPlan.Build(track, limits, track.LaneCurvature[0]),
+                SpeedPlan.Build(track, limits, track.LaneCurvature[1]),
+            });
         }
 
         public VehicleInputs Drive(in BodyState body, float dt) => Path.Drive(body, dt);
@@ -232,7 +282,9 @@ namespace CarRace.Track
                 // what turns a whole field into a queue: a driver that has pulled out to pass
                 // still counts the car it is passing as a reason to slow down, and nobody
                 // ever gets by.
-                if (MathF.Abs(field[i].LateralM - self.LateralM) > InTheWayM) continue;
+                if (MathF.Abs(field[i].LateralM - self.LateralM) > InTheWayM
+                    && i != _giveWayTo && !GiveUpCorner(track, self, field[i], me, i, gap)
+                    && !PathsMeet(track, self, field[i], gap)) continue;
                 if (gap >= ahead) continue;
 
                 ahead = gap;
@@ -290,6 +342,7 @@ namespace CarRace.Track
                 if (_passing < 0 && !retrying && ahead < wanted + 10f
                     && WorthPassing(track, self, front, ahead))
                 {
+                    _passingCandidate = blocker;
                     float side = SideToPass(track, field, me);
                     if (side != 0f)
                     {
@@ -303,62 +356,57 @@ namespace CarRace.Track
             }
 
             // A pass is a commitment, not a verdict taken again every 20 ms. Deciding afresh
-            // each time made the pass undo itself: once a car had pulled 2.2 m out, the car
-            // it was passing no longer counted as in the way, so it steered back in behind,
-            // where the car counted again. Held-up cars swapped lanes every second or so,
-            // sometimes changing side at 160 km/h, and that is what spun them.
-            _wantedOffset = _passing >= 0 ? KeepPassing(track, field, me, dt) : 0f;
+            // each time made the pass undo itself: once a car had pulled out, the car it was
+            // passing no longer counted as in the way, so it steered back in behind, where the
+            // car counted again. Held-up cars swapped lanes every second or so, sometimes
+            // changing side at 160 km/h, and that is what spun them.
+            if (_passing >= 0) KeepPassing(track, field, me, dt);
             IsOvertaking = _passing >= 0;
 
-            // Room for anyone close, whatever else was decided, and both cars respect it.
+            // Where across the road: the racing line, or a passing lane. Passing, the lane on
+            // the side it is passing; side by side with anyone, the lane on its own side of
+            // them, so the pair runs in two lanes that cannot close on each other.
             //
-            // Two earlier versions of this were wrong in opposite directions. Letting both
-            // cars aim at the separation they want makes each drive towards the other
-            // whenever the gap it already has is wider than the one it is asking for. Giving
-            // one of them priority instead is worse: the priority car converges onto the
-            // racing line without asking whether anybody is there, so two cars gridded four
-            // metres apart settle two metres apart, which on a 1.9 m wide car is ten
-            // centimetres of daylight and a touch as soon as either one wobbles.
-            //
-            // What works is a constraint rather than a target. Neither car moves towards the
-            // other past the separation, both keep whatever they wanted otherwise, and the
-            // pair settles at the gap without either being given a right of way.
-            for (int i = 0; i < field.Length; i++)
+            // This replaced offsets from the racing line, which were the cause of most of the
+            // contacts left: the racing line sweeps across the road into a corner and carries
+            // an offset with it, so the car on the inside of a pair was pushed into the other
+            // faster than the other could move away.
+            int lane = _passing >= 0 ? (_passSide > 0f ? 1 : -1) : 0;
+            int company = CompanyLane(track, field, me, out int alongside);
+            _giveWayTo = -1;
+            if (company != 0 && company != Path.Lane && !LaneReachable(track, self, company))
             {
-                if (i == me || field[i].Gone) continue;
-
-                float infront = Gap(track, self, field[i]);
-                float behind = Gap(track, field[i], self);
-                if (MathF.Min(infront, behind) > 8f) continue;
-
-                float side = self.LateralM - field[i].LateralM;
-                if (MathF.Abs(side) > SideBySideGapM + HalfWidthM * 2f) continue;
-
-                // Level and on the same piece of road, so which way to go is a free choice.
-                // Deciding it by anything both cars compute the same way, such as which side
-                // has more room, makes both of them choose the SAME side and stay welded
-                // together. A car number cannot agree with itself from both points of view,
-                // which is the one property this needs.
-                float direction = MathF.Abs(side) > 0.2f ? MathF.Sign(side) : (me < i ? 1f : -1f);
-                float separated = field[i].LateralM + direction * SideBySideGapM;
-
-                _wantedOffset = direction > 0f
-                    ? MathF.Max(_wantedOffset, separated)
-                    : MathF.Min(_wantedOffset, separated);
+                // Cannot make that lane at this speed: stay put, and give way to the car
+                // alongside until it can or the other car has gone.
+                _giveWayTo = alongside;
+                company = Path.Lane;
             }
+            if (company != 0)
+            {
+                lane = company;
+                _companyFor = CompanyHoldSeconds;
+            }
+            else if (_companyFor > 0f) _companyFor -= dt;
 
-            // Clamped by the road that is actually left, not by a fixed number. The racing
-            // line is already close to the edge through a corner, so a car given a modest
-            // looking offset there ends up off the road, and the way that shows up is not a
-            // car running wide but a car thirty metres into a field a second later.
-            _wantedOffset = Clamp(_wantedOffset,
-                                  -MathF.Max(MathF.Min(OvertakeOffsetM, track.RoomLeft(self.Index, HalfWidthM)), 0f),
-                                  MathF.Max(MathF.Min(OvertakeOffsetM, track.RoomRight(self.Index, HalfWidthM)), 0f));
+            if (lane == 0 && Path.Lane != 0)
+            {
+                float laneFromCentre = (Path.Lane > 0 ? 1f : -1f) * track.LaneHalfM[self.Index];
+                bool near = MathF.Abs(laneFromCentre - track.LineFromCentreM[self.Index]) < RejoinNearM;
+                if (_companyFor > 0f || !near) lane = Path.Lane;
+            }
+            Path.Lane = lane;
 
-            // Move across at a rate rather than jumping, so the car is steered onto the new
-            // line instead of being teleported onto it.
-            float step = OffsetRateMPerS * dt;
-            Path.LineOffsetM += Clamp(_wantedOffset - Path.LineOffsetM, -step, step);
+            // Whatever offset it started with, from its grid slot or a recovery, eases back
+            // to the line, at a rate so the car is steered there rather than teleported; but
+            // not while the car is moving into a lane, where the two moves together swung a car
+            // off the grid towards the one beside it, and once fully in the lane the offset no
+            // longer counts and is dropped.
+            if (Path.LaneBlend >= 1f) Path.LineOffsetM = 0f;
+            else if (Path.Lane == 0 && Path.LaneBlend <= 0f)
+            {
+                float step = OffsetRateMPerS * dt;
+                Path.LineOffsetM += Clamp(-Path.LineOffsetM, -step, step);
+            }
 
             Path.SpeedCapMs = EaseCap(track, self, Path.SpeedCapMs, dt);
         }
@@ -375,16 +423,22 @@ namespace CarRace.Track
         /// </summary>
         float EaseCap(TrackData track, Seen self, float wanted, float dt)
         {
+            // Released, the cap rises away at CapReleaseMs2 rather than vanishing. Dropping it
+            // at once meant one reaction step in which the car ahead was not seen threw away
+            // all the slowing down done so far: the next cap started again from the car's
+            // speed, and it arrived in the other car's lane 20 km/h too fast.
             if (wanted < 0f)
             {
-                _cap = -1f;
-                return -1f;
+                if (_cap < 0f) return -1f;
+                _cap += CapReleaseMs2 * dt;
+                if (_cap > self.SpeedMs + 15f) _cap = -1f;
+                return _cap;
             }
 
             if (_cap < 0f) _cap = MathF.Max(self.SpeedMs, wanted);
             if (wanted >= _cap)
             {
-                _cap = wanted;
+                _cap = MathF.Min(wanted, _cap + CapReleaseMs2 * dt);
                 return _cap;
             }
 
@@ -498,8 +552,10 @@ namespace CarRace.Track
 
             // Enough room for a car alongside, not for the full offset: a pass down the
             // inside of a tight corner is a metre and a half, not three.
-            bool canRight = roomRight > 1.5f && !rightBlocked;
-            bool canLeft = roomLeft > 1.5f && !leftBlocked;
+            // Nor the side whose lane the car ahead is in.
+            Seen front = _passingCandidate >= 0 ? field[_passingCandidate] : default;
+            bool canRight = roomRight > 1.5f && !rightBlocked && front.Lane <= 0;
+            bool canLeft = roomLeft > 1.5f && !leftBlocked && front.Lane >= 0;
 
             if (canRight && !canLeft) return 1f;
             if (canLeft && !canRight) return -1f;
@@ -511,12 +567,12 @@ namespace CarRace.Track
         }
 
         /// <summary>
-        /// Carries on with the pass it committed to, on the side it chose, and returns the
-        /// offset to aim at. Ends it when the car is clearly past, and gives it up when the
-        /// other car gets away or the pass has gone on long enough that it is not working,
-        /// after which it leaves that car alone for a while rather than trying again at once.
+        /// Carries on with the pass it committed to, on the side it chose. Ends it when the
+        /// car is clearly past, and gives it up when the other car gets away or the pass has
+        /// gone on long enough that it is not working, after which it leaves that car alone for
+        /// a while rather than trying again at once.
         /// </summary>
-        float KeepPassing(TrackData track, Seen[] field, int me, float dt)
+        void KeepPassing(TrackData track, Seen[] field, int me, float dt)
         {
             Seen self = field[me];
             Seen other = field[_passing];
@@ -528,7 +584,7 @@ namespace CarRace.Track
             if (other.Gone || (past && myLead > PassedM))
             {
                 _passing = -1;
-                return 0f;
+                return;
             }
 
             // Gaining means a new best by at least half a metre. The lead moves in whole
@@ -547,12 +603,110 @@ namespace CarRace.Track
                 _gaveUpOn = _passing;
                 _retryIn = PassRetrySeconds;
                 _passing = -1;
-                return 0f;
             }
+        }
 
-            float room = _passSide > 0f ? track.RoomRight(self.Index, HalfWidthM)
-                                        : track.RoomLeft(self.Index, HalfWidthM);
-            return _passSide * MathF.Min(OvertakeOffsetM, MathF.Max(room, 0f));
+        /// <summary>
+        /// Whether this car's path and <paramref name="other"/>'s come within InTheWayM of each
+        /// other before this car would catch it: each car's lane, or the racing line if it is
+        /// on none, compared sample by sample from where the other is to where this car would
+        /// reach it at the speed it is closing. Where they do, the other car is in the way
+        /// already, though it is well to one side now.
+        ///
+        /// Judged by where the cars are now, a car in a lane was not in the way of one coming up
+        /// on the racing line until the line swept into its lane, 4 m away, with the car behind
+        /// doing 20 to 30 km/h more: too late to stop.
+        /// </summary>
+        bool PathsMeet(TrackData track, in Seen self, in Seen other, float gap)
+        {
+            // At least PathsLookM ahead of it, closing or not: judged only while closing, the car
+            // behind forgot the other as soon as it had slowed to its speed, and sped up again.
+            float closing = self.SpeedMs - MathF.Max(other.SpeedMs, 0f);
+            float catchM = closing > 0.5f ? MathF.Min(MathF.Max(other.SpeedMs, 0f) * gap / closing, 150f) : 0f;
+            catchM = MathF.Max(catchM, PathsLookM);
+            int steps = (int)(catchM / track.SampleSpacingM);
+            for (int k = 0; k <= steps; k++)
+            {
+                int j = track.Wrap(other.Index + k);
+                float mine = Path.Lane != 0 ? Path.Lane * track.LaneHalfM[j] : track.LineFromCentreM[j];
+                float theirs = other.Lane != 0 ? other.Lane * track.LaneHalfM[j] : track.LineFromCentreM[j];
+                if (MathF.Abs(mine - theirs) < InTheWayM) return true;
+            }
+            return false;
+        }
+
+        /// <summary>Whether the lane on <paramref name="side"/> can be taken at the speed the car
+        /// is doing: its plan over the braking distance ahead. See LaneEntryMarginMs.</summary>
+        bool LaneReachable(TrackData track, in Seen self, int side)
+        {
+            float braking = MathF.Max(_brakingMs2 * BrakingMargin, 0.5f);
+            float reach = self.SpeedMs * self.SpeedMs / (2f * braking) + 20f;
+            int steps = (int)(reach / track.SampleSpacingM);
+            for (int k = 0; k <= steps; k++)
+            {
+                // What it could slow to by then, against what the lane allows there.
+                float by = MathF.Sqrt(MathF.Max(self.SpeedMs * self.SpeedMs - 2f * braking * k * track.SampleSpacingM, 0f));
+                if (Path.LanePlanAt(side, self.Index + k) < by - LaneEntryMarginMs) return false;
+            }
+            return true;
+        }
+
+        /// <summary>Whether to give up the corner to <paramref name="other"/>, a car alongside
+        /// and ahead, however slightly, with a tight corner coming. See TightCornerRadiusM.</summary>
+        bool GiveUpCorner(TrackData track, in Seen self, in Seen other, int me, int it, float gap)
+        {
+            if (gap > CompanyAlongM) return false;
+            float across = track.FromCentre(self.Index, self.LateralM) - track.FromCentre(other.Index, other.LateralM);
+            if (MathF.Abs(across) > CompanyAcrossM) return false;
+            if (gap < 0.5f && me < it) return false;   // dead level: the higher number yields
+
+            float braking = MathF.Max(_brakingMs2 * BrakingMargin, 0.5f);
+            float reach = self.SpeedMs * self.SpeedMs / (2f * braking) + TightMarginM;
+            float tight = 1f / TightCornerRadiusM;
+            for (float d = 0f; d < reach; d += track.SampleSpacingM)
+                if (MathF.Abs(track.LineCurvature[track.Wrap(self.Index + (int)(d / track.SampleSpacingM))]) > tight)
+                    return true;
+            return false;
+        }
+
+        /// <summary>
+        /// The lane to take for the car alongside, the nearest one if several: -1 left, +1
+        /// right, 0 when nobody is. The lane it is already in, if every car alongside allows it,
+        /// so a third car coming close does not flick it to the other side for a moment. Its own side of that car, unless the other has already
+        /// taken a lane, in which case the other one. Two cars both already in the same lane
+        /// settle it by which is on that lane's side, which the two of them always answer
+        /// the opposite way; and dead level, by car number, which they do too.
+        /// </summary>
+        int CompanyLane(TrackData track, Seen[] field, int me, out int alongside)
+        {
+            alongside = -1;
+            Seen self = field[me];
+            float mine = track.FromCentre(self.Index, self.LateralM);
+            float nearest = float.MaxValue;
+            int lane = 0;
+            bool keepAllowed = Path.Lane != 0;
+            int company = 0;
+            for (int i = 0; i < field.Length; i++)
+            {
+                if (i == me || field[i].Gone) continue;
+                float along = MathF.Min(Gap(track, self, field[i]), Gap(track, field[i], self));
+                if (along > CompanyAlongM) continue;
+                float theirs = track.FromCentre(field[i].Index, field[i].LateralM);
+                float across = mine - theirs;
+                if (MathF.Abs(across) > CompanyAcrossM) continue;
+
+                int mySide = MathF.Abs(across) > 0.2f ? (across > 0f ? 1 : -1) : (me < i ? 1 : -1);
+                int choice;
+                if (i == _passing) choice = _passSide > 0f ? 1 : -1;
+                else if (field[i].Lane != 0 && Path.Lane == 0) choice = -field[i].Lane;
+                else if (field[i].Lane != 0 && field[i].Lane == Path.Lane) choice = mySide == Path.Lane ? Path.Lane : -Path.Lane;
+                else choice = mySide;
+
+                company++;
+                if (choice != Path.Lane) keepAllowed = false;
+                if (along < nearest) { nearest = along; lane = choice; alongside = i; }
+            }
+            return company > 0 && keepAllowed ? Path.Lane : lane;
         }
 
         /// <summary>

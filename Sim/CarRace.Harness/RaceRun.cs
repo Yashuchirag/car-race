@@ -121,6 +121,7 @@ namespace CarRace.Harness
                                                   rigs[i].Body.State.Forward),
                             Plan = drivers[i].Path.Plan,
                             Position = rigs[i].Body.State.Position,
+                            Lane = drivers[i].Path.Lane,
 
                             // A retired car is behind the barriers, not in the middle of the
                             // road. Leaving it in the field makes everyone queue behind a

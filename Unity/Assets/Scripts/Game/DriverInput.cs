@@ -64,6 +64,12 @@ namespace CarRace.UnityGame
         [SerializeField] float throttleCutStartDegrees = 3f;
         [SerializeField] float throttleCutEndDegrees = 8f;
 
+        // Sideslip only means a slide once the car is moving. Pulling away with lock on, the
+        // car moves sideways against its nose while barely rolling, so the angle read huge: the
+        // throttle cut left it standing, or rolling back down a slope, and the counter-steer
+        // fought the turn. Both come in between these speeds.
+        const float SlipAssistFromMs = 4f, SlipAssistFullMs = 10f;
+
         [Header("Gamepad buttons, XInput numbering")]
         [SerializeField] KeyCode handbrakeButton = KeyCode.JoystickButton0;   // A
         [SerializeField] KeyCode shiftUpButton = KeyCode.JoystickButton5;     // RB
@@ -77,7 +83,41 @@ namespace CarRace.UnityGame
         public bool RespawnRequested { get; private set; }
         public bool RestartRequested { get; private set; }
 
-        float _steer, _request, _sideslipDegrees;
+        float _steer, _request, _sideslipDegrees, _slipWeight;
+
+        // -driveScript "5:1,-1,0;11:0,0,1": from 5 s after the scene loads throttle 1, steer -1
+        // (left) and no brake, from 11 s the brake alone. It replaces the keyboard, so an input
+        // bug can be reproduced in a run nobody is sitting at; CarController logs what the car
+        // did with it.
+        static readonly (float t, float throttle, float steer, float brake)[] Script = ReadScript();
+        public static bool Scripted => Script.Length > 0;
+
+        static (float, float, float, float)[] ReadScript()
+        {
+            string[] args = Environment.GetCommandLineArgs();
+            int i = Array.IndexOf(args, "-driveScript");
+            if (i < 0 || i + 1 >= args.Length) return Array.Empty<(float, float, float, float)>();
+            var steps = new System.Collections.Generic.List<(float, float, float, float)>();
+            var culture = System.Globalization.CultureInfo.InvariantCulture;
+            foreach (string step in args[i + 1].Split(';'))
+            {
+                string[] timeAndValues = step.Split(':');
+                string[] v = timeAndValues[1].Split(',');
+                steps.Add((float.Parse(timeAndValues[0], culture), float.Parse(v[0], culture), float.Parse(v[1], culture), float.Parse(v[2], culture)));
+            }
+            return steps.ToArray();
+        }
+
+        static (float t, float throttle, float steer, float brake) Scripting()
+        {
+            float now = Time.timeSinceLevelLoad;
+            var current = (0f, 0f, 0f, 0f);
+            foreach (var step in Script) if (step.t <= now) current = step;
+            return current;
+        }
+
+        static float RawSteer() => Scripted ? Scripting().steer : Input.GetAxisRaw("Horizontal");
+        static float RawForward() => Scripted ? Scripting().throttle - Scripting().brake : Input.GetAxisRaw("Vertical");
         float _maxSteerDegrees = 33f, _steerFalloffSpeed = 42f, _wheelbase = 2.65f;
 
         /// <summary>The car's steering geometry, which the assist needs to know how much lock
@@ -116,8 +156,9 @@ namespace CarRace.UnityGame
             float sideslip = body.Velocity.LengthSquared() < 1f ? 0f
                            : MathF.Atan2(Vec3.Dot(body.Velocity, body.Right), MathF.Abs(speed));
             _sideslipDegrees = MathF.Abs(sideslip) * (180f / MathF.PI);
+            _slipWeight = MathF.Min(1f, MathF.Max(0f, (MathF.Abs(speed) - SlipAssistFromMs) / (SlipAssistFullMs - SlipAssistFromMs)));
 
-            float raw = Input.GetAxisRaw("Horizontal");
+            float raw = RawSteer();
             if (!steeringAssist) { _steer = raw; return; }
 
             // The key's request ramps, so a tap asks for a little and a hold for everything.
@@ -137,7 +178,7 @@ namespace CarRace.UnityGame
                         + yawGain * _wheelbase / v * (wantedYaw - yawRate);
             float dead = slipDeadDegrees * (MathF.PI / 180f);
             if (MathF.Abs(sideslip) > dead)
-                wheel += slipGain * (sideslip - MathF.Sign(sideslip) * dead);
+                wheel += _slipWeight * slipGain * (sideslip - MathF.Sign(sideslip) * dead);
 
             // As a share of the lock the model hands out at this speed.
             float full = _maxSteerDegrees / (1f + v / MathF.Max(_steerFalloffSpeed, 0.01f)) * (MathF.PI / 180f);
@@ -164,23 +205,23 @@ namespace CarRace.UnityGame
 
         public VehicleInputs Read()
         {
-            float forward = Input.GetAxisRaw("Vertical");
+            float forward = RawForward();
             float throttle = Mathf.Max(forward, 0f);
             float brake = Mathf.Max(-forward, 0f);
-            if (useTriggerAxes)
+            if (useTriggerAxes && !Scripted)
             {
                 throttle = Mathf.Max(throttle, Mathf.Clamp01(Input.GetAxisRaw(throttleAxis)));
                 brake = Mathf.Max(brake, Mathf.Clamp01(Input.GetAxisRaw(brakeAxis)));
             }
             if (throttleAssist)
-                throttle *= 1f - Mathf.Clamp01((_sideslipDegrees - throttleCutStartDegrees)
-                                               / Mathf.Max(throttleCutEndDegrees - throttleCutStartDegrees, 0.1f));
+                throttle *= 1f - _slipWeight * Mathf.Clamp01((_sideslipDegrees - throttleCutStartDegrees)
+                                                             / Mathf.Max(throttleCutEndDegrees - throttleCutStartDegrees, 0.1f));
 
             return new VehicleInputs
             {
                 // Raw, not smoothed: the model already rate limits the steering rack at
                 // SteerRatePerSecond, and smoothing here would fight it and add lag on a stick.
-                Steer = steeringAssist ? _steer : Input.GetAxisRaw("Horizontal"),
+                Steer = steeringAssist ? _steer : RawSteer(),
                 Throttle = throttle,
                 Brake = brake,
                 Handbrake = Input.GetKey(handbrakeKey) || Input.GetKey(handbrakeButton) ? 1f : 0f,

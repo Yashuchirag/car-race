@@ -1,3 +1,4 @@
+using System;
 using System.Numerics;
 
 namespace CarRace.Track
@@ -42,6 +43,66 @@ namespace CarRace.Track
             => WidthLeft[index] + LineFromCentreM[index] - halfWidthM;
 
         public int Count => Line != null ? Line.Length : 0;
+
+        /// <summary>
+        /// Two passing lanes, fixed on the road rather than hung off the racing line: [0] left
+        /// of the centreline, [1] right, each LaneHalfM[i] from it. Two cars side by side take
+        /// one each, and since the lanes run parallel to the road they never close on each other
+        /// the way two offsets from a racing line do when the line sweeps across the road into a
+        /// corner and carries the inside car into the outside one. Every pair off Desert Park's
+        /// grid touched in its first hairpin that way.
+        ///
+        /// A lane is LaneHalfWantedM out, less where the road is too narrow for that and a car,
+        /// taken as the narrowest the road gets over LaneSmoothM either way so a lane never
+        /// jinks for a local pinch, then smoothed. Built on first use by EnsureLanes.
+        /// </summary>
+        public float[] LaneHalfM;
+        public Vector3[][] LanePoints;
+        public float[][] LaneCurvature;
+        public const float LaneHalfWantedM = 2.4f;
+        const float LaneSmoothM = 40f;
+
+        public void EnsureLanes(float carHalfWidthM)
+        {
+            if (LaneHalfM != null) return;
+            int n = Count;
+            var raw = new float[n];
+            for (int i = 0; i < n; i++)
+                raw[i] = MathF.Max(MathF.Min(LaneHalfWantedM, MathF.Min(WidthLeft[i], WidthRight[i]) - carHalfWidthM - 0.25f), 0f);
+
+            int reach = Math.Max(1, (int)MathF.Round(LaneSmoothM / SampleSpacingM));
+            var narrowest = new float[n];
+            for (int i = 0; i < n; i++)
+            {
+                float m = raw[i];
+                for (int k = -reach; k <= reach; k++) m = MathF.Min(m, raw[Wrap(i + k)]);
+                narrowest[i] = m;
+            }
+            LaneHalfM = new float[n];
+            for (int i = 0; i < n; i++)
+            {
+                float sum = 0f;
+                for (int k = -reach; k <= reach; k++) sum += narrowest[Wrap(i + k)];
+                LaneHalfM[i] = sum / (2 * reach + 1);
+            }
+
+            int stride = Math.Max(1, (int)MathF.Round(6f / SampleSpacingM));
+            LanePoints = new Vector3[2][];
+            LaneCurvature = new float[2][];
+            for (int lane = 0; lane < 2; lane++)
+            {
+                float side = lane == 0 ? -1f : 1f;
+                var points = new Vector3[n];
+                for (int i = 0; i < n; i++)
+                    points[i] = Centre[i] + Right(Tangent(Centre, i)) * (side * LaneHalfM[i]);
+                LanePoints[lane] = points;
+                LaneCurvature[lane] = SignedCurvature(points, stride);
+            }
+        }
+
+        /// <summary>Where a car at sample <paramref name="index"/>, <paramref name="fromLineM"/>
+        /// off the racing line, is across the road: positive to the right of the centreline.</summary>
+        public float FromCentre(int index, float fromLineM) => LineFromCentreM[index] + fromLineM;
 
         public int Wrap(int index)
         {

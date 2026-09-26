@@ -21,7 +21,9 @@ namespace CarRace.UnityGame
     /// The AI keep driving after their flag, since a car parked on the racing line is a hazard.
     ///
     /// An AI car that has been stopped for StuckSeconds, pushed into a wall or turned round in
-    /// a crash, is put back on its racing line where it was.
+    /// a crash, is put back on its racing line where it was; sooner, after OffRoadStuckSeconds,
+    /// if it is crawling off the road or pointing the wrong way. Each AI is told the grip under
+    /// its wheels, so it drives the grass at a speed the grass will carry.
     /// </summary>
     public sealed class RaceDirector : MonoBehaviour
     {
@@ -46,6 +48,12 @@ namespace CarRace.UnityGame
 
         const float ReactionSeconds = 0.02f;
         const float StuckSeconds = 5f;
+
+        // Off the road or pointing the wrong way, and crawling, is stuck sooner: such a car is
+        // not about to drive out of it, and the field keeps arriving.
+        const float OffRoadStuckSeconds = 3f;
+        const float CrawlingMs = 5f;
+        const float WrongWayDegrees = 100f;
         const float CountdownSeconds = 3f;
         const float GoShownSeconds = 1f;
 
@@ -95,8 +103,12 @@ namespace CarRace.UnityGame
                 _drivers[i] = driver;
 
                 int k = i;
-                aiCars[i].Autopilot = (body, dt) => _started ? Logged(k, _drivers[k].Drive(body, dt))
-                                                             : new VehicleInputs { Brake = 1f };
+                aiCars[i].Autopilot = (body, dt) =>
+                {
+                    if (!_started) return new VehicleInputs { Brake = 1f };
+                    _drivers[k].Path.SurfaceGrip = Grip(aiCars[k]);
+                    return Logged(k, _drivers[k].Drive(body, dt));
+                };
                 aiCars[i].RecoveryPose = () => OnLine(k);
             }
 
@@ -237,7 +249,7 @@ namespace CarRace.UnityGame
             for (int i = 0; i < aiCars.Length; i++)
             {
                 PathDriver path = _drivers[i].Path;
-                _field[i] = Seen(aiCars[i], path.Index, path.LateralFromLineM, path.Plan);
+                _field[i] = Seen(aiCars[i], path.Index, path.LateralFromLineM, path.Plan, path.Lane);
             }
             Vec3 playerPosition = ToNumerics(player.transform.position);
             _field[aiCars.Length] = Seen(player, _playerIndex,
@@ -249,9 +261,13 @@ namespace CarRace.UnityGame
             {
                 _drivers[i].Observe(_track, _field, i, elapsed);
 
-                bool stopped = _field[i].SpeedMs < 1f && _field[i].SpeedMs > -1f;
-                _stuckFor[i] = stopped ? _stuckFor[i] + elapsed : 0f;
-                if (_stuckFor[i] < StuckSeconds) continue;
+                float speed = _field[i].SpeedMs;
+                bool stopped = speed < 1f && speed > -1f;
+                bool lost = Grip(aiCars[i]) < _drivers[i].Path.OffRoadGrip
+                            || Mathf.Abs(_drivers[i].Path.HeadingErrorDeg) > WrongWayDegrees;
+                bool stuck = stopped || (lost && speed < CrawlingMs && speed > -CrawlingMs);
+                _stuckFor[i] = stuck ? _stuckFor[i] + elapsed : 0f;
+                if (_stuckFor[i] < (lost ? OffRoadStuckSeconds : StuckSeconds)) continue;
                 aiCars[i].Recover();
                 _stuckFor[i] = 0f;
             }
@@ -277,7 +293,7 @@ namespace CarRace.UnityGame
             _playerIndex = index;
         }
 
-        RaceDriver.Seen Seen(CarController car, int index, float lateral, System.Collections.Generic.IReadOnlyList<float> plan)
+        RaceDriver.Seen Seen(CarController car, int index, float lateral, System.Collections.Generic.IReadOnlyList<float> plan, int lane = 0)
         {
             Transform t = car.transform;
             Rigidbody body = car.GetComponent<Rigidbody>();
@@ -288,7 +304,16 @@ namespace CarRace.UnityGame
                 SpeedMs = Vector3.Dot(body.linearVelocity, t.forward),
                 Plan = plan,
                 Position = ToNumerics(t.position),
+                Lane = lane,
             };
+        }
+
+        /// <summary>The grip under a car, its wheels' average: 1 on asphalt, 0.45 on grass.</summary>
+        static float Grip(CarController car)
+        {
+            float sum = 0f;
+            foreach (var wheel in car.Sim.Wheels) sum += wheel.SurfaceFriction;
+            return sum / car.Sim.Wheels.Length;
         }
 
         /// <summary>Where a stuck AI car goes back to: its racing line at its place on the lap,

@@ -103,7 +103,8 @@ namespace CarRace.UnityGame
         {
             var director = FindAnyObjectByType<RaceDirector>();
             if (director == null) return;
-            director.AiDrivesPlayer = true;
+            // Unless a -driveScript is driving it instead, to test the inputs.
+            director.AiDrivesPlayer = !DriverInput.Scripted;
 
             // A disabled component's Start never runs, so the recorder opens no file.
             if (Array.IndexOf(Environment.GetCommandLineArgs(), "-noTelemetry") >= 0)

@@ -68,6 +68,7 @@ namespace UnityEngine
     {
         public static float fixedDeltaTime => throw new NotImplementedException();
         public static float deltaTime => throw new NotImplementedException();
+        public static float timeSinceLevelLoad => throw new NotImplementedException();
     }
 
     public static class Debug
