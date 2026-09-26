@@ -100,6 +100,36 @@ namespace CarRace.Track
             }
         }
 
+        /// <summary>
+        /// How sharply the road curves up or down along the racing line, 1/m, negative over a
+        /// crest; smoothed over CrestSpanM so a single sample's height noise is not a crest.
+        /// Over a crest at speed v the tyres carry 1 + v^2 k / g of the car's weight, and grip
+        /// goes with it: the speed plan needs that, or it asks for full grip where there is
+        /// far less. Built on first use.
+        /// </summary>
+        public float[] VerticalCurvature
+        {
+            get
+            {
+                if (_vertical != null) return _vertical;
+                int n = Count, k = Math.Max(1, (int)MathF.Round(CrestSpanM / SampleSpacingM));
+                float span = k * SampleSpacingM;
+                var raw = new float[n];
+                for (int i = 0; i < n; i++)
+                    raw[i] = (Line[Wrap(i + k)].Y - 2f * Line[i].Y + Line[Wrap(i - k)].Y) / (span * span);
+                _vertical = new float[n];
+                for (int i = 0; i < n; i++)
+                {
+                    float sum = 0f;
+                    for (int j = -k; j <= k; j++) sum += raw[Wrap(i + j)];
+                    _vertical[i] = sum / (2 * k + 1);
+                }
+                return _vertical;
+            }
+        }
+        float[] _vertical;
+        const float CrestSpanM = 10f;
+
         /// <summary>Where a car at sample <paramref name="index"/>, <paramref name="fromLineM"/>
         /// off the racing line, is across the road: positive to the right of the centreline.</summary>
         public float FromCentre(int index, float fromLineM) => LineFromCentreM[index] + fromLineM;

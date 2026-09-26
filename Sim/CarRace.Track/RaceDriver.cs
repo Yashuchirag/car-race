@@ -241,6 +241,7 @@ namespace CarRace.Track
             // Each driver plans for its own grip, rather than sharing one plan and scaling
             // the speeds. A driver who corners slower also has to brake earlier, and only a
             // plan built at its own limits gets that right.
+            float grip = limits.LateralMs2;   // the car's own, before the driver's share of it
             limits.LateralMs2 *= pace;
             limits.BrakingMs2 *= pace;
             limits.TractionMs2 *= pace;
@@ -253,6 +254,7 @@ namespace CarRace.Track
                 SpeedPlan.Build(track, limits, track.LaneCurvature[0]),
                 SpeedPlan.Build(track, limits, track.LaneCurvature[1]),
             });
+            Path.LateralGripMs2 = grip;
         }
 
         public VehicleInputs Drive(in BodyState body, float dt) => Path.Drive(body, dt);

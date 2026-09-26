@@ -48,11 +48,21 @@ namespace CarRace.Track
             // Cornering limit. Downforce is ignored, which understates what the car can
             // carry through a fast corner: on this car it is 8% of the vertical load at
             // 80 m/s, so the plan is a little slow there and never optimistic.
+            //
+            // Crests are not ignored. Over one the tyres carry 1 + v^2 k / g of the weight, k
+            // the road's vertical curvature, negative there, and every limit shrinks with it:
+            // solving v^2 c = A (1 + v^2 k / g) for v. On flat ground the plan asked for full
+            // grip over the crests of three circuits, in bends, and in Unity every AI car spun
+            // off at the same place on each of them. Dips would give grip back; left out, so
+            // the plan is never optimistic.
+            float[] vertical = track.VerticalCurvature;
             for (int i = 0; i < n; i++)
             {
                 float curvature = MathF.Abs(curvatureOfPath[i]);
-                float corner = curvature > 1e-5f
-                    ? MathF.Sqrt(lateralLimitMs2 / curvature)
+                float crest = MathF.Min(vertical[i], 0f);
+                float denominator = curvature - lateralLimitMs2 * crest / Gravity;
+                float corner = denominator > 1e-5f
+                    ? MathF.Sqrt(lateralLimitMs2 / denominator)
                     : topSpeedMs;
                 speed[i] = MathF.Min(corner, topSpeedMs);
             }
@@ -75,9 +85,14 @@ namespace CarRace.Track
             {
                 for (int i = n - 1; i >= 0; i--)
                 {
-                    float entry = BrakingEntrySpeed(speed[track.Wrap(i + 1)],
-                                                    MathF.Abs(curvatureOfPath[i]),
-                                                    lateralLimitMs2, brakingLimitMs2, ds);
+                    float next = speed[track.Wrap(i + 1)];
+                    float grip = Load(next, vertical[i]);
+                    float entry = BrakingEntrySpeed(next, MathF.Abs(curvatureOfPath[i]),
+                                                    lateralLimitMs2 * grip, brakingLimitMs2 * grip, ds);
+                    // Once more at the speed it came out at, which is the faster, so the lighter.
+                    grip = Load(entry, vertical[i]);
+                    entry = BrakingEntrySpeed(next, MathF.Abs(curvatureOfPath[i]),
+                                              lateralLimitMs2 * grip, brakingLimitMs2 * grip, ds);
                     if (speed[i] > entry) speed[i] = entry;
                 }
             }
@@ -102,14 +117,22 @@ namespace CarRace.Track
                         if (powerLimited < accel) accel = powerLimited;
                     }
 
+                    float grip = Load(speed[i], vertical[next]);
                     float exit = BrakingEntrySpeed(speed[i], MathF.Abs(curvatureOfPath[next]),
-                                                   lateralLimitMs2, accel, ds);
+                                                   lateralLimitMs2 * grip, accel * grip, ds);
                     if (speed[next] > exit) speed[next] = exit;
                 }
             }
 
             return speed;
         }
+
+        const float Gravity = 9.81f;
+
+        /// <summary>Share of its weight a car at <paramref name="speedMs"/> has on its tyres
+        /// where the road curves vertically by <paramref name="vertical"/>; crests only.</summary>
+        static float Load(float speedMs, float vertical) =>
+            MathF.Max(0.3f, 1f + speedMs * speedMs * MathF.Min(vertical, 0f) / Gravity);
 
         /// <summary>
         /// Fastest a car may be at one sample given the speed at the sample next to it, with

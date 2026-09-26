@@ -64,10 +64,10 @@ namespace CarRace.UnityGame
         [SerializeField] float throttleCutStartDegrees = 3f;
         [SerializeField] float throttleCutEndDegrees = 8f;
 
-        // Sideslip only means a slide once the car is moving. Pulling away with lock on, the
-        // car moves sideways against its nose while barely rolling, so the angle read huge: the
-        // throttle cut left it standing, or rolling back down a slope, and the counter-steer
-        // fought the turn. Both come in between these speeds.
+        // Sideslip only means a slide once the car is moving forwards. Pulling away with lock
+        // on, the car moves sideways against its nose while barely rolling, so the angle read
+        // huge: the throttle cut left it standing, or rolling back down a slope, and the
+        // counter-steer fought the turn. Both come in between these forward speeds.
         const float SlipAssistFromMs = 4f, SlipAssistFullMs = 10f;
 
         [Header("Gamepad buttons, XInput numbering")]
@@ -156,7 +156,9 @@ namespace CarRace.UnityGame
             float sideslip = body.Velocity.LengthSquared() < 1f ? 0f
                            : MathF.Atan2(Vec3.Dot(body.Velocity, body.Right), MathF.Abs(speed));
             _sideslipDegrees = MathF.Abs(sideslip) * (180f / MathF.PI);
-            _slipWeight = MathF.Min(1f, MathF.Max(0f, (MathF.Abs(speed) - SlipAssistFromMs) / (SlipAssistFullMs - SlipAssistFromMs)));
+            // Forward speed, signed: never while reversing, where the throttle key is the brake
+            // and cutting it left a car rolling backwards with the key held down.
+            _slipWeight = MathF.Min(1f, MathF.Max(0f, (speed - SlipAssistFromMs) / (SlipAssistFullMs - SlipAssistFromMs)));
 
             float raw = RawSteer();
             if (!steeringAssist) { _steer = raw; return; }

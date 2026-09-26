@@ -12,12 +12,12 @@ concrete action is. Everything below it is detail.
 
 **Last updated:** 2026-09-24 (circuit choice in the lobby)
 
-**Last completed:** Passing lanes, headless (section 3, WIP): 71 contacts down to 9 on the
-test set, passing up. Standing-start fix and grass recovery written.
+**Last completed:** Your four fixes of 2026-09-25, all DONE and checked in the built
+game: passing lanes, far fewer AI crashes, AI recovery from grass (and the bends that sent
+every AI onto it), and the standing start with W and A or D.
 
-**Next action:** With Unity closed: build, run the `-driveScript` standing-start test
-(before and after), and AI races with `-aiLog` on every circuit for contacts, grass and
-recoveries.
+**Next action:** Your drive. Then, from section 3: flags, penalties and pit stops, or LAN
+play, or sound.
 
 ---
 
@@ -219,9 +219,9 @@ physics has never driven a corner the track pipeline produced.
 | HUD scales with resolution | DONE | 2026-09-24, your question whether the HUD suits 1080p, QHD and UHD. It was placed relative to the screen edges but sized in fixed pixels, so at UHD every panel and font took half the share of the screen it does at 1080p. `Hud` gives a scale of screen height over 1080 (never below 0.5); `DriveHud`, `LapTimer`, `RaceDirector` and `MiniMap` scale font sizes and rectangles by it, not `GUI.matrix`, which would blur text at 4K. The minimap redraws at the screen's own resolution and reallocates on a resize. 1080p is unchanged. Compiles against the real Unity DLLs and the stub. You checked it at the higher resolutions and it looks fine. |
 | Reverse on the brake key | DONE | 2026-09-24, from a stop against a wall you could not leave, and your suggestion. That run's telemetry showed no keys registering at all for 35 s (the Game view had most likely lost focus), but the real gap was that the keyboard had no reverse: S only braked, reverse was only on the manual shift key. `CarController.BrakeToReverse`, with the automatic gearbox: brake held for 0.3 s at a standstill or rolling back selects reverse, then brake drives backwards at 0.25 throttle (a full key spun the rear wheels at slip ratio -11, traction control only watches forward spin) and throttle brakes; throttle once stopped selects first. `DriverInput` steers plain ramped lock when reversing, since the turn-rate feedback pushes the wrong way backwards. Headless, the whole sequence runs: 61 km/h to reverse at 17 km/h and back to first. Compiles against real Unity and the stub (which gained `Mathf.Abs`). You drove it and confirmed it works. |
 | Overtaking | DONE | Passes that complete where the plans say one can: `--fastest-last` puts the fastest car at the back, and it now gains places. 1 contact in 20 such races remains, from the lane model; section 1. |
-| Passing lanes | WIP | 2026-09-25, your request (overtake better, crash less). `TrackData` has two lanes fixed on the road, 2.4 m either side of the centreline (less where the road is narrow), each with its own curvature and, per driver, its own speed plan; `PathDriver.Lane` drives one, the aim moving sideways at no more than 2.2 m/s. `RaceDriver`: passing takes the lane on the passing side; side by side with anyone (12 m along, 5.5 m across) a car takes the lane on its own side, the opposite one if the other has chosen already, and keeps its lane while every car alongside allows it; it leaves a lane only when nobody has been alongside for 1 s and the racing line is within 1.5 m of the lane. Side by side into a corner tighter than 60 m radius the car behind gives up the corner; a car that cannot take its lane at its speed gives way instead; a car ahead is in the way if the two paths come within 2.2 m before this car would catch it (the forward check); a released speed cap rises away rather than vanishing. The start offset holds while a car moves into a lane. Headless, 8 cars, 3 laps, six circuits, both grids: 4 seeds, 71 contacts (55 on lap one) and 64 places gained before, 9 contacts (7) and 79 places after; 8 seeds, 22 contacts and 169 places. Monza 16 cars 10 laps: 0 contacts. Unity check pending: you had Unity open. |
-| Standing start with lock on | WIP | 2026-09-25, your report: at a standstill W with A or D sometimes rolled back or would not go. The throttle assist cut power by sideslip, and pulling away with lock on the car moves sideways against its nose while barely rolling, so sideslip read huge: throttle cut, the car stalled or rolled back down a slope. `DriverInput` now fades the throttle cut and the slip counter-steer in between 4 and 10 m/s. Test hook `-driveScript "t:throttle,steer,brake;..."` drives the player's car without a keyboard, logging speed and gear (DRIVE lines) four times a second; a benchmark with it no longer hands the car to the AI. Unity check pending. |
-| AI recovery from grass | WIP | 2026-09-25, your request. `PathDriver.SurfaceGrip`, set by `RaceDirector` from the wheels' surface friction each step: off the road (grip under 0.9) the AI asks for the plan's speed times the square root of the grip, what the grass carries round the same curve, and steers back at no more than 20 degrees. An AI crawling off the road or facing more than 100 degrees wrong is put back on its line after 3 s rather than 5. Unity check pending. |
+| Passing lanes | DONE | 2026-09-25, your request (overtake better, crash less). `TrackData` has two lanes fixed on the road, 2.4 m either side of the centreline (less where the road is narrow), each with its own curvature and, per driver, its own speed plan; `PathDriver.Lane` drives one, the aim moving sideways at no more than 1.5 m/s. `RaceDriver`: passing takes the lane on the passing side; side by side with anyone (12 m along, 5.5 m across) a car takes the lane on its own side, the opposite one if the other has chosen already, and keeps its lane while every car alongside allows it; it leaves a lane only when nobody has been alongside for 1 s and the racing line is within 1.5 m of the lane. Side by side into a corner tighter than 60 m radius the car behind gives up the corner; a car that cannot take its lane at its speed gives way instead; a car ahead is in the way if the two paths come within 2.2 m before this car would catch it; a released speed cap rises away rather than vanishing; the start offset holds while a car moves into a lane. Headless, 8 cars, 3 laps, six circuits, both grids, 8 seeds: 142 contacts at the old code's rate, 8 now; 40 spins at the first lane version, 8 now; 128 places gained by passing at the old rate, 162 now. In the built game, AI only, six circuits x 3 min and three x 7 min: old AI 3 contacts, 132 car-seconds off the road; now 0 contacts, 0 recoveries, 0 s off the road. |
+| Standing start with lock on | DONE | 2026-09-25, your report: at a standstill W with A or D sometimes stood still or rolled back. Two causes, both the throttle assist cutting power by sideslip, which is meaningless at walking pace: pulling away with lock the car moves sideways against its nose, so the cut left it at 3 to 5 km/h for six seconds; and in reverse gear W is the brake, so cutting it left the car rolling backwards with W held. `DriverInput` now fades the cut and the slip counter-steer in between 4 and 10 m/s of forward speed, never while reversing. Reproduced and checked in the built game with `-driveScript` (timed throttle, steer, brake in place of the keyboard, logging speed and gear): before, stuck at 3 to 5 km/h and rolling back with W held; after, 0 to 35 km/h in 3 s, and W in reverse stops the car and selects first within half a second. |
+| AI recovery from grass | DONE | 2026-09-25, your request. The AI now knows the grip under its wheels (`PathDriver.SurfaceGrip`, from `RaceDirector` each step): with three wheels or more on grass it asks for the plan's speed times the square root of the grip and steers back at no more than 20 degrees; crawling off the road or facing more than 100 degrees wrong it is put back on its line after 3 s rather than 5. The real cause of the grass trips was upstream, one bend per circuit where every AI left the road (Desert Park 3.9 km, Ise Bay 4.7 km, the Ardennes 3.4 km): the speed plan ignored crests (`TrackData.VerticalCurvature`; the plan now takes the load a crest leaves on the tyres), the AI ran a steady metre wide in fast bends (a small slow cross-track correction, and a 4% lift per metre run wide), braked harder mid-bend than the tyres had left (road braking now squeezed, 6 per second, and kept inside the friction ellipse), and floored it while sliding (traction control, power eased from 4 to 12 degrees of sideslip). In the built game those three circuits now run seven minutes with every car on the road. |
 | Race telemetry | DONE | `--race ... --csv <path>`. One row per car every 20 ms: the `--lap` columns plus blocked by, following, overtaking, wanted and driven offset, and the cap. |
 | Catching a slide | WIP | Partial. `PathDriver` counter-steers and lifts above 12 degrees of sideslip, which stopped spun cars crawling for the rest of the race, but 11 crawl reports in a ten-lap race still show more than 25 degrees. |
 | Flags, penalties, pit stops | TODO | Not started. |
@@ -315,23 +315,8 @@ Known, deliberate, and not blocking. Recorded so they are not rediscovered.
 
 **Scenery**
 
-- Ise Bay: every AI car (and the player's car under the benchmark's autopilot) runs wide
-  and ends against the wall between 4.8 and 4.95 km, on the uphill 243 m radius left after
-  the long fast section (Suzuka's 130R). Seen in two benchmarks, before and after the
-  bridge; the profile there has no crest, and no other section's walls are near it. The
-  headless race passes on this circuit, but it drives on flat ground, so it cannot see
-  what the 5% climb does in the engine. Not yet investigated.
-  2026-09-25, a first look at the data (nothing changed): the racing line profile does
-  crest there. `racing_line.z` climbs from 52.0 m at 4.75 km to 59.2 m at 4.95 km, and
-  the vertical radius is 770 to 1300 m over 4.90 to 4.97 km, while the line still turns
-  at 263 to 513 m. At the 160 to 165 km/h the headless lap carries there, a crest like
-  that takes 16 to 27% of the tyre load away, and with it about that much grip, just
-  where the flat-ground plan counts on all of it. Before the crest is a compression
-  (+11 to +15% at 4.75 to 4.85 km). The headless lap on flat ground already sits 1.1 to
-  1.9 m off its aimed line through 130R, with the rear sliding up to 6 degrees at
-  4.83 km, and the line runs 1.6 m from the edge at the exit. First suspect: the plan
-  ignores vertical curvature. Fix to try: scale the planned lateral limit by
-  (1 + v² · vertical curvature / g), the same way downforce would be added.
+- Ise Bay's AI crash at 130R (every AI off at 4.8 km): fixed 2026-09-25, see "AI recovery
+  from grass" in section 3. Seven-minute AI races there are now clean.
 
 **Vehicle physics**
 
@@ -675,6 +660,15 @@ learned, so context is not lost between sessions.
 - Four car designs. The panel's buttons, the saved choice and the swap at race load follow
   the colour's pattern; the meshes live in one catalogue in Resources, so rebuilding the
   lobby regenerates them for every scene without rebuilding the circuits.
+
+- Your four fixes. Measured throughout: a headless batch of 96 races (8 cars, 3 laps,
+  six circuits, both grids, 8 seeds) and the built game with AI only, `-aiLog` now logging
+  CONTACT and RECOVER lines. Lessons: offsets from a racing line cannot keep two cars apart,
+  since the line sweeps across the road; lanes need entry, exit and give-way rules or they
+  cause more crashes than they prevent; and most of the Unity crashes were one bend per
+  circuit, a crest, a steady wide line, a stamp on the brake and full power while sliding,
+  none of which the flat headless harness can show. A single race is chaotic: switching any
+  one change off avoided one spin; judge by the batch.
 
 ### 2026-09-23, ninth session
 

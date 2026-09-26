@@ -33,6 +33,23 @@ namespace CarRace.Track
         /// error fed straight to the wheel.</summary>
         public float HeadingGain = 0.7f;
 
+        /// <summary>
+        /// A slow correction for a steady offset from the line, radians of lock per metre-second,
+        /// capped at CrossTrackIntegralMaxRad. The feedforward steers for the road's curvature
+        /// alone, and at speed a car needs a little more lock than that: in Unity every AI ran a
+        /// steady metre wide through every fast bend, and at Ise Bay's fastest that grew to four,
+        /// onto the verge, where it spun. Small and slow on purpose: at five times this, capped
+        /// at 2 degrees, it wound the car into a weave of 6 m either side at 180 km/h.
+        /// </summary>
+        public float CrossTrackIntegralGain = 0.004f;
+        public float CrossTrackIntegralMaxRad = 0.01f;
+
+        /// <summary>
+        /// Running wide, on the outside of a bend by more than a metre, it asks for this much
+        /// less speed per metre beyond that, as a driver lifts to tighten the line.
+        /// </summary>
+        public float WideLiftPerM = 0.04f;
+
         /// <summary>Seconds of travel to look ahead for a lower speed limit, covering the
         /// lag between asking for the brakes and the car slowing down.</summary>
         public float ReactionSeconds = 0.5f;
@@ -56,10 +73,11 @@ namespace CarRace.Track
         /// it keeps to with it, and on the way out of a lane back onto the line keeps the
         /// lane's side until it is there. A fixed time for the change instead moved the aim
         /// 7 m in 1.4 s where a lane was far from the line, and at 190 km/h the car could not
-        /// follow it.
+        /// follow it. At 2.2 m/s the headless races had 40 spins, at 1.5 m/s 22, with more
+        /// passes made.
         /// </summary>
         public int Lane;
-        public float LaneRateMs = 2.2f;
+        public float LaneRateMs = 1.5f;
 
         /// <summary>How far into a lane the car is, 0 on the racing line, 1 in the lane.</summary>
         public float LaneBlend => _laneBlend;
@@ -79,8 +97,27 @@ namespace CarRace.Track
         /// grass met the asphalt.
         /// </summary>
         public float SurfaceGrip = 1f;
-        public float OffRoadGrip = 0.9f;
         public float RejoinAngleDeg = 20f;
+
+        /// <summary>
+        /// Off the road means three wheels or more on the grass: an average grip under this.
+        /// At 0.9, two wheels over the edge of a fast bend counted, the speed asked for fell by
+        /// a sixth in a few metres, and the full brake that asked for spun the car.
+        /// </summary>
+        public float OffRoadGrip = 0.65f;
+
+        /// <summary>
+        /// The car's cornering grip, m/s^2, what it can actually hold rather than what the
+        /// plan uses; set by the driver that owns it. With it the brake is kept within the
+        /// friction ellipse: while the tyres are cornering at a share u of this, the pedal goes
+        /// no further than the square root of 1 - u^2.
+        /// </summary>
+        public float LateralGripMs2 = 9f;
+
+        /// <summary>How fast the brake pedal may go down, per second. A driver squeezes the
+        /// brake rather than stamping on it: from nothing to full in a step, mid-bend, is how
+        /// a car at the limit loses its rear.</summary>
+        public float BrakeSqueezePerS = 6f;
 
         /// <summary>Where on the line the car is, and how many times it has been round.</summary>
         public int Index { get; private set; }
@@ -118,6 +155,9 @@ namespace CarRace.Track
         public float Recovering { get; private set; }
 
         float _speedIntegral;
+        float _crossIntegral;
+        float _wide;
+        float _brake;
         float _laneBlend;
         int _laneSide = 1;
         readonly float[][] _lanePlans;
@@ -155,8 +195,11 @@ namespace CarRace.Track
             _speedIntegral = 0f;
         }
 
+        float _dt;
+
         public VehicleInputs Drive(in BodyState body, float dt)
         {
+            _dt = dt;
             AdvanceAlongLine(body.Position);
             MoveBetweenLanes(dt);
             LateralFromLineM = _track.LateralOffset(_track.Line, Index, body.Position);
@@ -180,7 +223,7 @@ namespace CarRace.Track
             return new VehicleInputs
             {
                 Steer = SteerInput(wheelAngle, speed),
-                Throttle = throttle * (1f - Recovering),
+                Throttle = throttle * (1f - Recovering) * TractionShare(sideslip),
                 Brake = brake * (1f - 0.5f * Recovering),
                 Handbrake = 0f,
                 Clutch = false,
@@ -198,6 +241,21 @@ namespace CarRace.Track
         }
 
         static float Lerp(float a, float b, float t) => a + (b - a) * t;
+
+        /// <summary>
+        /// Power eased off as the car starts to slide, all of it below TractionFromDeg of
+        /// sideslip and none by RecoveryStartDeg, where catching the slide takes over: the
+        /// traction control a player has. Between the two the driver used to floor it, and a
+        /// car sliding 9 degrees at 150 km/h on full throttle fishtailed into a spin in the
+        /// middle of a sixteen car pack.
+        /// </summary>
+        float TractionShare(float sideslip)
+        {
+            float degrees = MathF.Abs(sideslip) * 180f / MathF.PI;
+            return 1f - Clamp((degrees - TractionFromDeg) / MathF.Max(RecoveryStartDeg - TractionFromDeg, 1f), 0f, 1f);
+        }
+
+        public float TractionFromDeg = 4f;
 
         /// <summary>Into the lane asked for, or back out to the line, at a steady rate. A
         /// change of side goes back to the line first.</summary>
@@ -307,9 +365,20 @@ namespace CarRace.Track
                 float most = RejoinAngleDeg * MathF.PI / 180f;
                 correction = Clamp(correction, -most, most);
             }
+            // The integral only while driving normally at speed, and dropped while catching a
+            // slide, so a spin does not wind it up.
+            if (Recovering > 0f || MathF.Abs(speed) < 10f) _crossIntegral = 0f;
+            else _crossIntegral = Clamp(_crossIntegral + CrossTrackIntegralGain * crossTrack * _dt,
+                                        -CrossTrackIntegralMaxRad, CrossTrackIntegralMaxRad);
+
+            // How far wide of the line it is, on the outside of the bend: a right-hand bend's
+            // outside is the left, which is a negative cross-track.
+            _wide = MathF.Max(0f, -MathF.Sign(roadCurvature) * crossTrack - 1f);
+
             float wheelAngle = MathF.Atan(roadCurvature * _car.Wheelbase)
                              - HeadingGain * headingError
-                             - correction;
+                             - correction
+                             - _crossIntegral;
 
             LineErrorM = crossTrack;
             HeadingErrorDeg = headingError * 180f / MathF.PI;
@@ -332,6 +401,7 @@ namespace CarRace.Track
         float Throttle(float speed, float dt, out float brake)
         {
             PlannedSpeedMs = PlannedSpeed(speed) * OffsetSpeedScale()
+                           * MathF.Max(0.7f, 1f - WideLiftPerM * _wide)
                            * (SurfaceGrip < OffRoadGrip ? MathF.Sqrt(Clamp(SurfaceGrip, 0.1f, 1f)) : 1f);
             TargetSpeedMs = SpeedCapMs >= 0f && PlannedSpeedMs > SpeedCapMs
                 ? SpeedCapMs : PlannedSpeedMs;
@@ -351,10 +421,23 @@ namespace CarRace.Track
             if (demand >= 0f)
             {
                 brake = 0f;
+                _brake = 0f;
                 return MathF.Min(demand, 1f);
             }
 
             brake = MathF.Min(-demand, 1f);
+
+            // For the road only. Braking for a car ahead, held to a speed cap, is not
+            // squeezed: kept gentle there it arrived in the back of the other car.
+            bool forTheRoad = !(SpeedCapMs >= 0f && SpeedCapMs < PlannedSpeedMs);
+            if (forTheRoad)
+            {
+                float lateralUse = speed * speed * MathF.Abs(_track.LineCurvature[Index]) / MathF.Max(LateralGripMs2, 1f);
+                if (lateralUse > 0.95f) lateralUse = 0.95f;
+                brake = MathF.Min(brake, MathF.Sqrt(1f - lateralUse * lateralUse));
+                brake = MathF.Min(brake, _brake + BrakeSqueezePerS * dt);
+            }
+            _brake = brake;
             return 0f;
         }
 

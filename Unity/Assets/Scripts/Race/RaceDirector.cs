@@ -166,7 +166,7 @@ namespace CarRace.UnityGame
         // the executable, in the harness race CSV's terms, so the AI in Unity can be compared
         // with the AI headless. How the grid pass that crashed a car at Monza's first chicane
         // was found. Nothing is written or allocated without the switch.
-        static readonly bool AiLogAsked = System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-aiLog") >= 0;
+        internal static readonly bool AiLogAsked = System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-aiLog") >= 0;
         System.IO.StreamWriter _aiLog;
         VehicleInputs[] _lastInputs = new VehicleInputs[0];
 
@@ -268,6 +268,7 @@ namespace CarRace.UnityGame
                 bool stuck = stopped || (lost && speed < CrawlingMs && speed > -CrawlingMs);
                 _stuckFor[i] = stuck ? _stuckFor[i] + elapsed : 0f;
                 if (_stuckFor[i] < (lost ? OffRoadStuckSeconds : StuckSeconds)) continue;
+                if (AiLogAsked) Debug.Log($"RECOVER t {Time.timeSinceLevelLoad:0.00} {aiCars[i].name} {(lost ? "off road or wrong way" : "stopped")}");
                 aiCars[i].Recover();
                 _stuckFor[i] = 0f;
             }

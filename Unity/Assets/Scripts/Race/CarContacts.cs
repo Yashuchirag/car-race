@@ -21,6 +21,9 @@ namespace CarRace.UnityGame
             if (Time.time - _last < OnceEverySeconds) return;
             _last = Time.time;
             Touched?.Invoke();
+            if (RaceDirector.AiLogAsked)
+                Debug.Log($"CONTACT t {Time.timeSinceLevelLoad:0.00} {name} and {collision.rigidbody.name} " +
+                          $"closing {collision.relativeVelocity.magnitude * 3.6f:0} km/h");
         }
     }
 }
