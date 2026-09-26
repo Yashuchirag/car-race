@@ -204,13 +204,18 @@ namespace CarRace.UnityGame.EditorTools
         /// <summary>
         /// A deliberate starting look for the circuits: ACES tone mapping, a light bloom that
         /// only catches what is brighter than white, and a slight vignette. Created once and
-        /// then left alone, so changes made to it in the editor are kept. Motion blur is left
-        /// out until there is art for it to smear.
+        /// then left alone, so changes made to it in the editor are kept, except that motion
+        /// blur is added to a profile made before it was: without it the scenery steps from
+        /// frame to frame at 200 km/h instead of streaking, and speed stops reading.
         /// </summary>
         public static VolumeProfile EnsureTrackProfile()
         {
             var profile = AssetDatabase.LoadAssetAtPath<VolumeProfile>(TrackProfilePath);
-            if (profile != null) return profile;
+            if (profile != null)
+            {
+                if (!profile.Has<MotionBlur>()) AddMotionBlur(profile);
+                return profile;
+            }
 
             profile = ScriptableObject.CreateInstance<VolumeProfile>();
             AssetDatabase.CreateAsset(profile, TrackProfilePath);
@@ -233,8 +238,23 @@ namespace CarRace.UnityGame.EditorTools
                 component.name = component.GetType().Name;
                 AssetDatabase.AddObjectToAsset(component, profile);
             }
-            EditorUtility.SetDirty(profile);
+            AddMotionBlur(profile);
             return profile;
+        }
+
+        /// <summary>Blur from the camera's motion and each object's own, so the car the camera
+        /// follows stays sharp while the scenery streaks. It grows with speed by itself.</summary>
+        static void AddMotionBlur(VolumeProfile profile)
+        {
+            var blur = profile.Add<MotionBlur>(true);
+            blur.mode.Override(MotionBlurMode.CameraAndObjects);
+            blur.quality.Override(MotionBlurQuality.Medium);
+            blur.intensity.Override(0.45f);
+            blur.clamp.Override(0.05f);
+            blur.name = nameof(MotionBlur);
+            AssetDatabase.AddObjectToAsset(blur, profile);
+            EditorUtility.SetDirty(profile);
+            AssetDatabase.SaveAssets();
         }
 
         /// <summary>

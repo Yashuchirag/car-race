@@ -36,7 +36,14 @@ namespace CarRace.UnityGame
         [SerializeField] float baseFov = 62f;
         [Tooltip("Degrees added at 300 km/h, scaled linearly with speed. Sells speed without " +
                  "the pumping a nonlinear curve gives on corner exit.")]
-        [SerializeField] float fovGainAtTopSpeed = 14f;
+        [SerializeField] float fovGainAtTopSpeed = 22f;
+
+        [Header("Speed feel")]
+        [Tooltip("Road shake starts at this speed, m/s, and grows to shakeAtTopSpeed at 300 km/h.")]
+        [SerializeField] float shakeFromSpeed = 100f / 3.6f;
+        [Tooltip("Metres of shake at 300 km/h, up and down and side to side.")]
+        [SerializeField] float shakeAtTopSpeed = 0.05f;
+        [SerializeField] float shakeHz = 11f;
 
         Camera _camera;
         Vector3 _rigPosition;
@@ -72,6 +79,7 @@ namespace CarRace.UnityGame
 
             if (view == View.Chase) FollowChase(velocity, speed);
             else MountRigidly();
+            transform.position += Shake(speed);
 
             if (_camera != null)
                 _camera.fieldOfView = baseFov + fovGainAtTopSpeed * Mathf.Clamp01(speed / 83.3f);
@@ -94,8 +102,14 @@ namespace CarRace.UnityGame
             _yaw += Wrap(YawOf(heading) - _yaw) * follow;
             Vector3 smoothedHeading = new Vector3(MathF.Sin(_yaw), 0f, MathF.Cos(_yaw));
 
+            // The smoothing below leaves the rig speed x followLag behind the car at a steady
+            // speed, 7 m more at 200 km/h than at rest, and a camera that falls back shrinks
+            // the car and the road around it just as the speed rises. Leading the anchor by
+            // that much along the heading holds the distance; accelerating or braking still
+            // swings the camera back or in.
+            float along = Vector3.Dot(velocity, smoothedHeading);
             Vector3 anchor = target.position
-                           + smoothedHeading * chaseOffset.z
+                           + smoothedHeading * (chaseOffset.z + along * followLag)
                            + Vector3.up * chaseOffset.y
                            + target.right * chaseOffset.x;
 
@@ -110,6 +124,17 @@ namespace CarRace.UnityGame
             float facing = YawOf(target.forward);
             float aimYaw = facing + Wrap(_yaw - facing) * lookIntoCorner;
             transform.rotation = Quaternion.LookRotation(new Vector3(MathF.Sin(aimYaw), 0f, MathF.Cos(aimYaw)), Vector3.up);
+        }
+
+        /// <summary>A fine shake from the road above shakeFromSpeed, growing with the square
+        /// of the speed beyond it: nothing at 100 km/h, a quarter at 200, all of it at 300.</summary>
+        Vector3 Shake(float speed)
+        {
+            float amount = Mathf.Clamp01((speed - shakeFromSpeed) / (83.3f - shakeFromSpeed));
+            if (amount <= 0f) return Vector3.zero;
+            float t = Time.time * shakeHz;
+            float up = Mathf.PerlinNoise(t, 0.3f) - 0.5f, side = Mathf.PerlinNoise(0.7f, t) - 0.5f;
+            return (transform.up * up + transform.right * side) * (2f * shakeAtTopSpeed * amount * amount);
         }
 
         static float YawOf(Vector3 direction) => MathF.Atan2(direction.x, direction.z);
