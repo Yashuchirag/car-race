@@ -198,6 +198,16 @@ namespace CarRace.UnityGame
 
         public void ToggleReady() => Client?.SetReady(!Client.Ready);
 
+        /// <summary>The host ends the race and takes everyone back to the lobby, together, to
+        /// choose the next one. The others follow when the host's word reaches them.</summary>
+        public void ReturnToLobby()
+        {
+            if (Host == null || !Host.Started) return;
+            Host.ReturnToLobby();
+            Debug.Log("LAN: taking everyone back to the lobby");
+            SettingsMenu.MainMenu();
+        }
+
         /// <summary>Starts the race for everyone, once everyone is ready.</summary>
         public void StartRace()
         {
@@ -224,6 +234,11 @@ namespace CarRace.UnityGame
                 {
                     Debug.Log($"LAN: the host started a race on {Client.Race.Track}, {Client.Race.Grid.Length} cars");
                     SceneManager.LoadScene(Client.Race.Track);
+                }
+                else if (wasRacing && Client.Race == null && Client.State == LanClient.Phase.Lobby)
+                {
+                    Debug.Log("LAN: the host took everyone back to the lobby");
+                    SettingsMenu.MainMenu();
                 }
                 else if (Client.State == LanClient.Phase.Rejected || Client.State == LanClient.Phase.Closed)
                 {

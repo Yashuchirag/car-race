@@ -23,9 +23,9 @@ namespace CarRace.UnityGame
     /// four times a second; a client's RaceDirector shows the host's numbers, so positions,
     /// the finish and the results are the same on every screen.
     ///
-    /// For testing: -lanAutopilot has the AI drive this machine's car, and -lanScreenshotAt
+    /// For testing: -lanAutopilot has the AI drive this machine's car, -lanScreenshotAt
     /// 10,25 takes screenshots that many seconds into the race scene, beside the executable,
-    /// then quits.
+    /// then quits, and -lanReturnAt 20 has a host take everyone back to the lobby then.
     /// </summary>
     public sealed class LanRace : MonoBehaviour
     {
@@ -110,12 +110,21 @@ namespace CarRace.UnityGame
             director.AiDrivesPlayer = System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-lanAutopilot") >= 0;
             string shots = LanSession.Flag("-lanScreenshotAt");
             if (!string.IsNullOrEmpty(shots)) StartCoroutine(Screenshots(shots, session.MyId));
+            if (session.Host != null && float.TryParse(LanSession.Flag("-lanReturnAt"), System.Globalization.NumberStyles.Float,
+                                                       System.Globalization.CultureInfo.InvariantCulture, out float returnAt))
+                StartCoroutine(ReturnAfter(returnAt));
             FindAnyObjectByType<MiniMap>()?.SetCars(all.ToArray());
 
             if (session.Host != null) session.Host.SetReady();
             else session.Client.SendReady();
             Debug.Log($"LAN: on the grid in slot {System.Array.FindIndex(start.Grid, p => p.Id == session.MyId && !p.Ai) + 1} " +
                       $"of {start.Grid.Length}, {_aiCars.Count} AI driven here, {_remotes.Count} remote");
+        }
+
+        System.Collections.IEnumerator ReturnAfter(float seconds)
+        {
+            yield return new WaitForSecondsRealtime(seconds);
+            _session.ReturnToLobby();
         }
 
         System.Collections.IEnumerator Screenshots(string times, byte id)
@@ -146,6 +155,9 @@ namespace CarRace.UnityGame
 
         void Update()
         {
+            // Going back to the lobby: the cars are cleared for the next race, nobody has left.
+            if (_session.Race == null) return;
+
             // A player who has left: their car goes.
             for (int i = _remotes.Count - 1; i >= 0; i--)
             {

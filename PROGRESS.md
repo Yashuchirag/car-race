@@ -10,7 +10,7 @@ concrete action is. Everything below it is detail.
 
 ## 1. Resume here
 
-**Last updated:** 2026-09-26 (LAN play, stage 4)
+**Last updated:** 2026-09-27 (LAN race again, together)
 
 **Last completed:** Realistic pass, stages 2 and 3 (section 3): generated grandstands,
 garages, marquees, billboards, braking boards and city buildings in photographed materials;
@@ -263,6 +263,7 @@ engine, and everything left in Phases 1 and 4 is not.
 | LAN stage 3: racing each other | DONE | 2026-09-26, your report that other players' cars did not show once the race began. Protocol: throttle in each car state (4 bits, for the engine note); `Ready` from each player once its circuit has loaded, and `Go` from the host at the instant of GO, sent only when every player is ready (or 20 s have passed), 3 s ahead; the start message no longer carries GO. Unity: `LanSession` sets up `LanRace` as the circuit loads, which puts one car per grid slot in the host's order (the scene's player and AI cars, then copies of an AI car, made before any is converted; spares removed), paints every car a colour unique on the grid the same way on every machine (people keep theirs unless someone earlier has it; AI take free ones), gives people their chosen design, drives your car as ever, drives the host's AI with `RaceDirector` as ever, and makes every other car a `RemoteCar`: model off, kinematic body moved each physics step to the Extrapolator's pose for the end of that step (solid to your car), wheels turned from speed and steer, engine sound from sent rpm and throttle. Car states are stamped with the real time their physics step ended (`LanSession.RealTimeOf`, game time to real time by the least of the last two seconds' offsets). `RaceDirector.UseLan`: AI see remote cars as they see you; the countdown waits (WAITING FOR EVERYONE TO LOAD) for the host's GO; HUD shows the lap only; no Race again. The Esc menu does not stop time in LAN and has no Restart. `PlayerSetup` leaves LAN cars alone. A player who leaves has their car removed. Harness bots now drive: `--lan-bots IP --bots N --tracks D:\Dev\CarRace\Assets\Tracks` loads the circuit by name, says ready, drives it with the harness AI at GO, sends its car with the road's height added. Test flags `-lanAutopilot` (AI drives your car), `-lanScreenshotAt 14,30` (race screenshots beside the exe, then quit), `-lanAi N`. Checked in the built game on Ise Bay: host (2 AI) plus a second copy plus 2 driving bots, 6 cars; the host drove 2 AI with 3 remote cars, the copy 5 remote; GO reached both bots 2.98 s ahead; screenshots at 14 s and 30 s from both show the other cars on the road and moving; no errors in either log. Headless `--lan` passes, including GO held until the last player is ready. Not checked: two people's cars touching, and how remote cars look in motion, which only a drive shows. |
 | LAN lobby READY button | DONE | 2026-09-26, your request. Joined players pick their car and colour, then press READY (the big button); while ready their car and colour are locked ("LOCKED WHILE READY") and the button reads READY ✓ WAITING FOR HOST, pressed again to un-ready. Everyone's row shows READY or NOT READY (not the host, whose ready is starting). The host's button reads WAITING FOR PLAYERS alone, WAITING: n OF m READY, then START RACE; `LanSession.CanStart` enforces it. Protocol: `PlayerInfo.Ready`, carried in the lobby; `Setup` carries it with colour and design; `LanClient.SetReady`, `LanHost.AllReady`; the host's per-client race-loaded flag renamed `Loaded`. Headless `--lan` checks it. Bots say ready on joining; `-lanReady` does for a test copy, and `-lanStartWhen` now also waits for everyone ready. Checked in the built game: host, a ready copy, a not ready copy and a bot, screenshots of all three lobbies; then host, a ready copy and a bot started and loaded the race. |
 | LAN stage 4: shared positions and results | DONE | 2026-09-26. The host's `RaceDirector` keeps one `RaceControl` for every car in the host's grid order: its own car and the AI as before, and every other player's car from its position, tracked round the lap exactly as yours is (`LapProgress`, extracted from the old `TrackPlayer` and used for both). `LanRace` sends the standings (laps, progress, finish time, best and last lap, left) over TCP 4 times a second (`Control.Standings`, `LanHost.SendStandings`, `LanClient.Standings`); a client copies them into its own `RaceControl` and ranks, so its HUD shows P n / N and its results table is the host's. Each machine names its own row "You". A player who quits stays in the table marked "left". The results table in LAN has 12 character names and no Hits column (touches are only counted for cars a machine drives). A client whose host goes sees "The host has left, so the race is over". Test flags `-lanLaps N` and `-track` for `-lanHost`. Headless `--lan` checks the standings arrive intact. Checked in the built game: a one lap race on the Airfield circuit, host plus AI, a second copy and a bot, all driving: at 25 s the host showed P1 / 4 and the copy P2 / 4; at the finish both showed the same table, Chirag 1:08.672, Second copy +1.409, Bot 1 +3.693, AI 1 +4.802. Not seen in the game: a left marking in the table, and the host-gone banner. |
+| LAN race again, together | DONE | 2026-09-27, your request: keep the group together and choose the circuit and everything else again. The host's results screen has "Race again, together" (Enter), and its Esc menu "Lobby, all together" mid-race: `LanHost.ReturnToLobby` ends the race, clears the cars, unreadies everyone, resumes the beacon and sends `Control.Return`; every client (`LanClient`) goes back to its lobby state and `LanSession` loads the lobby, still connected. There the host picks the circuit, the AI cars and now the laps (a new LAPS row, 1 to 20; clients see it), everyone may change car and colour, says READY again, and new players can join between races. A client's results screen says "The host picks the next race"; Main menu now reads "(leave the group)". Bots return, get ready again and race the next one. Test flag `-lanReturnAt T` (host). Headless `--lan` checks the return and a join between races. Checked in the built game: host plus AI, a second copy and a bot, four races in a row, each ended by the host 15 s in, everyone back in the lobby and into the next race; the LAPS row on host and client. Fixed on the way: in the frame between the host's return and the scene change, a client marked every car as left. |
 
 **What the sync measures.** Sixteen cars, real UDP sockets on loopback, with latency,
 jitter and loss added on purpose:
@@ -431,8 +432,6 @@ Known, deliberate, and not blocking. Recorded so they are not rediscovered.
 
 **Networking**
 
-- After a LAN race the only way on is Main menu, which leaves the group; there is no
-  "race again" that keeps everyone together.
 - Extra grid slots past four have no painted grid box (the scene paints four).
 - Harness bots drive flat ground and stay level on the game's hills.
 - Two people's cars colliding is untested: the harness has no car to car contact, and in
@@ -551,6 +550,12 @@ learned, so context is not lost between sessions.
   work existed with no history and no backup.
 - Added this file, and a rule in `CLAUDE.md` section 5 to keep it current during
   work rather than at the end.
+
+### 2026-09-27, thirteenth session
+
+- Race again, together: the host takes everyone back to the LAN lobby to choose the
+  circuit, AI, laps and cars again; new players can join between races. Four races in a
+  row ran in the built game with everyone following.
 
 ### 2026-09-26, twelfth session
 

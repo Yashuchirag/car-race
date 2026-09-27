@@ -150,6 +150,33 @@ namespace CarRace.Net
             }
         }
 
+        /// <summary>
+        /// Ends the race and takes everyone back to the lobby, still connected: the circuit,
+        /// the AI and the laps can be chosen again, everyone changes their car if they like and
+        /// says ready again, and new players can join until the next start.
+        /// </summary>
+        public void ReturnToLobby()
+        {
+            if (!Started) return;
+            Race = null;
+            GoAtHostSeconds = float.NaN;
+            _hostReady = false;
+            _nextBeacon = 0f;
+            foreach (Client client in _clients)
+            {
+                client.Loaded = false;
+                client.HasCar = false;
+                if (client.Player != null) client.Player.Ready = false;
+            }
+            foreach (byte id in new List<byte>(Cars.Ids)) Cars.Remove(id);
+            Left.Clear();
+
+            byte[] message = Control.Return();
+            foreach (Client client in _clients)
+                if (client.Player != null) client.Tcp.Send(message);
+            SendLobby();
+        }
+
         /// <summary>The race as the host keeps it, to every player.</summary>
         public void SendStandings(Standings standings)
         {

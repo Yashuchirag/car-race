@@ -191,6 +191,16 @@ namespace CarRace.Net
                 case Control.Type.Standings:
                     Standings = Control.ReadStandings(message);
                     break;
+                case Control.Type.Return:
+                    // Back to the lobby, still together: everyone says ready again.
+                    Race = null;
+                    GoAtHostSeconds = float.NaN;
+                    Standings = null;
+                    foreach (byte id in new System.Collections.Generic.List<byte>(Cars.Ids)) Cars.Remove(id);
+                    _me.Ready = false;
+                    State = Phase.Lobby;
+                    Changed = true;
+                    break;
             }
         }
 

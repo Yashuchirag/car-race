@@ -122,7 +122,8 @@ namespace CarRace.UnityGame
             float half = (width - Hud.Px(52f)) * 0.5f;
             var restart = new Rect(panel.x + Hud.Px(20f), y + Hud.Px(44f), half, Hud.Px(48f));
             var menu = new Rect(panel.x + Hud.Px(32f) + half, y + Hud.Px(44f), half, Hud.Px(48f));
-            // A LAN race is the host's to start, so there is no restarting it alone.
+            // A LAN race is the host's to start, so there is no restarting it alone; the host
+            // can instead take everyone back to the lobby together.
             if (!LanSession.Active)
             {
                 _hover.Watch(restart);
@@ -132,8 +133,18 @@ namespace CarRace.UnityGame
                     RestartRace();
                 }
             }
+            else if (LanSession.Current.Host != null && LanSession.Current.Race != null)
+            {
+                _hover.Watch(restart);
+                if (GUI.Button(restart, "Lobby, all together", _button))
+                {
+                    GameAudio.Confirm();
+                    _open = false;
+                    LanSession.Current.ReturnToLobby();
+                }
+            }
             _hover.Watch(menu);
-            if (GUI.Button(menu, "Main menu", _button))
+            if (GUI.Button(menu, LanSession.Active ? "Main menu (leave)" : "Main menu", _button))
             {
                 GameAudio.Back();
                 MainMenu();

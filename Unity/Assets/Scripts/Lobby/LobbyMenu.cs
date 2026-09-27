@@ -39,6 +39,7 @@ namespace CarRace.UnityGame
 
         GUIStyle _title, _subtitle, _header, _text, _small, _play, _cardName, _field, _button;
         string _typedAddress = "";
+        const int MaxLaps = 20;
         string _localAddresses;
         readonly List<TrackCatalog.Entry> _circuits = new List<TrackCatalog.Entry>();
         readonly Dictionary<string, Texture2D> _outlines = new Dictionary<string, Texture2D>();
@@ -415,7 +416,24 @@ namespace CarRace.UnityGame
                         if (Button(new Rect(count.xMax + Hud.Px(6f), ai.y + Hud.Px(5f), Hud.Px(30f), Hud.Px(30f)), "+", lobby.AiCars < most))
                             session.Host.SetAiCars(lobby.AiCars + 1);
                     }
-                    y = ai.yMax + Hud.Px(10f);
+                    y = ai.yMax + Hud.Px(6f);
+
+                    // The laps, likewise the host's to set.
+                    var laps = new Rect(x, y, width, Hud.Px(40f));
+                    Hud.Rounded(laps, Row);
+                    GUI.Label(new Rect(laps.x + Hud.Px(12f), laps.y, laps.width, laps.height), "LAPS", _text);
+                    _text.alignment = TextAnchor.MiddleCenter;
+                    var lapCount = new Rect(laps.xMax - Hud.Px(100f), laps.y, Hud.Px(40f), laps.height);
+                    GUI.Label(hosting ? lapCount : new Rect(laps.xMax - Hud.Px(60f), laps.y, Hud.Px(40f), laps.height), lobby.Laps.ToString(), _text);
+                    _text.alignment = TextAnchor.MiddleLeft;
+                    if (hosting)
+                    {
+                        if (Button(new Rect(lapCount.x - Hud.Px(36f), laps.y + Hud.Px(5f), Hud.Px(30f), Hud.Px(30f)), "−", lobby.Laps > 1))
+                            session.Host.SetLaps(lobby.Laps - 1);
+                        if (Button(new Rect(lapCount.xMax + Hud.Px(6f), laps.y + Hud.Px(5f), Hud.Px(30f), Hud.Px(30f)), "+", lobby.Laps < MaxLaps))
+                            session.Host.SetLaps(lobby.Laps + 1);
+                    }
+                    y = laps.yMax + Hud.Px(10f);
 
                     string status = hosting
                         ? $"{lobby.Players.Count} of {LanHost.MaxPlayers} players, {lobby.Players.Count + lobby.AiCars} of {LanHost.MaxCars} cars. Others join from your IP: {LocalAddresses()}"

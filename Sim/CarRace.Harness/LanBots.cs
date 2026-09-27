@@ -107,6 +107,17 @@ namespace CarRace.Harness
                     if (!float.IsNaN(c.GoAtHostSeconds) && reported.Add($"{bot.Name} go"))
                         Console.WriteLine($"  {now,5:0.0} s  {bot.Name} got GO, {c.GoAtHostSeconds - c.HostNow(now):0.00} s away");
 
+                    // Back in the lobby for another race: ready again, and a fresh car for it.
+                    if (c.Race == null && bot.Rig != null)
+                    {
+                        Console.WriteLine($"  {now,5:0.0} s  {bot.Name} is back in the lobby, and ready again");
+                        bot.Rig = null;
+                        bot.Driver = null;
+                        track = null;
+                        reported.Remove($"{bot.Name} go");
+                        c.SetReady(true);
+                    }
+
                     if (bot.Rig != null) Drive(bot, track, floor, now);
                 }
 

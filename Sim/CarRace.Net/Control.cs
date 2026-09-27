@@ -69,7 +69,7 @@ namespace CarRace.Net
         /// <summary>Bumped whenever any message here or a datagram changes meaning.</summary>
         public const byte Version = 2;
 
-        public enum Type : byte { Hello = 1, Welcome, Reject, Lobby, Setup, Start, Ready, Go, Standings }
+        public enum Type : byte { Hello = 1, Welcome, Reject, Lobby, Setup, Start, Ready, Go, Standings, Return }
 
         public static byte[] Hello(PlayerInfo me) => Build(Type.Hello, w =>
         {
@@ -105,6 +105,9 @@ namespace CarRace.Net
             w.Write(start.Laps);
             WritePlayers(w, start.Grid);
         });
+
+        /// <summary>The host is taking everyone back to the lobby, still together.</summary>
+        public static byte[] Return() => Build(Type.Return, w => { });
 
         /// <summary>A player's word that the circuit has loaded and its car is on the grid.</summary>
         public static byte[] Ready() => Build(Type.Ready, w => { });

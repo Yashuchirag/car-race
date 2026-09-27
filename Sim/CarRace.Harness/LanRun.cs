@@ -312,6 +312,21 @@ namespace CarRace.Harness
                       $"a player arriving mid-race is turned away ({late.State}, {late.Rejected})");
             }
 
+            // Race again: everyone back in the lobby together, not ready, and room to join.
+            host.ReturnToLobby();
+            bool back = PollUntil(ref now, () => machines.TrueForAll(m => m.Quit || m.Client == null
+                                        || m.Client.Race == null && m.Client.State == LanClient.Phase.Lobby && !m.Client.Ready
+                                           && m.Client.Lobby.Players.TrueForAll(p => p.Id == 0 || !p.Ready)),
+                                  2f, host, machines);
+            Check(back && !host.Started && !host.AllReady && !Contains(host.Cars, 1),
+                  "race again takes everyone back to the lobby together, nobody ready, no cars left over");
+            using (var between = new LanClient(IPAddress.Loopback, host.Port, new PlayerInfo { Name = "Between races" }))
+            {
+                PollUntil(ref now, () => between.Id != 0 || between.State == LanClient.Phase.Rejected, 2f, host, machines, t => between.Poll(t));
+                Check(between.Id != 0 || players == LanHost.MaxPlayers && between.Rejected == RejectReason.Full,
+                      $"a player can join between races ({between.State}, id {between.Id})");
+            }
+
             foreach (Machine m in machines) { if (!m.Quit) { m.Client?.Dispose(); m.Proxy?.Dispose(); } }
 
             Console.WriteLine(failures.Count == 0 ? "\n  PASS" : $"\n  FAIL: {failures.Count} check(s)");

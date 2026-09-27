@@ -496,10 +496,18 @@ namespace CarRace.UnityGame
         void Update()
         {
             // Not while paused: the settings menu outlives the scene, and so would its pause.
-            if (_control != null && !Lan && PlayerEntry.Finished && Time.timeScale > 0f && Input.GetKeyDown(KeyCode.Return))
+            if (_control != null && PlayerEntry.Finished && Time.timeScale > 0f && Input.GetKeyDown(KeyCode.Return))
             {
-                GameAudio.Confirm();
-                SettingsMenu.RestartRace();
+                if (!Lan)
+                {
+                    GameAudio.Confirm();
+                    SettingsMenu.RestartRace();
+                }
+                else if (LanSession.Active && LanSession.Current.Host != null)
+                {
+                    GameAudio.Confirm();
+                    LanSession.Current.ReturnToLobby();
+                }
             }
         }
 
@@ -598,14 +606,24 @@ namespace CarRace.UnityGame
             _hover.Begin();
             var again = new Rect(panel.x + Hud.Px(20f), top, half, Hud.Px(46f));
             var menu = new Rect(panel.x + Hud.Px(32f) + half, top, half, Hud.Px(46f));
-            if (!Lan) _hover.Watch(again);
+            // In a LAN race the host takes everyone back to the lobby together to pick the next
+            // race; the others wait for that. Main menu leaves the group.
+            bool lanHost = Lan && LanSession.Active && LanSession.Current.Host != null;
+            if (!Lan || lanHost) _hover.Watch(again);
             if (SettingsMenu.InRace) _hover.Watch(menu);
             if (!Lan && GUI.Button(again, "Race again (Enter)", _buttonStyle))
             {
                 GameAudio.Confirm();
                 SettingsMenu.RestartRace();
             }
-            if (SettingsMenu.InRace && GUI.Button(menu, "Main menu", _buttonStyle))
+            if (lanHost && GUI.Button(again, "Race again, together (Enter)", _buttonStyle))
+            {
+                GameAudio.Confirm();
+                LanSession.Current.ReturnToLobby();
+            }
+            if (Lan && !lanHost)
+                GUI.Label(again, "The host picks the next race", _hintStyle);
+            if (SettingsMenu.InRace && GUI.Button(menu, Lan ? "Main menu (leave the group)" : "Main menu", _buttonStyle))
             {
                 GameAudio.Back();
                 SettingsMenu.MainMenu();
