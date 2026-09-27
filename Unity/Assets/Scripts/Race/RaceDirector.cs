@@ -62,9 +62,7 @@ namespace CarRace.UnityGame
         RaceDriver.Seen[] _field;
         float[] _playerPlan;
         float[] _stuckFor;
-        int _playerIndex;
-        float _playerProgress;     // samples since the start line, negative on the grid
-        Vector3 _playerLast;
+        LapProgress _player;
         float _sinceReaction;
         bool _started;
         float _countdown = CountdownSeconds;
@@ -72,7 +70,12 @@ namespace CarRace.UnityGame
         readonly GameAudio.HoverTracker _hover = new GameAudio.HoverTracker();
         float _raceTime;
         RaceControl _control;
-        CarController[] _cars;     // RaceControl's order: the AI in grid order, then the player
+        CarController[] _cars;     // the cars this machine drives, whose touches it counts
+        // Where each car's entry is in RaceControl: solo, the AI in grid order then the player;
+        // in a LAN race, the host's grid order for everyone.
+        int _playerEntry;
+        int[] _aiEntry;
+        bool[] _left;
         GUIStyle _style, _bigStyle, _tableStyle, _hintStyle, _buttonStyle;
 
         // A LAN race (LanRace): the other players' cars, and on a client the host's AI, all
@@ -81,24 +84,46 @@ namespace CarRace.UnityGame
         System.Func<float> _secondsToGo;
         System.Collections.Generic.List<RemoteCar> _remotes;
         readonly System.Collections.Generic.Dictionary<RemoteCar, int> _remoteIndex = new System.Collections.Generic.Dictionary<RemoteCar, int>();
+        readonly System.Collections.Generic.Dictionary<RemoteCar, (int Entry, LapProgress Progress)> _remoteEntry
+            = new System.Collections.Generic.Dictionary<RemoteCar, (int, LapProgress)>();
+        CarController[] _grid;
+        string[] _gridNames;
+        bool _keepsStandings = true;
         bool _waiting;
 
         public CarController Player => player;
         public CarController[] AiCars => aiCars;
         public bool Lan => _secondsToGo != null;
 
+        /// <summary>The race's bookkeeping. On a LAN client its numbers are the host's.</summary>
+        public RaceControl Control => _control;
+
         /// <summary>
         /// Set up as a LAN race, before Start: the AI this machine drives (none on a client),
         /// the cars moved from the network, whom the AI see and avoid like the player, the
-        /// laps, and the seconds to GO, NaN while the host waits for everyone to load.
+        /// laps, the seconds to GO (NaN while the host waits for everyone to load), every
+        /// car and name in grid order, and whether this machine keeps the standings (the
+        /// host) or is sent them (a client).
         /// </summary>
-        public void UseLan(CarController[] ai, System.Collections.Generic.List<RemoteCar> remotes, int laps, System.Func<float> secondsToGo)
+        public void UseLan(CarController[] ai, System.Collections.Generic.List<RemoteCar> remotes, int laps,
+                           System.Func<float> secondsToGo, CarController[] grid, string[] names, bool keepsStandings)
         {
             aiCars = ai;
             _remotes = remotes;
             raceLaps = Mathf.Max(1, laps);
             _secondsToGo = secondsToGo;
+            _grid = grid;
+            _gridNames = names;
+            _keepsStandings = keepsStandings;
         }
+
+        /// <summary>A player has quit: their entry stays, marked, where they got to.</summary>
+        public void MarkLeft(int entry)
+        {
+            if (_left != null && entry >= 0 && entry < _left.Length) _left[entry] = true;
+        }
+
+        public bool HasLeft(int entry) => _left != null && entry >= 0 && entry < _left.Length && _left[entry];
 
         void Start()
         {
@@ -152,9 +177,7 @@ namespace CarRace.UnityGame
             limits.TractionMs2 *= playerPace;
             _playerPlan = SpeedPlan.Build(_track, limits);
 
-            _playerLast = player.transform.position;
-            _playerIndex = track.Nearest(_playerLast, 0, back: 0, ahead: n - 1);
-            _playerProgress = _playerIndex > n / 2 ? _playerIndex - n : _playerIndex;
+            _player = new LapProgress(track, player.transform.position);
 
             // Held on the brakes, like the AI, until GO.
             player.Autopilot = (body, dt) => new VehicleInputs { Brake = 1f };
@@ -170,15 +193,39 @@ namespace CarRace.UnityGame
             }
 
             _cars = new CarController[aiCars.Length + 1];
-            var names = new string[_cars.Length];
-            for (int i = 0; i < aiCars.Length; i++) { _cars[i] = aiCars[i]; names[i] = _drivers[i].Name; }
-            _cars[aiCars.Length] = player;
-            names[aiCars.Length] = "You";
+            _aiEntry = new int[aiCars.Length];
+            string[] names;
+            if (Lan)
+            {
+                // The host's grid order, so every machine's entries line up.
+                names = (string[])_gridNames.Clone();
+                for (int slot = 0; slot < _grid.Length; slot++)
+                {
+                    CarController car = _grid[slot];
+                    if (car == null) continue;
+                    if (car == player) { _playerEntry = slot; names[slot] = "You"; }
+                    int k = System.Array.IndexOf(aiCars, car);
+                    if (k >= 0) _aiEntry[k] = slot;
+                    var remote = car.GetComponent<RemoteCar>();
+                    if (remote != null) _remoteEntry[remote] = (slot, new LapProgress(track, remote.transform.position));
+                }
+            }
+            else
+            {
+                names = new string[aiCars.Length + 1];
+                for (int i = 0; i < aiCars.Length; i++) { _aiEntry[i] = i; names[i] = _drivers[i].Name; }
+                _playerEntry = aiCars.Length;
+                names[_playerEntry] = "You";
+            }
             _control = new RaceControl(names, raceLaps);
+            _left = new bool[names.Length];
+
+            for (int i = 0; i < aiCars.Length; i++) _cars[i] = aiCars[i];
+            _cars[aiCars.Length] = player;
             for (int i = 0; i < _cars.Length; i++)
             {
-                int k = i;
-                _cars[i].gameObject.AddComponent<CarContacts>().Touched = () => _control.Entries[k].Contacts++;
+                int entry = i < aiCars.Length ? _aiEntry[i] : _playerEntry;
+                _cars[i].gameObject.AddComponent<CarContacts>().Touched = () => _control.Entries[entry].Contacts++;
             }
         }
 
@@ -252,7 +299,10 @@ namespace CarRace.UnityGame
         void FixedUpdate()
         {
             float dt = Time.fixedDeltaTime;
-            TrackPlayer();
+            _player.Advance(player.transform.position);
+            if (_keepsStandings)
+                foreach (var pair in _remoteEntry)
+                    if (pair.Key != null) pair.Value.Progress.Advance(pair.Key.GetComponent<Rigidbody>().position);
             if (!_started)
             {
                 if (Lan)
@@ -275,14 +325,16 @@ namespace CarRace.UnityGame
 
             // Every step rather than every reaction interval, so lap times are to 5 ms.
             _raceTime += dt;
-            int n = _track.Count;
-            for (int i = 0; i < aiCars.Length; i++)
-                _control.Update(i, _raceTime, _drivers[i].Path.Laps, _drivers[i].Path.ProgressM);
-            // Measured the way PathDriver.ProgressM measures the AI, so the two rank together.
-            int playerLaps = Mathf.FloorToInt(_playerProgress / n);
-            float playerProgressM = playerLaps * _track.LengthM + (_playerProgress - playerLaps * n) * _track.SampleSpacingM;
-            _control.Update(aiCars.Length, _raceTime, playerLaps, playerProgressM);
-            _control.Rank();
+            if (_keepsStandings)
+            {
+                for (int i = 0; i < aiCars.Length; i++)
+                    _control.Update(_aiEntry[i], _raceTime, _drivers[i].Path.Laps, _drivers[i].Path.ProgressM);
+                _control.Update(_playerEntry, _raceTime, _player.Laps, _player.ProgressM(_track));
+                foreach (var pair in _remoteEntry)
+                    if (pair.Key != null)
+                        _control.Update(pair.Value.Entry, _raceTime, pair.Value.Progress.Laps, pair.Value.Progress.ProgressM(_track));
+                _control.Rank();
+            }
 
             _sinceReaction += dt;
             if (_sinceReaction < ReactionSeconds) return;
@@ -303,8 +355,8 @@ namespace CarRace.UnityGame
                 _field = resized;
             }
             Vec3 playerPosition = ToNumerics(player.transform.position);
-            _field[aiCars.Length] = Seen(player, _playerIndex,
-                                         _track.LateralOffset(_track.Line, _playerIndex, playerPosition),
+            _field[aiCars.Length] = Seen(player, _player.Index,
+                                         _track.LateralOffset(_track.Line, _player.Index, playerPosition),
                                          _playerPlan);
             // The other players' cars, seen as the player is: the AI assume the same pace.
             for (int r = 0; r < remotes; r++) _field[aiCars.Length + 1 + r] = Seen(_remotes[r]);
@@ -328,23 +380,46 @@ namespace CarRace.UnityGame
         }
 
         /// <summary>
-        /// Where the player is on the lap, as distance covered in samples. Each step adds the
-        /// shortest way round from the last sample, so crossing the line counts a lap and a
-        /// recovery or restart, which jumps, is searched for over the whole lap first.
+        /// Where a car the AI do not drive is on the lap, as distance covered in samples: the
+        /// player's, and on a LAN host every other player's. Each step adds the shortest way
+        /// round from the last sample, so crossing the line counts a lap and a recovery or
+        /// restart, which jumps, is searched for over the whole lap first. Negative on the grid.
         /// </summary>
-        void TrackPlayer()
+        sealed class LapProgress
         {
-            int n = _track.Count;
-            Vector3 position = player.transform.position;
-            int index = (position - _playerLast).sqrMagnitude > 25f * 25f
-                ? track.Nearest(position, 0, back: 0, ahead: n - 1)
-                : track.Nearest(position, _playerIndex);
-            _playerLast = position;
+            readonly TrackPath _path;
+            readonly int _n;
+            Vector3 _last;
+            float _samples;
 
-            int step = ((index - _playerIndex) % n + n) % n;
-            if (step > n / 2) step -= n;
-            _playerProgress += step;
-            _playerIndex = index;
+            public int Index { get; private set; }
+
+            public LapProgress(TrackPath path, Vector3 start)
+            {
+                _path = path;
+                _n = path.centre.Length;
+                _last = start;
+                Index = path.Nearest(start, 0, back: 0, ahead: _n - 1);
+                _samples = Index > _n / 2 ? Index - _n : Index;
+            }
+
+            public void Advance(Vector3 position)
+            {
+                int index = (position - _last).sqrMagnitude > 25f * 25f
+                    ? _path.Nearest(position, 0, back: 0, ahead: _n - 1)
+                    : _path.Nearest(position, Index);
+                _last = position;
+
+                int step = ((index - Index) % _n + _n) % _n;
+                if (step > _n / 2) step -= _n;
+                _samples += step;
+                Index = index;
+            }
+
+            public int Laps => Mathf.FloorToInt(_samples / _n);
+
+            /// <summary>Measured the way PathDriver.ProgressM measures the AI, so the two rank together.</summary>
+            public float ProgressM(TrackData track) => Laps * track.LengthM + (_samples - Laps * _n) * track.SampleSpacingM;
         }
 
         RaceDriver.Seen Seen(CarController car, int index, float lateral, System.Collections.Generic.IReadOnlyList<float> plan, int lane = 0)
@@ -428,7 +503,7 @@ namespace CarRace.UnityGame
             }
         }
 
-        RaceControl.Entry PlayerEntry => _control.Entries[aiCars.Length];
+        RaceControl.Entry PlayerEntry => _control.Entries[_playerEntry];
 
         void OnGUI()
         {
@@ -453,7 +528,7 @@ namespace CarRace.UnityGame
             int lap = Mathf.Clamp(me.LapsComplete + 1, 1, raceLaps);
             var box = new Rect(Screen.width * 0.5f - Hud.Px(160f), Hud.Px(10f), Hud.Px(320f), Hud.Px(56f));
             GUI.Box(box, GUIContent.none);
-            GUI.Label(box, Lan ? $"Lap {lap} / {raceLaps}" : $"P{me.Position} / {_cars.Length}    Lap {lap} / {raceLaps}", _style);
+            GUI.Label(box, $"P{me.Position} / {_control.Entries.Length}    Lap {lap} / {raceLaps}", _style);
             _hintStyle ??= new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter, normal = { textColor = new Color(1f, 1f, 1f, 0.7f) } };
             _hintStyle.fontSize = Hud.Font(15);
             GUI.Label(new Rect(box.x, box.yMax + Hud.Px(2f), box.width, Hud.Px(22f)),
@@ -487,16 +562,21 @@ namespace CarRace.UnityGame
             float fastest = float.MaxValue;
             foreach (RaceControl.Entry e in order) fastest = Mathf.Min(fastest, e.BestLapS);
 
+            // In a LAN race people's names are longer than "AI 1", and touches are counted
+            // only for the cars this machine drives, so that column is left out.
             var text = new System.Text.StringBuilder();
-            text.AppendLine($"{"Pos",-4}{"Driver",-8}{"Grid",5}{"+/-",5}{"Best lap",11}{"Race time",11}{"Gap",10}{"Hits",6}");
-            text.AppendLine(new string('-', 60));
+            int nameWidth = Lan ? 12 : 8;
+            text.AppendLine($"{"Pos",-4}{"Driver".PadRight(nameWidth)}{"Grid",5}{"+/-",5}{"Best lap",11}{"Race time",11}{"Gap",10}{(Lan ? "" : $"{"Hits",6}")}");
+            text.AppendLine(new string('-', Lan ? 58 : 60));
             foreach (RaceControl.Entry e in order)
             {
                 int gained = e.Grid - e.Position;
+                bool left = HasLeft(System.Array.IndexOf(_control.Entries, e));
+                string name = e.Name.Length > nameWidth - 1 ? e.Name.Substring(0, nameWidth - 1) : e.Name;
                 string best = e.BestLapS < float.MaxValue ? Format(e.BestLapS) + (e.BestLapS == fastest ? "*" : " ") : "-";
-                string time = e.Finished ? Format(e.FinishedAtS) : $"lap {Mathf.Clamp(e.LapsComplete + 1, 1, raceLaps)}";
-                string gap = !e.Finished ? "running" : e.Position == 1 ? "-" : $"+{e.FinishedAtS - winner:0.000}";
-                text.AppendLine($"{e.Position,-4}{e.Name,-8}{e.Grid,5}{(gained == 0 ? "0" : gained.ToString("+0;-0")),5}{best,11}{time,11}{gap,10}{e.Contacts,6}");
+                string time = e.Finished ? Format(e.FinishedAtS) : left ? "left" : $"lap {Mathf.Clamp(e.LapsComplete + 1, 1, raceLaps)}";
+                string gap = !e.Finished ? (left ? "-" : "running") : e.Position == 1 ? "-" : $"+{e.FinishedAtS - winner:0.000}";
+                text.AppendLine($"{e.Position,-4}{name.PadRight(nameWidth)}{e.Grid,5}{(gained == 0 ? "0" : gained.ToString("+0;-0")),5}{best,11}{time,11}{gap,10}{(Lan ? "" : $"{e.Contacts,6}")}");
             }
             text.AppendLine();
             text.Append("* fastest lap");

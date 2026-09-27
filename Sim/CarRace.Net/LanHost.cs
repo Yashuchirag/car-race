@@ -150,6 +150,14 @@ namespace CarRace.Net
             }
         }
 
+        /// <summary>The race as the host keeps it, to every player.</summary>
+        public void SendStandings(Standings standings)
+        {
+            byte[] message = Control.StandingsMessage(standings);
+            foreach (Client client in _clients)
+                if (client.Player != null) client.Tcp.Send(message);
+        }
+
         /// <summary>The host's own car is on the grid. GO follows once everyone's is.</summary>
         public void SetReady() => _hostReady = true;
 

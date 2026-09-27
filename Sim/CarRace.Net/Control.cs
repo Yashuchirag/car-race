@@ -38,6 +38,25 @@ namespace CarRace.Net
         public PlayerInfo[] Grid = Array.Empty<PlayerInfo>();
     }
 
+    /// <summary>One car's place in the race, as the host keeps it.</summary>
+    public struct Standing
+    {
+        public byte LapsComplete;
+        public float ProgressM;        // distance since the start line, for ranking cars still running
+        public float FinishedAtS;      // race time at the flag, or -1
+        public float BestLapS;         // or -1 before a lap is complete
+        public float LastLapS;
+        public bool Left;              // the player quit the race
+    }
+
+    /// <summary>The whole field, in grid order, at one race time. Everyone ranks it the same
+    /// way, so the host sends the numbers and not the order.</summary>
+    public sealed class Standings
+    {
+        public float RaceTimeS;
+        public Standing[] Cars = Array.Empty<Standing>();
+    }
+
     public enum RejectReason : byte { Full = 1, Started = 2, Version = 3 }
 
     /// <summary>
@@ -50,7 +69,7 @@ namespace CarRace.Net
         /// <summary>Bumped whenever any message here or a datagram changes meaning.</summary>
         public const byte Version = 2;
 
-        public enum Type : byte { Hello = 1, Welcome, Reject, Lobby, Setup, Start, Ready, Go }
+        public enum Type : byte { Hello = 1, Welcome, Reject, Lobby, Setup, Start, Ready, Go, Standings }
 
         public static byte[] Hello(PlayerInfo me) => Build(Type.Hello, w =>
         {
@@ -92,6 +111,34 @@ namespace CarRace.Net
 
         /// <summary>The instant of GO, on the host's clock.</summary>
         public static byte[] Go(float atHostSeconds) => Build(Type.Go, w => w.Write(atHostSeconds));
+
+        public static byte[] StandingsMessage(Standings standings) => Build(Type.Standings, w =>
+        {
+            w.Write(standings.RaceTimeS);
+            w.Write((byte)standings.Cars.Length);
+            foreach (Standing s in standings.Cars)
+            {
+                w.Write(s.LapsComplete);
+                w.Write(s.ProgressM);
+                w.Write(s.FinishedAtS);
+                w.Write(s.BestLapS);
+                w.Write(s.LastLapS);
+                w.Write(s.Left);
+            }
+        });
+
+        public static Standings ReadStandings(byte[] message)
+        {
+            using BinaryReader r = Body(message);
+            var standings = new Standings { RaceTimeS = r.ReadSingle(), Cars = new Standing[r.ReadByte()] };
+            for (int i = 0; i < standings.Cars.Length; i++)
+                standings.Cars[i] = new Standing
+                {
+                    LapsComplete = r.ReadByte(), ProgressM = r.ReadSingle(), FinishedAtS = r.ReadSingle(),
+                    BestLapS = r.ReadSingle(), LastLapS = r.ReadSingle(), Left = r.ReadBoolean(),
+                };
+            return standings;
+        }
 
         public static float ReadGo(byte[] message)
         {

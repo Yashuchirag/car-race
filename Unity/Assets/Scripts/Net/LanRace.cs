@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using CarRace.Net;
+using CarRace.Track;
 using UnityEngine;
 
 namespace CarRace.UnityGame
@@ -18,6 +19,10 @@ namespace CarRace.UnityGame
     /// Then it tells the host it is ready, holds the start until the host's GO, and sends
     /// this machine's cars 30 times a second: its own, and on the host the AI too.
     ///
+    /// The host's RaceDirector keeps the standings for every car, and the host sends them
+    /// four times a second; a client's RaceDirector shows the host's numbers, so positions,
+    /// the finish and the results are the same on every screen.
+    ///
     /// For testing: -lanAutopilot has the AI drive this machine's car, and -lanScreenshotAt
     /// 10,25 takes screenshots that many seconds into the race scene, beside the executable,
     /// then quits.
@@ -25,13 +30,18 @@ namespace CarRace.UnityGame
     public sealed class LanRace : MonoBehaviour
     {
         const float SendHz = 30f;
+        const float StandingsHz = 4f;
         const float RowGapM = 10f, GridLateralM = 2.5f;   // as TrackSceneBuilder lays the grid
 
         LanSession _session;
         CarController _mine;
         readonly List<(byte Id, CarController Car)> _aiCars = new List<(byte, CarController)>();
         readonly List<RemoteCar> _remotes = new List<RemoteCar>();
-        float _nextSend;
+        readonly Dictionary<byte, int> _slotOf = new Dictionary<byte, int>();
+        RaceDirector _director;
+        Standings _applied;
+        float _nextSend, _nextStandings;
+        bool _hostGone;
 
         public static void SetUp(LanSession session)
         {
@@ -44,7 +54,10 @@ namespace CarRace.UnityGame
         void Build(LanSession session, RaceDirector director)
         {
             _session = session;
+            _director = director;
             RaceStart start = session.Race;
+            var grid = new CarController[start.Grid.Length];
+            var names = new string[start.Grid.Length];
             TrackPath track = FindAnyObjectByType<TrackPath>();
             _mine = director.Player;
 
@@ -68,6 +81,8 @@ namespace CarRace.UnityGame
             for (int slot = 0; slot < start.Grid.Length; slot++)
             {
                 PlayerInfo entry = start.Grid[slot];
+                names[slot] = entry.Name;
+                _slotOf[entry.Id] = slot;
                 CarController car;
                 if (entry.Id == session.MyId && !entry.Ai) car = _mine;
                 else if (spare.Count > 0) { car = spare[0]; spare.RemoveAt(0); }
@@ -78,6 +93,7 @@ namespace CarRace.UnityGame
                 int design = entry.Ai ? (slot + 1) % Mathf.Max(CarDesigns.Count, 1) : entry.Design;
                 CarDesigns.Apply(car.transform, design);
                 PlayerSetup.Paint(car.transform.Find("Body"), PlayerSetup.Colours[colours[slot]].colour);
+                grid[slot] = car;
 
                 if (car == _mine) continue;
                 all.Add(car.transform);
@@ -90,7 +106,7 @@ namespace CarRace.UnityGame
             }
             foreach (CarController unused in spare) Destroy(unused.gameObject);
 
-            director.UseLan(ai.ToArray(), _remotes, start.Laps, SecondsToGo);
+            director.UseLan(ai.ToArray(), _remotes, start.Laps, SecondsToGo, grid, names, keepsStandings: session.Host != null);
             director.AiDrivesPlayer = System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-lanAutopilot") >= 0;
             string shots = LanSession.Flag("-lanScreenshotAt");
             if (!string.IsNullOrEmpty(shots)) StartCoroutine(Screenshots(shots, session.MyId));
@@ -138,8 +154,16 @@ namespace CarRace.UnityGame
                           : remote.Heard && !Has(_session.Client?.Cars, remote.Id);
                 if (!gone) continue;
                 Debug.Log($"LAN: player {remote.Id} left, their car is taken off");
+                if (_slotOf.TryGetValue(remote.Id, out int slot)) _director.MarkLeft(slot);
                 Destroy(remote.gameObject);
                 _remotes.RemoveAt(i);
+            }
+
+            Standings();
+            if (_session.State == LanSession.Mode.Off && !_hostGone)
+            {
+                _hostGone = true;
+                Debug.Log("LAN: the host has gone");
             }
 
             float now = LanSession.Now;
@@ -155,6 +179,66 @@ namespace CarRace.UnityGame
                 _session.Host.SendSnapshot(cars, now);
             }
             else _session.Client?.SendCar(State(_session.MyId, _mine, stateTime), stateTime);
+        }
+
+        /// <summary>The host sends its standings; a client takes the latest into its
+        /// RaceDirector, which then ranks and shows them as its own.</summary>
+        void Standings()
+        {
+            RaceControl control = _director.Control;
+            if (control == null) return;
+
+            if (_session.Host != null)
+            {
+                float now = LanSession.Now;
+                if (now < _nextStandings) return;
+                _nextStandings = now + 1f / StandingsHz;
+                var standings = new Standings { Cars = new Standing[control.Entries.Length] };
+                for (int i = 0; i < control.Entries.Length; i++)
+                {
+                    RaceControl.Entry e = control.Entries[i];
+                    standings.Cars[i] = new Standing
+                    {
+                        LapsComplete = (byte)Mathf.Clamp(e.LapsComplete, 0, 255),
+                        ProgressM = e.ProgressM,
+                        FinishedAtS = e.FinishedAtS,
+                        BestLapS = e.BestLapS < float.MaxValue ? e.BestLapS : -1f,
+                        LastLapS = e.LastLapS,
+                        Left = _director.HasLeft(i),
+                    };
+                }
+                _session.Host.SendStandings(standings);
+                return;
+            }
+
+            Standings latest = _session.Client?.Standings;
+            if (latest == null || latest == _applied || latest.Cars.Length != control.Entries.Length) return;
+            _applied = latest;
+            for (int i = 0; i < latest.Cars.Length; i++)
+            {
+                Standing s = latest.Cars[i];
+                RaceControl.Entry e = control.Entries[i];
+                e.LapsComplete = s.LapsComplete;
+                e.ProgressM = s.ProgressM;
+                e.FinishedAtS = s.FinishedAtS;
+                e.BestLapS = s.BestLapS >= 0f ? s.BestLapS : float.MaxValue;
+                e.LastLapS = s.LastLapS;
+                if (s.Left) _director.MarkLeft(i);
+            }
+            control.Rank();
+        }
+
+        GUIStyle _banner;
+
+        /// <summary>A client whose host has gone can finish driving, but nobody keeps the race.</summary>
+        void OnGUI()
+        {
+            if (!_hostGone || Hud.Hidden) return;
+            _banner ??= new GUIStyle(GUI.skin.box) { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, normal = { textColor = Color.white } };
+            _banner.fontSize = Hud.Font(20);
+            float width = Hud.Px(620f);
+            GUI.Box(new Rect((Screen.width - width) * 0.5f, Hud.Px(96f), width, Hud.Px(44f)),
+                    "The host has left, so the race is over. Esc: main menu", _banner);
         }
 
         static CarState State(byte id, CarController car, float time)

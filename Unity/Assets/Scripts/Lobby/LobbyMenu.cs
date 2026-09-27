@@ -16,7 +16,7 @@ namespace CarRace.UnityGame
     /// repainted as a colour is picked. The players panel is also LAN play's: host a game or
     /// join one, see everyone who has joined, and as host set the AI cars and start the race.
     /// In a LAN game only the host picks the circuit. -lanHost hosts at once (with -lanAi N
-    /// AI cars), -lanJoin
+    /// AI cars, -lanLaps N laps, and -track for the circuit), -lanJoin
     /// 127.0.0.1 joins that address and -lanBrowse opens the Join screen, for testing
     /// several copies on one machine.
     ///
@@ -88,8 +88,9 @@ namespace CarRace.UnityGame
             string join = LanSession.Flag("-lanJoin");
             if (!LanSession.Active && Array.IndexOf(args, "-lanHost") >= 0)
             {
-                LanSession.Current.StartHosting(ChosenScene);
+                LanSession.Current.StartHosting(LanSession.Flag("-track") ?? ChosenScene);
                 if (int.TryParse(LanSession.Flag("-lanAi"), out int ai)) LanSession.Current.Host?.SetAiCars(ai);
+                if (int.TryParse(LanSession.Flag("-lanLaps"), out int laps)) LanSession.Current.Host?.SetLaps(laps);
             }
             else if (!LanSession.Active && !string.IsNullOrEmpty(join)) LanSession.Current.Join(join);
             else if (!LanSession.Active && Array.IndexOf(args, "-lanBrowse") >= 0) LanSession.Current.StartBrowsing();

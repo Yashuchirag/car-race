@@ -287,6 +287,24 @@ namespace CarRace.Harness
                       goneAfter >= 0f ? $"a player who quits leaves every track in {goneAfter * 1000f:0} ms"
                                       : "a player who quits leaves every track");
 
+            // Standings, as the host's race control sends them, reach every player intact.
+            var standings = new Standings { RaceTimeS = now, Cars = new Standing[race.Grid.Length] };
+            for (int i = 0; i < standings.Cars.Length; i++)
+                standings.Cars[i] = new Standing
+                {
+                    LapsComplete = (byte)(i % 3), ProgressM = 1234.5f + i, FinishedAtS = i == 0 ? 95.25f : -1f,
+                    BestLapS = 88.125f + i, LastLapS = 90f, Left = quitter != null && race.Grid[i].Id == quitter.Id,
+                };
+            host.SendStandings(standings);
+            bool same = PollUntil(ref now, () => machines.TrueForAll(m => m.Quit || m.Client == null
+                                        || m.Client.Standings != null && m.Client.Standings.RaceTimeS == standings.RaceTimeS),
+                                  2f, host, machines);
+            foreach (Machine m in machines)
+                if (!m.Quit && m.Client?.Standings != null)
+                    for (int i = 0; i < standings.Cars.Length; i++)
+                        same &= m.Client.Standings.Cars[i].Equals(standings.Cars[i]);
+            Check(same, $"standings for all {standings.Cars.Length} cars reach every player intact");
+
             using (var late = new LanClient(IPAddress.Loopback, host.Port, new PlayerInfo { Name = "Late" }))
             {
                 PollUntil(ref now, () => late.State == LanClient.Phase.Rejected, 2f, host, machines, t => late.Poll(t));

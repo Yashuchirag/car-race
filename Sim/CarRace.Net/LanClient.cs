@@ -43,6 +43,9 @@ namespace CarRace.Net
         public LobbyState Lobby { get; private set; }
         public RaceStart Race { get; private set; }
 
+        /// <summary>The race as the host last sent it, null before the first.</summary>
+        public Standings Standings { get; private set; }
+
         /// <summary>GO on the host's clock, NaN until the host has it.</summary>
         public float GoAtHostSeconds { get; private set; } = float.NaN;
 
@@ -184,6 +187,9 @@ namespace CarRace.Net
                     break;
                 case Control.Type.Go:
                     GoAtHostSeconds = Control.ReadGo(message);
+                    break;
+                case Control.Type.Standings:
+                    Standings = Control.ReadStandings(message);
                     break;
             }
         }
