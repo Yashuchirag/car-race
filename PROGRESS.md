@@ -16,7 +16,7 @@ concrete action is. Everything below it is detail.
 garages, marquees, billboards, braking boards and city buildings in photographed materials;
 smooth car bodies with clear-coat paint and real wheels. Before that, sound.
 
-**Next action:** Your look at Royal Park (`D:\Dev\CarRace\Builds\Views\royal-before-after.png`, or drive it), then the other five circuits the same way: their landmarks and horizons in their themes, and a rebuild for the shared trackside and buildings. Also your look at the four cars. Also still open: your drive of a full LAN race (two copies, Host and Join, READY, START
+**Next action:** Your drive round the six circuits and the four cars (views of every circuit in `D:\Dev\CarRace\Builds\Views`). If the frame rate matters, a performance pass: far versions of cars, wheels and trackside. Also still open: your drive of a full LAN race (two copies, Host and Join, READY, START
 RACE): how the other cars look, sound and feel to touch, and the shared positions and
 results. LAN stages 1 to 4 are done (section 3, Phase 5); stage 5 is a test on two real
 PCs when you have a second one.
