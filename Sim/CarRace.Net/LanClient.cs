@@ -112,8 +112,17 @@ namespace CarRace.Net
         {
             _me.Colour = colour;
             _me.Design = design;
-            if (Id != 0) _tcp.Send(Control.Setup(colour, design));
+            if (Id != 0) _tcp.Send(Control.Setup(colour, design, _me.Ready));
         }
+
+        /// <summary>Ready in the lobby, or not: the host starts once everyone is.</summary>
+        public void SetReady(bool ready)
+        {
+            _me.Ready = ready;
+            if (Id != 0) _tcp.Send(Control.Setup(_me.Colour, _me.Design, ready));
+        }
+
+        public bool Ready => _me.Ready;
 
         /// <summary>This player's car is on the grid.</summary>
         public void SendReady()

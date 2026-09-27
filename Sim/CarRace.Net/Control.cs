@@ -13,6 +13,10 @@ namespace CarRace.Net
         public byte Colour;
         public byte Design;
         public bool Ai;
+
+        /// <summary>In the lobby: happy with their car and waiting for the start. The host
+        /// can start once everyone who has joined is.</summary>
+        public bool Ready;
     }
 
     /// <summary>What everyone in the lobby sees: the circuit, the race length, how many AI
@@ -68,10 +72,12 @@ namespace CarRace.Net
             WritePlayers(w, lobby.Players);
         });
 
-        public static byte[] Setup(byte colour, byte design) => Build(Type.Setup, w =>
+        /// <summary>A player's car, colour and whether they are ready, from the lobby.</summary>
+        public static byte[] Setup(byte colour, byte design, bool ready) => Build(Type.Setup, w =>
         {
             w.Write(colour);
             w.Write(design);
+            w.Write(ready);
         });
 
         public static byte[] Start(RaceStart start) => Build(Type.Start, w =>
@@ -146,6 +152,7 @@ namespace CarRace.Net
                 w.Write(p.Colour);
                 w.Write(p.Design);
                 w.Write(p.Ai);
+                w.Write(p.Ready);
             }
         }
 
@@ -156,7 +163,7 @@ namespace CarRace.Net
                 players[i] = new PlayerInfo
                 {
                     Id = r.ReadByte(), Name = ReadString(r),
-                    Colour = r.ReadByte(), Design = r.ReadByte(), Ai = r.ReadBoolean(),
+                    Colour = r.ReadByte(), Design = r.ReadByte(), Ai = r.ReadBoolean(), Ready = r.ReadBoolean(),
                 };
             return players;
         }

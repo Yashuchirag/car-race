@@ -80,7 +80,11 @@ namespace CarRace.Harness
                         bot.Client = Join(host, bot);
                         continue;
                     }
-                    if (c.Id != 0) Once($"{bot.Name} joined as player {c.Id}");
+                    if (c.Id != 0 && reported.Add($"{bot.Name} joined"))
+                    {
+                        Console.WriteLine($"  {now,5:0.0} s  {bot.Name} joined as player {c.Id}, and is ready");
+                        c.SetReady(true);
+                    }
                     if (c.State == LanClient.Phase.Rejected) Once($"{bot.Name} turned away: {c.Rejected}");
                     if (c.State == LanClient.Phase.Closed) Once($"{bot.Name} lost the host");
                     if (c.Synced) Once($"{bot.Name} synced its clock");

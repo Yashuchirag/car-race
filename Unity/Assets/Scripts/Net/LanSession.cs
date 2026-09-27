@@ -14,8 +14,9 @@ namespace CarRace.UnityGame
     ///
     /// When the host starts the race, every machine loads the circuit the lobby chose.
     /// Command line, for testing several copies on one machine: -lanStartWhen 3 has a host
-    /// start as soon as three players are in, and -playerName sets the name for one
-    /// session. LobbyMenu reads -lanHost and -lanJoin.
+    /// start as soon as three players are in and ready, -lanReady has a joined copy say
+    /// ready at once, and -playerName sets the name for one session. LobbyMenu reads
+    /// -lanHost and -lanJoin.
     /// </summary>
     [DefaultExecutionOrder(-1000)]   // before anything that asks it the time this frame
     public sealed class LanSession : MonoBehaviour
@@ -189,10 +190,18 @@ namespace CarRace.UnityGame
             Client?.SetSetup((byte)PlayerSetup.ColourIndex, (byte)PlayerSetup.DesignIndex);
         }
 
-        /// <summary>Starts the race for everyone. The host needs someone to race.</summary>
+        /// <summary>A joined player who has said ready, whose car is then fixed.</summary>
+        public bool IsReadyToRace => Client != null && Client.Ready;
+
+        /// <summary>The host has someone to race, and everyone is ready.</summary>
+        public bool CanStart => Host != null && !Host.Started && Host.Humans >= 2 && Host.AllReady;
+
+        public void ToggleReady() => Client?.SetReady(!Client.Ready);
+
+        /// <summary>Starts the race for everyone, once everyone is ready.</summary>
         public void StartRace()
         {
-            if (Host == null || Host.Started || Host.Humans < 2) return;
+            if (!CanStart) return;
             RaceStart race = Host.Start(Now);
             Debug.Log($"LAN: hosting a race on {race.Track}, {race.Grid.Length} cars");
             SceneManager.LoadScene(race.Track);
@@ -228,8 +237,13 @@ namespace CarRace.UnityGame
                 }
             }
 
-            if (int.TryParse(Flag("-lanStartWhen"), out int players) && Host != null && !Host.Started && Host.Humans >= players)
+            if (int.TryParse(Flag("-lanStartWhen"), out int players) && CanStart && Host.Humans >= players)
                 StartRace();
+
+            // -lanReady: a test copy says ready as soon as it is in.
+            if (Client != null && Client.Id != 0 && Client.Race == null && !Client.Ready
+                && Array.IndexOf(Environment.GetCommandLineArgs(), "-lanReady") >= 0)
+                Client.SetReady(true);
         }
 
         void OnApplicationQuit() => Leave();

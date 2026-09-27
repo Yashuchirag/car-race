@@ -121,6 +121,14 @@ namespace CarRace.Harness
                                     2f, host, machines);
             Check(agreed, $"AI count ({host.Lobby.AiCars}) and a changed colour reach every player");
 
+            // Ready in the lobby: the host may start only once everyone is.
+            bool notYet = players == 1 || !host.AllReady;
+            foreach (Machine m in machines) m.Client?.SetReady(true);
+            bool allReady = PollUntil(ref now, () => host.AllReady
+                                           && machines.TrueForAll(m => m.Client == null || m.Client.Lobby.Players.TrueForAll(p => p.Ready)),
+                                      2f, host, machines);
+            Check(notYet && allReady, "the host sees nobody ready at first, then everyone ready, and so does every player");
+
             // Clocks: pings run from joining, so a second of lobby gives each client several.
             PollUntil(ref now, () => false, 1f, host, machines);
 

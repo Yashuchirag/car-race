@@ -34,6 +34,8 @@ namespace CarRace.UnityGame
         static readonly Color AccentLight = new Color(1f, 0.55f, 0.1f);
         static readonly Color Muted = new Color(0.62f, 0.64f, 0.72f);
         static readonly Color Row = new Color(0.12f, 0.13f, 0.18f, 0.95f);
+        static readonly Color ReadyColour = new Color(0.12f, 0.6f, 0.28f);
+        static readonly Color ReadyLight = new Color(0.2f, 0.72f, 0.36f);
 
         GUIStyle _title, _subtitle, _header, _text, _small, _play, _cardName, _field, _button;
         string _typedAddress = "";
@@ -110,10 +112,16 @@ namespace CarRace.UnityGame
         {
             if (LanSession.Active)
             {
-                if (LanSession.Current.State == LanSession.Mode.Hosting && LanSession.Current.Host.Humans >= 2)
+                LanSession session = LanSession.Current;
+                if (session.State == LanSession.Mode.Joined && session.Client.Id != 0)
+                {
+                    GameAudio.Select();
+                    session.ToggleReady();
+                }
+                else if (session.CanStart)
                 {
                     GameAudio.Confirm();
-                    LanSession.Current.StartRace();
+                    session.StartRace();
                 }
                 return;
             }
@@ -154,6 +162,8 @@ namespace CarRace.UnityGame
             CircuitPanel(new Rect(margin, Hud.Px(180f), Hud.Px(400f), Hud.Px(560f)));
 
             // Car, right: the body designs, colour swatches, the colour's name and PLAY.
+            // A player who has said ready keeps the car they said it with, until they un-ready.
+            bool locked = LanSession.Active && LanSession.Current.IsReadyToRace;
             int designs = CarDesigns.Count;
             float designRow = designs > 0 ? Hud.Px(62f) : 0f;
             float width = Hud.Px(460f), height = Hud.Px(380f) + designRow;
@@ -172,10 +182,11 @@ namespace CarRace.UnityGame
                 {
                     var button = new Rect(left + i * (buttonWidth + Hud.Px(8f)), top, buttonWidth, Hud.Px(44f));
                     bool chosen = i == PlayerSetup.DesignIndex;
-                    bool hover = button.Contains(Event.current.mousePosition);
+                    bool hover = !locked && button.Contains(Event.current.mousePosition);
                     Hud.Rounded(button, chosen ? Accent : hover ? new Color(1f, 1f, 1f, 0.16f) : Row);
                     _cardName.normal.textColor = chosen ? Color.white : new Color(1f, 1f, 1f, 0.8f);
                     GUI.Label(button, CarDesigns.NameOf(i).ToUpperInvariant(), _cardName);
+                    if (locked) continue;
                     _hover.Watch(button);
                     if (GUI.Button(button, GUIContent.none, GUIStyle.none))
                     {
@@ -191,7 +202,7 @@ namespace CarRace.UnityGame
             {
                 var swatch = new Rect(left + (i % 4) * (size + gap), top + (i / 4) * (size + gap), size, size);
                 bool chosen = i == PlayerSetup.ColourIndex;
-                bool hover = swatch.Contains(Event.current.mousePosition);
+                bool hover = !locked && swatch.Contains(Event.current.mousePosition);
                 if (chosen || hover)
                 {
                     float ring = Hud.Px(chosen ? 4f : 2f);
@@ -206,6 +217,7 @@ namespace CarRace.UnityGame
                                 new Color(1f, 1f, 1f, 0.18f));
                 }
                 Hud.Rounded(swatch, PlayerSetup.Colours[i].colour);
+                if (locked) continue;
                 _hover.Watch(swatch);
                 if (GUI.Button(swatch, GUIContent.none, GUIStyle.none))
                 {
@@ -217,18 +229,37 @@ namespace CarRace.UnityGame
             }
             _text.alignment = TextAnchor.MiddleCenter;
             GUI.Label(new Rect(car.x, top + 2f * size + gap + Hud.Px(8f), width, Hud.Px(30f)),
-                      PlayerSetup.Colours[PlayerSetup.ColourIndex].name.ToUpperInvariant(), _text);
+                      PlayerSetup.Colours[PlayerSetup.ColourIndex].name.ToUpperInvariant() + (locked ? "  ·  LOCKED WHILE READY" : ""), _text);
             _text.alignment = TextAnchor.MiddleLeft;
 
             var play = new Rect(car.x + Hud.Px(20f), car.yMax - Hud.Px(84f), width - Hud.Px(40f), Hud.Px(64f));
-            string label = "PLAY  ▶";
-            bool ready = true;
-            if (LanSession.Active && LanSession.Current.State == LanSession.Mode.Joined) { label = "WAITING FOR HOST"; ready = false; }
-            else if (LanSession.Active && LanSession.Current.Host.Humans < 2) { label = "WAITING FOR PLAYERS"; ready = false; }
-            else if (LanSession.Active) label = "START RACE  ▶";
+            // Joined: READY, and pressed again to change the car. Hosting: START RACE once
+            // someone has joined and everyone is ready.
+            string label = "PLAY  ▶", hint = "Enter: play";
+            bool ready = true, waiting = false;
+            if (LanSession.Active)
+            {
+                LanSession session = LanSession.Current;
+                LobbyState lobby = session.Lobby;
+                if (session.State == LanSession.Mode.Joined)
+                {
+                    ready = session.Client.Id != 0;
+                    waiting = session.IsReadyToRace;
+                    label = waiting ? "READY  ✓  WAITING FOR HOST" : "READY";
+                    hint = waiting ? "Enter: not ready, to change your car" : "Enter: ready";
+                }
+                else if (session.Host.Humans < 2) { label = "WAITING FOR PLAYERS"; ready = false; }
+                else if (!session.Host.AllReady)
+                {
+                    int count = lobby.Players.FindAll(p => p.Ready).Count;
+                    label = $"WAITING: {count} OF {lobby.Players.Count} READY";
+                    ready = false;
+                }
+                else { label = "START RACE  ▶"; hint = "Enter: start the race"; }
+            }
             bool over = ready && play.Contains(Event.current.mousePosition);
-            Hud.Rounded(play, !ready ? Row : over ? AccentLight : Accent);
-            _play.fontSize = Hud.Font(ready ? 30 : 22);
+            Hud.Rounded(play, !ready ? Row : waiting ? (over ? ReadyLight : ReadyColour) : over ? AccentLight : Accent);
+            _play.fontSize = Hud.Font(ready && !waiting ? 30 : 22);
             GUI.Label(play, label, _play);
             if (ready)
             {
@@ -237,7 +268,7 @@ namespace CarRace.UnityGame
             }
 
             _small.alignment = TextAnchor.MiddleRight;
-            GUI.Label(new Rect(car.x, car.yMax + Hud.Px(6f), width, Hud.Px(24f)), ready ? "Enter: play" : "", _small);
+            GUI.Label(new Rect(car.x, car.yMax + Hud.Px(6f), width, Hud.Px(24f)), ready ? hint : "", _small);
             _small.alignment = TextAnchor.UpperLeft;
         }
 
@@ -353,7 +384,15 @@ namespace CarRace.UnityGame
                         if (player.Id == 0) tags += "  ·  HOST";
                         if (player.Id == session.MyId) tags += "  ·  YOU";
                         _small.alignment = TextAnchor.MiddleRight;
-                        GUI.Label(new Rect(row.x, row.y, row.width - Hud.Px(12f), row.height), tags, _small);
+                        GUI.Label(new Rect(row.x, row.y, row.width - Hud.Px(100f), row.height), tags, _small);
+
+                        // Ready or not, for everyone but the host, whose ready is the start.
+                        if (player.Id != 0)
+                        {
+                            _small.normal.textColor = player.Ready ? new Color(0.35f, 0.9f, 0.45f) : AccentLight;
+                            GUI.Label(new Rect(row.x, row.y, row.width - Hud.Px(12f), row.height), player.Ready ? "READY" : "NOT READY", _small);
+                            _small.normal.textColor = Muted;
+                        }
                         _small.alignment = TextAnchor.UpperLeft;
                         y += rowHeight + gap;
                     }

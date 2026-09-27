@@ -40,7 +40,7 @@ namespace CarRace.Net
             public IPEndPoint Udp;             // null until its first datagram
             public float LastHeard;
             public bool HasCar;
-            public bool Ready;
+            public bool Loaded;            // its circuit has loaded and its car is on the grid
             public CarState Car;
         }
 
@@ -84,6 +84,7 @@ namespace CarRace.Net
             Port = port;
 
             me.Id = 0;
+            me.Ready = true;   // the host's ready is pressing start
             Lobby.Track = track;
             Lobby.Players.Add(me);
 
@@ -100,6 +101,9 @@ namespace CarRace.Net
         }
 
         public int Humans => Lobby.Players.Count;
+
+        /// <summary>Everyone who has joined has said they are ready.</summary>
+        public bool AllReady => Lobby.Players.TrueForAll(p => p.Ready);
 
         public void SetTrack(string track) { Lobby.Track = track; SendLobby(); }
         public void SetLaps(int laps) { Lobby.Laps = (byte)Math.Clamp(laps, 1, 99); SendLobby(); }
@@ -137,7 +141,7 @@ namespace CarRace.Net
             }
 
             if (Started && float.IsNaN(GoAtHostSeconds) && _hostReady
-                && (_clients.TrueForAll(c => c.Player == null || c.Ready) || now - _startedAt > ReadyTimeoutSeconds))
+                && (_clients.TrueForAll(c => c.Player == null || c.Loaded) || now - _startedAt > ReadyTimeoutSeconds))
             {
                 GoAtHostSeconds = now + CountdownSeconds;
                 byte[] go = Control.Go(GoAtHostSeconds);
@@ -256,13 +260,14 @@ namespace CarRace.Net
                     break;
                 }
                 case Control.Type.Ready when client.Player != null && Started:
-                    client.Ready = true;
+                    client.Loaded = true;
                     break;
                 case Control.Type.Setup when client.Player != null && !Started:
                 {
                     using var r = Control.Body(message);
                     client.Player.Colour = r.ReadByte();
                     client.Player.Design = r.ReadByte();
+                    client.Player.Ready = r.ReadBoolean();
                     SendLobby();
                     break;
                 }
