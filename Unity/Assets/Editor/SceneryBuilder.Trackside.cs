@@ -92,21 +92,36 @@ namespace CarRace.UnityGame.EditorTools
             return placed;
         }
 
+        /// <summary>Each theme's two landmarks and its horizon, if it has one (see scenery.py):
+        /// Royal Park a villa like Monza's Villa Reale and a length of old banked oval under the
+        /// Alps; the Ardennes a stone viaduct and a chalet before forested ridges; the desert a
+        /// tower like Sakhir's and a sandstone fort before dunes; the coast a Ferris wheel and
+        /// a lighthouse, the sea its horizon; the city a wartime hangar and an airfield control
+        /// tower, as Silverstone was an airfield; the night city two neon towers.</summary>
+        static readonly Dictionary<string, (string first, string second, string horizon)> ThemeLandmarks =
+            new Dictionary<string, (string, string, string)>
+            {
+                ["Countryside"] = ("villa", "banking", "alps"),
+                ["Mountains"] = ("viaduct", "chalet", "ridges"),   // the chalet is too small to show over a stand
+                ["Desert"] = ("sakhir_tower", "fort", "dunes"),
+                ["Coast"] = ("ferris_wheel", "lighthouse", null),
+                ["City"] = ("hangar", "control_tower", null),
+                ["Night City"] = ("neon_tower_pink", "neon_tower_cyan", null),
+            };
+
         /// <summary>
-        /// The theme's landmarks, from Blender, and its horizon. Royal Park's are a villa in the
-        /// manner of Monza's Villa Reale and a length of old banked oval, each at the nearest
-        /// open ground round the lap where it fits whole, facing the track; and the Alps on the
-        /// horizon ahead of the start straight.
+        /// The theme's landmarks, each at the nearest open ground round the lap where it fits
+        /// whole, facing the track: the first searched from the start, where it stands over
+        /// the grandstand, the second from the far side of the lap, where nothing else is. Then
+        /// its horizon ahead of the start straight.
         /// </summary>
         static int Landmarks(GameObject parent, Land land, Circuit circuit, Theme theme)
         {
-            if (theme.Name != "Countryside") return 0;
+            if (!ThemeLandmarks.TryGetValue(theme.Name, out var set)) return 0;
             int placed = 0;
-            // The villa from the start, where it stands over the grandstand; the banking from
-            // the far side of the lap, where nothing else is.
-            if (Landmark(parent, land, circuit, StructureModels.BlenderModel("villa"), 0)) placed++;
-            if (Landmark(parent, land, circuit, StructureModels.BlenderModel("banking"), circuit.N / 2)) placed++;
-            Horizon(parent, circuit, StructureModels.BlenderModel("alps"));
+            if (Landmark(parent, land, circuit, StructureModels.BlenderModel(set.first), 0)) placed++;
+            if (Landmark(parent, land, circuit, StructureModels.BlenderModel(set.second), circuit.N / 2)) placed++;
+            if (set.horizon != null) Horizon(parent, circuit, StructureModels.BlenderModel(set.horizon));
             return placed;
         }
 

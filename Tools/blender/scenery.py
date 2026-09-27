@@ -44,7 +44,17 @@ MATERIALS = {
     "RoofTiles": (2.0, (0.45, 0.2, 0.12), 0.0, 0.7),
     "Glass": (1.0, (0.05, 0.07, 0.09), 0.3, 0.1),
     "Roof": (3.0, (0.35, 0.35, 0.34), 0.0, 0.8),
-    "Alps": (1.0, (0.55, 0.6, 0.7), 0.0, 0.9),       # its own texture coordinates, see alps()
+    "Alps": (1.0, (0.55, 0.6, 0.7), 0.0, 0.9),       # horizons: their own texture coordinates
+    "Ridges": (1.0, (0.2, 0.26, 0.27), 0.0, 0.9),
+    "Dunes": (1.0, (0.78, 0.66, 0.5), 0.0, 0.9),
+    "Timber": (2.0, (0.35, 0.22, 0.12), 0.0, 0.7),
+    "Slate": (2.0, (0.2, 0.21, 0.24), 0.0, 0.6),
+    "Sandstone": (3.0, (0.82, 0.68, 0.48), 0.0, 0.85),
+    "Red": (1.0, (0.7, 0.06, 0.05), 0.0, 0.4),
+    "Blue": (1.0, (0.08, 0.25, 0.7), 0.0, 0.4),
+    "Yellow": (1.0, (0.95, 0.75, 0.1), 0.0, 0.4),
+    "NeonPink": (1.0, (1.0, 0.1, 0.6), 0.0, 0.3),
+    "NeonCyan": (1.0, (0.1, 0.9, 1.0), 0.0, 0.3),
     "Corrugated": (2.0, (0.75, 0.77, 0.8), 0.6, 0.45),
     "Seats": (1.0, (0.08, 0.22, 0.62), 0.0, 0.5),
 }
@@ -466,12 +476,23 @@ def banking():
     return m
 
 
-def alps(path, radius=1000.0):
-    """A mountain range on the horizon, 140 degrees of it, at `radius` from its origin and
-    facing it (the middle of the range lies along -z, towards the circuit's start). Crests from
-    ridged noise over massifs that rise and fall along it, peaks up to 24% of the radius high, so scaled with the radius they stand at
-    the same angle above the horizon. Its texture runs up with height: dark forested slopes,
-    grey rock, then snow, with a ragged snowline; coloured already towards the haze."""
+# A horizon's look: peak height as a share of its radius, sharp crests or rolling ones, and
+# its colours from foot to top (the last only above a ragged line at `snowline`, if any).
+HORIZONS = {
+    "alps": dict(height=0.24, sharp=True, low=(0.20, 0.26, 0.30), mid=(0.42, 0.45, 0.52), top=(0.86, 0.89, 0.95), snowline=0.55),
+    "ridges": dict(height=0.13, sharp=True, low=(0.14, 0.2, 0.2), mid=(0.2, 0.26, 0.27), top=None, snowline=None),
+    "dunes": dict(height=0.05, sharp=False, low=(0.7, 0.57, 0.42), mid=(0.8, 0.68, 0.52), top=None, snowline=None),
+}
+
+
+def horizon(name, path, radius=1000.0):
+    """A range on the horizon, 140 degrees of it, at `radius` from its origin and facing it
+    (its middle along -z, towards the circuit's start), in the look HORIZONS[name] gives: the
+    Alps, the Ardennes' forested ridges, or dunes. Crests from ridged noise (or rolling ones)
+    over massifs that rise and fall along it, heights a share of the radius, so scaled with the
+    radius they stand at the same angle above the horizon. Its texture runs up with height,
+    coloured already towards the haze."""
+    look = HORIZONS[name]
     rng = np.random.default_rng(7)
     arc = math.radians(140)
     cols, depths = 360, [0.0, 0.25, 0.5, 0.75, 1.0]
@@ -485,6 +506,14 @@ def alps(path, radius=1000.0):
             amp *= 0.62
         return total / norm
 
+    def rolling(u, octaves):
+        total, amp, norm = 0.0, 1.0, 0.0
+        for f, ph in octaves[:3]:
+            total += amp * (0.5 + 0.5 * math.sin(u * f * 0.6 + ph))
+            norm += amp
+            amp *= 0.5
+        return total / norm
+
     octaves = [(f, ph) for f, ph in zip((9.0, 23.0, 47.0, 97.0, 199.0), rng.uniform(0, 6.28, 5))]
     massifs = [(f, ph) for f, ph in zip((3.0, 7.0), rng.uniform(0, 6.28, 2))]
     verts, uvs = [], []
@@ -495,34 +524,33 @@ def alps(path, radius=1000.0):
             a = -arc / 2 + arc * u
             edge = min(1.0, math.sin(math.pi * u) * 3.0)              # the range tapers at its ends
             massif = 0.5 + 0.5 * sum(0.5 * math.sin(u * f + ph) for f, ph in massifs)
-            ridge = ridged(u * 1.0 + dd * 0.21, octaves)
-            h = radius * 0.24 * edge * (0.15 + 0.85 * massif) * (0.3 + 0.7 * ridge ** 1.1) * (0.0 if dd == 0.0 else (0.5 + 0.5 * dd))
+            ridge = (ridged if look["sharp"] else rolling)(u * 1.0 + dd * 0.21, octaves)
+            h = radius * look["height"] * edge * (0.15 + 0.85 * massif) * (0.3 + 0.7 * ridge ** 1.1) * (0.0 if dd == 0.0 else (0.5 + 0.5 * dd))
             verts.append((radius * 0 + r * math.sin(a), h - radius * 0.01, -r * math.cos(a)))
-            uvs.append((u * 8.0, h / (radius * 0.24)))
+            uvs.append((u * 8.0, h / (radius * look["height"])))
     faces = []
     n = cols + 1
     for j in range(len(depths) - 1):
         for i in range(cols):
             a, b = j * n + i, (j + 1) * n + i
             faces.append((a, b, b + 1, a + 1))
-    m = Model("alps")
+    m = Model(name)
     bv = [wheel.U(*v) for v in verts]
     faces = car.facing(bv, faces, lambda c: -Vector((c.x, c.y, 0.0)))   # towards the origin
-    m.verts, m.faces, m.mats = bv, faces, ["Alps"] * len(faces)
+    m.verts, m.faces, m.mats = bv, faces, [name.capitalize()] * len(faces)
 
     # The texture: u along the range (8 repeats), v up it by height fraction.
     w, hgt = 1024, 256
     v = np.linspace(0, 1, hgt)[:, None] * np.ones((1, w))
     uu = np.linspace(0, 1, w)[None, :] * np.ones((hgt, 1))
     streak = 0.06 * np.sin(uu * 2 * math.pi * 23 + rng.uniform(0, 6)) + 0.05 * np.sin(uu * 2 * math.pi * 57 + 1.3)
-    snowline = 0.55 + streak
-    snow = np.clip((v - snowline) / 0.06, 0, 1)
-    rock = np.clip((v - 0.28 - streak * 0.5) / 0.1, 0, 1)
-    forest = np.array([0.20, 0.26, 0.30]); stone = np.array([0.42, 0.45, 0.52]); white = np.array([0.86, 0.89, 0.95])
-    col = forest * (1 - rock)[..., None] + stone * rock[..., None]
-    col = col * (1 - snow)[..., None] + white * snow[..., None]
+    rise = np.clip((v - 0.28 - streak * 0.5) / 0.1, 0, 1)
+    col = np.array(look["low"]) * (1 - rise)[..., None] + np.array(look["mid"]) * rise[..., None]
+    if look["snowline"] is not None:
+        snow = np.clip((v - look["snowline"] - streak) / 0.06, 0, 1)
+        col = col * (1 - snow)[..., None] + np.array(look["top"]) * snow[..., None]
     rgba = np.concatenate([col, np.ones((hgt, w, 1))], axis=2).astype(np.float32)
-    img = bpy.data.images.new("Alps", w, hgt, alpha=False)
+    img = bpy.data.images.new(name, w, hgt, alpha=False)
     img.pixels.foreach_set(rgba.ravel())
     img.filepath_raw = path
     img.file_format = "PNG"
@@ -530,9 +558,256 @@ def alps(path, radius=1000.0):
     return m, uvs
 
 
+def gable(m, x0, x1, z0, z1, eave, ridge, material, overhang=0.6):
+    """A gable roof along x, eaves at `eave`, ridge at `ridge`, as a closed wedge."""
+    cz = (z0 + z1) / 2
+    xa, xb, za, zb = x0 - overhang, x1 + overhang, z0 - overhang, z1 + overhang
+    verts = [(xa, eave, za), (xb, eave, za), (xb, eave, zb), (xa, eave, zb), (xa, ridge, cz), (xb, ridge, cz),
+             (xa, eave - 0.25, za), (xb, eave - 0.25, za), (xb, eave - 0.25, zb), (xa, eave - 0.25, zb)]
+    faces = [(0, 1, 5, 4), (2, 3, 4, 5), (0, 4, 3), (1, 2, 5), (6, 9, 8, 7), (0, 6, 7, 1), (1, 7, 8, 2), (2, 8, 9, 3), (3, 9, 6, 0)]
+    m.add((verts, faces), material)
+
+
+def windows(m, x0, x1, z, y, count, w=1.2, h=1.5, out=-1, frame="White"):
+    """A row of windows on a face at z, facing -z (out=-1) or +z."""
+    for i in range(count):
+        x = x0 + (i + 0.5) * (x1 - x0) / count
+        m.box((x, y, z + out * 0.02), (w + 0.2, h + 0.2, 0.04), frame)    # the frame, and the pane proud of it
+        m.box((x, y, z + out * 0.05), (w, h, 0.03), "Glass")
+
+
+def chalet():
+    """An Ardennes mountain chalet: a stone ground floor, a timber upper floor with a balcony
+    round the front, a steep slate gable roof with deep eaves, and a chimney."""
+    m = Model("chalet")
+    w, d = 16.0, 11.0
+    m.box((0, 1.8, 0), (w, 3.6, d), "Stone")
+    m.box((0, 5.4, 0), (w, 3.6, d), "Timber")
+    windows(m, -w / 2, w / 2, -d / 2, 1.8, 4, frame="Timber")
+    windows(m, -w / 2, w / 2, -d / 2, 5.4, 4, frame="White")
+    windows(m, -w / 2, w / 2, d / 2, 5.4, 4, out=1, frame="White")
+    m.box((0, 3.75, -d / 2 - 0.9), (w + 0.4, 0.2, 1.8), "Timber")                 # balcony
+    m.box((0, 4.35, -d / 2 - 1.75), (w + 0.4, 1.0, 0.08), "Timber")               # its rail
+    for i in range(9):
+        m.box((-w / 2 + i * w / 8, 1.9, -d / 2 - 1.7), (0.18, 3.7, 0.18), "Timber")   # posts under it
+    gable(m, -w / 2, w / 2, -d / 2, d / 2, 7.2, 12.5, "Slate", overhang=1.4)
+    m.box((4.5, 12.0, 2.0), (1.0, 3.0, 1.0), "Stone")                              # chimney
+    return m
+
+
+def viaduct():
+    """A stone railway viaduct across a valley: eight round arches 16 m apart on tapering piers,
+    27 m high, a 6 m deck with parapets. Its long side faces the track."""
+    m = Model("viaduct")
+    span, piers, height, depth = 16.0, 9, 27.0, 6.0
+    length = span * (piers - 1)
+    spring = height - 10.0
+    for i in range(piers):
+        x = -length / 2 + i * span
+        m.box((x, spring / 2, 0), (3.2, spring, depth + 1.2), "Stone")                 # pier, wider at the foot
+        m.box((x, spring * 0.15, 0), (4.2, spring * 0.3, depth + 2.2), "Stone")
+    for i in range(piers - 1):
+        x0 = -length / 2 + i * span + 1.6
+        x1 = x0 + span - 3.2
+        r, cx = (x1 - x0) / 2, (x0 + x1) / 2
+        # The spandrel over each arch: the wall between the arch's curve and the deck.
+        steps = 12
+        ring = [(cx - r * math.cos(math.pi * k / steps), spring + r * math.sin(math.pi * k / steps)) for k in range(steps + 1)]
+        outline = ring + [(x1, height - 1.0), (x0, height - 1.0)]
+        verts = [(x, y, z) for z in (-depth / 2, depth / 2) for x, y in outline]
+        n = len(outline)
+        faces = [tuple(range(n)), tuple(range(n, 2 * n))] + [(j, (j + 1) % n, n + (j + 1) % n, n + j) for j in range(n)]
+        m.add((verts, faces), "Stone")
+    m.box((0, height - 0.5, 0), (length + 3.2, 1.0, depth + 0.6), "Stone")              # deck
+    for z in (-depth / 2, depth / 2):
+        m.box((0, height + 0.6, z), (length + 3.2, 1.2, 0.5), "Stone")                  # parapets
+    return m
+
+
+def sakhir_tower():
+    """A desert circuit's tower in the manner of Sakhir's: a tall sand-coloured shaft of offices
+    whose top flares out into a wide glazed viewing floor under a flat oversailing roof."""
+    m = Model("sakhir_tower")
+    for i, (w, y0, y1) in enumerate(((14.0, 0.0, 30.0), (12.0, 30.0, 40.0))):
+        m.box((0, (y0 + y1) / 2, 0), (w, y1 - y0, w), "Sandstone")
+    for k in range(1, 10):
+        y = k * 3.6
+        for out, z in ((-1, -7.0), (1, 7.0)):
+            m.box((0, y - 1.0, z + out * 0.02), (10.0, 1.6, 0.05), "Glass")
+    # The flared top: a truncated pyramid widening from 12 m to 26 m, glazed all round.
+    y0, y1 = 40.0, 46.0
+    verts = [(-6, y0, -6), (6, y0, -6), (6, y0, 6), (-6, y0, 6), (-13, y1, -13), (13, y1, -13), (13, y1, 13), (-13, y1, 13)]
+    faces = [(0, 1, 5, 4), (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7), (0, 3, 2, 1), (4, 5, 6, 7)]
+    m.add((verts, faces), "Glass")
+    m.box((0, y1 + 3.0, 0), (26.0, 6.0, 26.0), "Glass")                                 # viewing floor
+    for k in range(9):
+        c = -12 + k * 3
+        for x, z in ((c, -13.05), (c, 13.05), (-13.05, c), (13.05, c)):
+            m.box((x, y1 + 3.0, z), (0.25, 6.0, 0.25), "White")                          # mullions
+    m.box((0, y1 + 6.4, 0), (32.0, 0.8, 32.0), "White")                                 # the roof, oversailing
+    m.box((0, y1 + 7.6, 0), (6.0, 1.6, 6.0), "White")
+    return m
+
+
+def fort():
+    """A desert fort of sandstone: a square curtain wall with a gate, round towers at the
+    corners, crenellations along the top, and a keep inside."""
+    m = Model("fort")
+    half, h, t = 22.0, 9.0, 1.6
+    for side in range(4):
+        a = math.pi / 2 * side
+        ux, uz = math.cos(a), math.sin(a)
+        cx, cz = -uz * half, ux * half
+        m.box((cx, h / 2, cz), (abs(ux) * 2 * half + abs(uz) * t, h, abs(uz) * 2 * half + abs(ux) * t), "Sandstone")
+        for k in range(15):
+            s_ = -half + 1.5 + k * 3.0
+            m.box((cx + ux * s_, h + 0.6, cz + uz * s_), (1.4 if ux else t + 0.2, 1.2, t + 0.2 if ux else 1.4), "Sandstone")
+    for x in (-half, half):
+        for z in (-half, half):
+            m.cylinder((x, 0, z), (x, h + 4.0, z), 3.5, "Sandstone", sides=16)
+            for k in range(10):
+                a = 2 * math.pi * k / 10
+                m.box((x + 3.2 * math.cos(a), h + 4.6, z + 3.2 * math.sin(a)), (1.2, 1.2, 1.2), "Sandstone")
+    m.box((0, 3.0, -half - 0.85), (6.0, 6.0, 0.1), "Timber")                            # the gate
+    m.box((0, 7.0, 4.0), (14.0, 14.0, 14.0), "Sandstone")                               # keep
+    for k in range(5):
+        m.box((-6 + k * 3, 14.6, 4.0 - 7.0), (1.4, 1.2, 1.4), "Sandstone")
+    return m
+
+
+def ferris_wheel():
+    """A seaside Ferris wheel 60 m across: two white rims on spokes to a hub, turned on two
+    A-frame legs, with 24 coloured gondolas hanging from the rim."""
+    m = Model("ferris_wheel")
+    R, hub_y, gap = 30.0, 34.0, 3.0
+    n = 48
+    for z in (-gap, gap):
+        ring = [(R * math.cos(2 * math.pi * k / n), hub_y + R * math.sin(2 * math.pi * k / n), z) for k in range(n)]
+        for k in range(n):
+            m.cylinder(ring[k], ring[(k + 1) % n], 0.35, "White", sides=6)
+        for k in range(0, n, 2):
+            m.cylinder((0, hub_y, z), ring[k], 0.12, "White", sides=4)
+    m.cylinder((0, hub_y, -gap - 1.0), (0, hub_y, gap + 1.0), 1.4, "DarkSteel", sides=12)   # hub
+    for z in (-gap - 1.0, gap + 1.0):
+        for x in (-14.0, 14.0):
+            m.cylinder((x, 0, z * 2.5), (0, hub_y, z), 0.7, "White", sides=8)               # legs
+    colours = ("Red", "Blue", "Yellow", "White")
+    for k in range(24):
+        a = 2 * math.pi * k / 24
+        x, y = R * math.cos(a), hub_y + R * math.sin(a) - 2.4
+        m.box((x, y, 0), (2.4, 2.6, 2.6), colours[k % 4])
+        m.box((x, y + 1.5, 0), (2.8, 0.3, 3.0), "White")
+    m.box((0, 0.6, 0), (40.0, 1.2, 14.0), "Concrete")                                   # base
+    return m
+
+
+def lighthouse():
+    """A lighthouse: a tapering white tower with red bands, a gallery with a rail, a glazed
+    lantern and a dark cap."""
+    m = Model("lighthouse")
+    h, r0, r1 = 28.0, 3.2, 2.2
+    bands = 7
+    for k in range(bands):
+        y0, y1 = h * k / bands, h * (k + 1) / bands
+        ra, rb = r0 + (r1 - r0) * k / bands, r0 + (r1 - r0) * (k + 1) / bands
+        sides = 20
+        verts = [(ra * math.cos(2 * math.pi * j / sides), y0, ra * math.sin(2 * math.pi * j / sides)) for j in range(sides)] + \
+                [(rb * math.cos(2 * math.pi * j / sides), y1, rb * math.sin(2 * math.pi * j / sides)) for j in range(sides)]
+        faces = [(j, (j + 1) % sides, sides + (j + 1) % sides, sides + j) for j in range(sides)] + [tuple(range(sides)), tuple(range(sides, 2 * sides))]
+        m.add((verts, faces), "Red" if k % 2 else "White")
+    m.cylinder((0, h, 0), (0, h + 0.4, 0), r1 + 1.0, "DarkSteel", sides=20)               # gallery
+    for j in range(16):
+        a = 2 * math.pi * j / 16
+        m.cylinder(((r1 + 0.9) * math.cos(a), h + 0.4, (r1 + 0.9) * math.sin(a)), ((r1 + 0.9) * math.cos(a), h + 1.4, (r1 + 0.9) * math.sin(a)), 0.05, "DarkSteel", sides=4)
+    m.cylinder((0, h + 0.4, 0), (0, h + 3.4, 0), r1 * 0.8, "Glass", sides=16)             # lantern
+    m.cylinder((0, h + 3.4, 0), (0, h + 4.6, 0), r1 * 0.9, "DarkSteel", sides=16)
+    m.cylinder((0, 0, 0), (0, 3.0, 0), r0 + 3.0, "White", sides=20)                     # keeper's house, round
+    return m
+
+
+def hangar():
+    """A wartime airfield hangar: a corrugated arched roof 40 m across and 70 m long, brick-
+    and-concrete end walls, and big sliding doors at the front."""
+    m = Model("hangar")
+    span, length, rise = 40.0, 70.0, 16.0
+    steps = 20
+    arc = [(-span / 2 * math.cos(math.pi * k / steps), rise * math.sin(math.pi * k / steps)) for k in range(steps + 1)]
+    verts, faces = [], []
+    for x, y in arc:
+        verts += [(x, y, -length / 2), (x, y, length / 2)]
+    for k in range(steps):
+        a, b = 2 * k, 2 * (k + 1)
+        faces.append((a, b, b + 1, a + 1))
+    # A thin shell: the same surface 0.3 m in, so it is closed and faces the right way.
+    inner = [(x * 0.985, y * 0.98, z) for x, y, z in verts]
+    base = len(verts)
+    faces += [(base + f[0], base + f[3], base + f[2], base + f[1]) for f in faces]
+    faces += [(0, base, base + 1, 1), (2 * steps, 2 * steps + 1, base + 2 * steps + 1, base + 2 * steps)]
+    faces += [(2 * k, base + 2 * k, base + 2 * (k + 1), 2 * (k + 1)) for k in range(steps)]
+    faces += [(2 * k + 1, 2 * (k + 1) + 1, base + 2 * (k + 1) + 1, base + 2 * k + 1) for k in range(steps)]
+    m.add((verts + inner, faces), "Corrugated")
+    # End walls: the back solid, the front with doors, under the arch.
+    for z, doors in ((length / 2 - 0.2, False), (-length / 2 + 0.2, True)):
+        outline = arc
+        verts = [(x, y, z - 0.2) for x, y in outline] + [(x, y, z + 0.2) for x, y in outline]
+        n = len(outline)
+        faces = [tuple(range(n)), tuple(range(n, 2 * n))] + [(j, (j + 1) % n, n + (j + 1) % n, n + j) for j in range(n)]
+        m.add((verts, faces), "Concrete")
+        if doors:
+            for i in range(4):
+                m.box((-12 + i * 8, 5.5, z - 0.4), (7.6, 11.0, 0.3), "DarkSteel")
+            m.box((0, 12.5, z - 0.35), (20.0, 2.0, 0.1), "Glass")
+    return m
+
+
+def control_tower():
+    """An airfield control tower of the 1940s: a two-storey white block with long windows,
+    a railed roof terrace, and a glazed control room on top."""
+    m = Model("control_tower")
+    w, d = 16.0, 10.0
+    m.box((0, 3.5, 0), (w, 7.0, d), "White")
+    for y in (1.8, 5.3):
+        windows(m, -w / 2, w / 2, -d / 2, y, 6, w=2.0, h=1.6)
+    m.box((0, 7.15, 0), (w + 1.0, 0.3, d + 1.0), "Concrete")
+    for x in (-w / 2 - 0.4, w / 2 + 0.4):
+        m.cylinder((x, 7.3, -d / 2 - 0.4), (x, 7.3, d / 2 + 0.4), 0.05, "DarkSteel", sides=4)
+    m.cylinder((-w / 2 - 0.4, 8.3, -d / 2 - 0.4), (w / 2 + 0.4, 8.3, -d / 2 - 0.4), 0.05, "DarkSteel", sides=4)
+    m.box((2.0, 8.8, 1.0), (7.0, 3.0, 6.0), "Glass")                                    # control room
+    m.box((2.0, 10.45, 1.0), (7.8, 0.3, 6.8), "White")
+    m.cylinder((5.0, 10.6, 3.5), (5.0, 16.0, 3.5), 0.08, "DarkSteel", sides=6)           # mast
+    return m
+
+
+def neon_tower(colour):
+    """A night city's tower, 90 m of dark glass on a square plan, with glowing bands at every
+    tenth floor, a glowing strip up each corner, and a lit crown."""
+    m = Model(f"neon_tower_{'pink' if colour == 'NeonPink' else 'cyan'}")
+    w, h = 22.0, 90.0
+    m.box((0, h / 2, 0), (w, h, w), "Glass")
+    for k in range(1, 9):
+        m.box((0, k * 10.0, 0), (w + 0.3, 0.5, w + 0.3), colour)
+    for x in (-w / 2, w / 2):
+        for z in (-w / 2, w / 2):
+            m.box((x, h / 2, z), (0.5, h, 0.5), colour)
+    m.box((0, h + 3.0, 0), (w * 0.7, 6.0, w * 0.7), "Glass")
+    m.box((0, h + 6.2, 0), (w * 0.72, 0.5, w * 0.72), colour)
+    m.cylinder((0, h + 6.4, 0), (0, h + 22.0, 0), 0.3, "DarkSteel", sides=6)
+    return m
+
+
 LANDMARKS = {
     "villa": villa,
     "banking": banking,
+    "chalet": chalet,
+    "viaduct": viaduct,
+    "sakhir_tower": sakhir_tower,
+    "fort": fort,
+    "ferris_wheel": ferris_wheel,
+    "lighthouse": lighthouse,
+    "hangar": hangar,
+    "control_tower": control_tower,
+    "neon_tower_pink": lambda: neon_tower("NeonPink"),
+    "neon_tower_cyan": lambda: neon_tower("NeonCyan"),
 }
 
 
@@ -580,7 +855,7 @@ def render(obj, path):
     centre, size = (lo + hi) * 0.5, (hi - lo).length
     cam = scene.camera
     cam.data.lens = 40
-    if obj.name == "alps":
+    if obj.name in HORIZONS:
         # From where the circuit will be: the range's middle, at a driver's height.
         cam.location = wheel.U(0, 2, 0)
         cam.rotation_euler = (wheel.U(0, 40, -1000) - cam.location).to_track_quat("-Z", "Y").to_euler()
@@ -606,14 +881,15 @@ def main():
         bpy.data.objects.remove(obj)
     wheel.setup_cycles()
     models = dict(TRACKSIDE, **LANDMARKS, **BUILDINGS)
-    models["alps"] = None
+    for h in HORIZONS:
+        models[h] = None
     only = args.only.split(",") if args.only else list(models)
     out = args.out or os.path.dirname(args.preview)
     os.makedirs(out, exist_ok=True)
     chain_link(os.path.join(out, "Chainlink.png"))
     for name in only:
-        if name == "alps":
-            model, uvs = alps(os.path.join(out, "Alps.png"))
+        if name in HORIZONS:
+            model, uvs = horizon(name, os.path.join(out, f"{name.capitalize()}.png"))
             obj = model.build(uvs)
         else:
             obj = models[name]().build()

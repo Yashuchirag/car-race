@@ -430,16 +430,37 @@ namespace CarRace.UnityGame.EditorTools
                 case "Stone": return Pbr("Stone", "Concrete034", new Color(1f, 0.97f, 0.9f), 0.12f, 0f);
                 case "RoofTiles": return Flat("Roof Tiles", new Color(0.5f, 0.22f, 0.13f), 0.2f);
                 case "Glass": return Flat("Window Glass", new Color(0.06f, 0.08f, 0.1f), 0.9f);
+                case "Timber": return Flat("Timber", new Color(0.33f, 0.2f, 0.11f), 0.2f);
+                case "Slate": return Flat("Slate", new Color(0.2f, 0.21f, 0.24f), 0.3f);
+                case "Sandstone": return Pbr("Sandstone", "Concrete034", new Color(0.97f, 0.8f, 0.57f), 0.1f, 0f);
+                case "Red": return Flat("Painted Red", new Color(0.7f, 0.06f, 0.05f), 0.4f);
+                case "Blue": return Flat("Painted Blue", new Color(0.08f, 0.25f, 0.7f), 0.4f);
+                case "Yellow": return Flat("Painted Yellow", new Color(0.95f, 0.75f, 0.1f), 0.4f);
+                case "NeonPink": return Neon("Neon Pink", new Color(1f, 0.1f, 0.6f));
+                case "NeonCyan": return Neon("Neon Cyan", new Color(0.1f, 0.9f, 1f));
                 case "Alps":
+                case "Ridges":
+                case "Dunes":
                 {
-                    Material m = MaterialAt("Alps");
-                    m.SetTexture("_BaseMap", Texture($"{SceneryArt}/Alps.png", false));
+                    // A horizon: scenery.py's texture of it, up its slopes by height.
+                    Material m = MaterialAt(key);
+                    m.SetTexture("_BaseMap", Texture($"{SceneryArt}/{key}.png", false));
                     m.SetColor("_BaseColor", Color.white);
                     m.SetFloat("_Smoothness", 0f);
                     return m;
                 }
                 default: throw new InvalidOperationException($"No material for a scenery part named {key}; add it to StructureModels.Named.");
             }
+        }
+
+        /// <summary>A neon strip: dark by day, glowing past white into bloom at night.</summary>
+        static Material Neon(string name, Color colour)
+        {
+            Material m = Flat(name, colour * 0.3f, 0.6f);
+            m.SetColor("_EmissionColor", colour * 4f);
+            m.EnableKeyword("_EMISSION");
+            m.globalIlluminationFlags = MaterialGlobalIlluminationFlags.None;
+            return m;
         }
 
         /// <summary>A Blender scenery model as a prefab: the FBX's mesh with the materials its

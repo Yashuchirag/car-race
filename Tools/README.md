@@ -149,8 +149,11 @@ you move it, change `CarModel.Eyes` to match.
 `blender/scenery.py` builds the circuits' Blender scenery into `Assets/Art/Scenery`: the
 trackside pieces every circuit uses (guardrail posts, tyre-wall modules with red and white
 belts, catch-fence posts and the chain-link texture, marshal posts), the pit building and main
-grandstand bays, Royal Park's landmarks (a villa in the manner of Monza's Villa Reale and a
-length of old banked oval) and the Alps on its horizon with their texture.
+grandstand bays, each theme's two landmarks (Royal Park a villa like Monza's Villa Reale and a
+length of old banked oval; the Ardennes a stone viaduct and a chalet; Desert Park a tower like
+Sakhir's and a sandstone fort; Ise Bay a Ferris wheel and a lighthouse; Northants a wartime
+hangar and control tower; the Airfield two neon towers), and three horizons with their
+textures (the Alps, forested ridges, dunes).
 
 ```bash
 /mnt/d/Software/Blender/blender.exe -b --factory-startup -P "$(wslpath -w Tools/blender/scenery.py)" -- \
