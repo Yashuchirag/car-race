@@ -73,7 +73,7 @@ namespace CarRace.UnityGame
             float steer = _steer * _car.Sim.Config.MaxSteerAngleDegrees;
             for (int i = 0; i < wheels.Length && i < 4; i++)
                 if (wheels[i] != null)
-                    wheels[i].localRotation = Quaternion.Euler(_spinDegrees, _car.Sim.Wheels[i].IsFront ? steer : 0f, 0f);
+                    CarController.TurnWheel(wheels[i], _spinDegrees, _car.Sim.Wheels[i].IsFront ? steer : 0f);
         }
     }
 }

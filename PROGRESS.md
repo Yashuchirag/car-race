@@ -10,9 +10,9 @@ concrete action is. Everything below it is detail.
 
 ## 1. Resume here
 
-**Last updated:** 2026-09-27 (LAN race again, together)
+**Last updated:** 2026-09-27 (Blender wheels)
 
-**Last completed:** Realistic pass, stages 2 and 3 (section 3): generated grandstands,
+**Last completed:** Blender wheels (section 3, beside the realistic pass): tyre with baked tread and sidewall lettering, alloy rim, disc and a caliper that steers but does not spin, all from `Tools/blender/wheel.py`. Before that, realistic pass, stages 2 and 3: generated grandstands,
 garages, marquees, billboards, braking boards and city buildings in photographed materials;
 smooth car bodies with clear-coat paint and real wheels. Before that, sound.
 
@@ -229,6 +229,7 @@ physics has never driven a corner the track pipeline produced.
 | Realistic pass, stage 1: trees and lighting | DONE | 2026-09-26, your request (trees too plain and cartoonish; graphics as realistic as possible). You chose a realistic pass in stages: stage 1 trees and bushes plus lighting, then buildings and grandstands, then cars. Trees: `TreeModels` (Editor) generates broadleaf (beech, lime; 4), conifer (spruce; 3), palm (3) and bush (2): tapered bark tubes in Poly Haven bark, twig cards whose normals point out of the crown so it shades as one mass; each has a far version (`TreeLod`) that `InstancedTrees` draws past 120 m, re-sorting a group's trees only when the camera has moved 8 m. Leaf textures composed from ambientCG leaf atlases by `Tools/foliage_textures.py`. `SceneryBuilder` plantings use them (Royal Park 22,886, Ardennes 36,290); cacti and boulders stay Kenney. `TreeModels.Preview` renders every model to `Builds/trees.png`. Broadleaf about 1,300 triangles near. Lighting: colour grading (contrast +12, saturation -14) added to the track profile; ambient occlusion 0.4 to 0.75, radius 0.3 to 0.5 m; High shadows 2048 to 4096; grass tinted from fluorescent to a summer olive (`SurfaceTextures.GrassTint`, verges and terrain). 1080p, 40 s each, all six rebuilt: Royal Park 107 fps (was 110 with Kenney trees), Ardennes 94, Desert Park 135, Ise Bay 102, Northants 135, Airfield 136; 1% lows 51 to 86. |
 | Sound | DONE | 2026-09-26, your request: realistic sound, and select and click sounds in the lobby. There was no audio at all. Engine: `EngineSynth`, a cross-plane V8 synthesised from the model's rpm and throttle (firing pulses per bank, header and main pipe as comb filters, a silencer that opens under load, intake and mechanical noise, a limiter that cuts in bursts, overrun pops); CC0 recordings of a racing engine at steady revs could not be found, and synthesis follows every shift exactly. Tyres and body: `TyreSynth`, road roar with speed, squeal from the tyre model's grip usage past 92%, grass and sand rumble, a thump per 2 m kerb block (kerbs found by a ray from each contact), barrier scrape, wind for the player. `CarAudio` on every car (added by `RaceDirector`), `SynthVoice` runs the synthesis on the audio thread through a 3D source playing a constant clip, so AI cars are placed in the world; engine Doppler done by hand. Knocks: Kenney CC0 impacts, a body thud and a panel crunch for hard hits, a tap for light ones, by impulse. `GameAudio`: menu hover, select, confirm and back (Kenney CC0, chosen by name and by measured length, attack and brightness), in the lobby (designs, colours, circuit cards, Play and Enter), the pause menu and the results screen; countdown beeps at 3, 2, 1 and a higher GO; everything but the menus pauses with the game. `-recordAudio PATH` writes what the listener hears to a WAV. `Sim/CarRace.AudioRender` renders the synthesis from a scripted drive to WAV without Unity. Checked in recordings: beeps 1 s apart and GO at 4.75 s, engine harmonics track firing frequency, a Doppler sweep on a pass, 0.0035% of samples clipped after lowering levels; frame rate unchanged (1% lows 52 to 58 fps with sound). Not checked: by ear, which only you can do; hover sounds with a real mouse. Listening files in `D:\Dev\CarRace\Builds\Sound`. |
 | Realistic pass, stages 2 and 3: structures and cars | DONE | 2026-09-26, your request. Structures: `StructureModels` (Editor) generates, at real sizes in ambientCG CC0 materials, pit garages (concrete, roller shutter, fascia, overhanging roof), covered grandstands (ten-row concrete rake, 200 plastic seats, aisle, back wall, sheeted roof on columns and cantilever beams), open scaffold stands, marquees, billboards with four made-up sponsors, braking boards at 150, 100 and 50 m before the turn in of every corner with a run up (in place of the banner towers), and city buildings clad in six photographed facades, 3.6 m storeys, parapets, roof plant, towers with a setback, whose night copies light the facades' own window maps. `SceneryBuilder` uses them; city buildings at their own size. Texture coordinates in metres in model space, so storeys line up. `StructureModels.Preview` renders them to `Builds/structures.png`. Cars: `CarModel` keeps the four designs but draws a smooth surface through their stations (monotone cubic along the car every 5 cm, Catmull-Rom round each section, grid normals), paints it with Complex Lit clear coat (`MakePaint`, also on the AI liveries), and gives each wheel a lathe-turned tyre with rounded shoulders and sidewall, a ten-spoke rim (silver, or graphite on the supercar and hatch) and a brake disc; a front intake, twin exhaust tips, daytime-running strips and a tail LED bar. `CarModel.Preview` renders the designs to `Builds/cars.png`, though in that one-off render two clear-coat bodies drew with one colour; in the game every car shows its own. All six circuits and the lobby rebuilt. AI only, six circuits x 3 min: 0 contacts, 0 recoveries, 0 s off the road. 1080p averages 105 to 157 fps (Royal Park 119, Ardennes 105, Desert Park 157, Ise Bay 124, Northants 123, Airfield 118), 1% lows 44 to 73. |
+| Blender wheels | DONE | 2026-09-27, your request: use Blender for better car visuals, starting with the wheels, scripted rather than hand modelled. Blender 5.2.2 LTS is at `D:\Software\Blender` and runs headless from WSL (Windows paths, `wslpath -w`). `Tools/blender/wheel.py` (about 26 s on the GPU) builds, at the car's size, a tyre (5.6k triangles) whose tread grooves, shoulder blocks and raised sidewall lettering (CARRACE, SPORT GT 255/45 R18 97Y) exist only on a 1.1M triangle copy and are baked to a 4096x1024 normal map; a concave ten-spoke rim with lug nuts and centre cap (9.1k), ambient occlusion baked with tyre and disc in place; a vented disc on a hat (1.9k); a red caliper (0.6k). FBX and textures to `Assets/Art/Wheel`. `CarModel` takes its meshes from the FBX and checks the import (tyre radius, rim facing out, caliper behind and above the hub), puts the normal map on Tyre.mat and the AO on both rim materials, new CarCaliper.mat. The pivot now steers and its first child spins (`CarController.TurnWheel`, also used by `RemoteCar`), so the caliper steers but does not roll; left wheels are turned half round rather than mirrored so the lettering reads, and only the caliper is mirrored. The old generated wheel meshes are gone. Lobby, skidpad and six circuits rebuilt; `Builds/cars.png` and an in-race screenshot checked. Royal Park, 40 s, three alternating pairs: 103 fps average before, 98 after (about 5%), 1% lows 56 and 55. |
 | Race telemetry | DONE | `--race ... --csv <path>`. One row per car every 20 ms: the `--lap` columns plus blocked by, following, overtaking, wanted and driven offset, and the cap. |
 | Catching a slide | WIP | Partial. `PathDriver` counter-steers and lifts above 12 degrees of sideslip, which stopped spun cars crawling for the rest of the race, but 11 crawl reports in a ten-lap race still show more than 25 degrees. |
 | Flags, penalties, pit stops | TODO | Not started. |
@@ -313,6 +314,14 @@ Unity/          the integration layer, written, never run    Phase 1, WIP
 
 ## 6. Open issues and deferred decisions
 
+- The Blender wheels cost about 5% of average frame rate (103 to 98 fps, Royal Park); every car
+  draws four 17k triangle wheels at any distance. A far version for wheels, as the trees have,
+  would win that back if it matters. Found 2026-09-27.
+- The Unity project repo (`D:\Dev\CarRace`) has uncommitted work from before this session
+  (the LAN scripts, `Scripts/Net`) as well as the wheel art, scenes and scripts from it; this
+  session committed only this repo. Worth one commit there when you are happy. Noted 2026-09-27.
+- A benchmark on the old build froze for 12 s once (2026-09-27, 1% low 2 fps); the rerun was
+  clean. Same sort of one-off as the Northants hitch below.
 - The benchmark's autopilot, driving the player's car (car 4 in `ai.csv`), slides to 36 to 48
   degrees of sideslip braking into the Airfield's first corner at about 13.7 s, in every run
   since at least the lane work (`ai-final`); the AI opponents stay under 5 degrees. Not the
@@ -550,6 +559,14 @@ learned, so context is not lost between sessions.
   work existed with no history and no backup.
 - Added this file, and a rule in `CLAUDE.md` section 5 to keep it current during
   work rather than at the end.
+
+### 2026-09-27, fourteenth session
+
+- Blender, for the first time. Installed by you; runs headless from WSL. The wheel is scripted in it and
+  baked: detail that would cost a million triangles lives in a normal map on a 5.6k triangle tyre.
+  Learned: flat-topped raised letters bake to almost nothing, since their tops share the sidewall's
+  normal; they need rounded edges and enough texels to show. And a mirrored wheel prints its lettering
+  backwards, so left wheels are rotated instead.
 
 ### 2026-09-27, thirteenth session
 

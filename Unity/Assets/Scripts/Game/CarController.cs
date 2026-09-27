@@ -278,11 +278,24 @@ namespace CarRace.UnityGame
                 float drop = _config.SuspensionRestLength - wheel.Compression;
                 visual.localPosition = new Vector3(attach.X, attach.Y - drop, attach.Z);
 
-                // Euler applies Z, then X, then Y, so the steer angle wraps the spin rather
-                // than the wheel spinning about an already steered axis.
-                visual.localRotation = Quaternion.Euler(_spinDegrees[i],
-                                                        wheel.SteerAngle * Mathf.Rad2Deg, 0f);
+                TurnWheel(visual, _spinDegrees[i], wheel.SteerAngle * Mathf.Rad2Deg);
             }
+        }
+
+        /// <summary>
+        /// Steers a wheel pivot and spins its first child, the wheel itself, which is the same
+        /// turn as the spin inside the steer on one transform, but leaves the brake caliper on
+        /// the pivot steering without spinning. A pivot with no child spins whole, as before.
+        /// </summary>
+        public static void TurnWheel(Transform pivot, float spinDegrees, float steerDegrees)
+        {
+            if (pivot.childCount == 0)
+            {
+                pivot.localRotation = Quaternion.Euler(spinDegrees, steerDegrees, 0f);
+                return;
+            }
+            pivot.localRotation = Quaternion.Euler(0f, steerDegrees, 0f);
+            pivot.GetChild(0).localRotation = Quaternion.Euler(spinDegrees, 0f, 0f);
         }
 
         /// <summary>Puts the car back where it started, at rest.</summary>

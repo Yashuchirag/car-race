@@ -29,9 +29,14 @@ namespace CarRace.UnityGame.EditorTools
     /// Only the painted panels are on "Body", so the colour picker's property block and the AI
     /// cars' materials recolour the paint and nothing else. Glass, black trim (underbody,
     /// splitter, intake, exhausts, rear wing, mirrors) and the lights are on "Body Details".
-    /// Each wheel pivot, which CarController spins and steers, holds a tyre turned on a lathe
-    /// with rounded shoulders and a bulging sidewall, a ten-spoke alloy rim and a brake disc,
-    /// mirrored for the left side. None of it has a collider: the car's box does that.
+    /// The wheels come from Blender (Tools/blender/wheel.py, which writes Assets/Art/Wheel): a
+    /// tyre whose tread, shoulder blocks and sidewall lettering are a baked normal map, a
+    /// ten-spoke alloy rim with ambient occlusion baked in, a vented disc and a caliper. Each
+    /// wheel pivot, which CarController steers, holds the caliper and a "Wheel" child that it
+    /// spins, so the caliper steers with the wheel but stays put as it rolls. The left wheels
+    /// are the right ones turned half round, not mirrored, so their lettering still reads; only
+    /// the caliper is mirrored, to stay behind the axle. None of it has a collider: the car's
+    /// box does that.
     ///
     /// Every design's meshes are saved under Assets/Cars and listed in the CarDesigns asset in
     /// Resources, which the game uses to put the chosen design on the player's car.
@@ -47,10 +52,13 @@ namespace CarRace.UnityGame.EditorTools
         const string RimPath = "Assets/Materials/CarRim.mat";
         const string DarkRimPath = "Assets/Materials/CarRimDark.mat";
         const string DiscPath = "Assets/Materials/CarBrakeDisc.mat";
+        const string CaliperPath = "Assets/Materials/CarCaliper.mat";
+        const string WheelArt = "Assets/Art/Wheel";
+        /// <summary>The tyre radius wheel.py builds to; other radii scale the wheel.</summary>
+        const float WheelModelRadius = 0.34f;
         const string HeadlightPath = "Assets/Materials/CarHeadlight.mat";
         const string TaillightPath = "Assets/Materials/CarTaillight.mat";
         public const float PaintSmoothness = 0.55f;
-        const float TyreWidthM = 0.26f;
 
         /// <summary>One cross-section, in metres above the road and out from the centreline.</summary>
         struct Station
@@ -502,11 +510,15 @@ namespace CarRace.UnityGame.EditorTools
                  Glow(TaillightPath, new Color(1.3f, 0.02f, 0.02f)));   // brighter and the bloom turns it orange
 
             Material tyre = Lit(SkidpadSceneBuilder.TyreMaterialPath, new Color(0.055f, 0.055f, 0.06f), 0.28f, 0f);
+            Textured(tyre, "_BumpMap", "_NORMALMAP", "Tyre Normal.png", normalMap: true);
             bool darkRims = design == Supercar || design == HotHatch;
             Material rim = darkRims ? Lit(DarkRimPath, new Color(0.16f, 0.16f, 0.17f), 0.6f, 0.9f)
                                     : Lit(RimPath, new Color(0.8f, 0.81f, 0.83f), 0.78f, 1f);
+            Textured(rim, "_OcclusionMap", "_OCCLUSIONMAP", "Rim AO.png", normalMap: false);
             Material disc = Lit(DiscPath, new Color(0.42f, 0.42f, 0.43f), 0.5f, 0.9f);
-            var wheels = EnsureWheels(definition.tyreFront.radius);
+            Material caliper = Lit(CaliperPath, new Color(0.62f, 0.03f, 0.02f), 0.72f, 0f);
+            var wheels = EnsureWheels();
+            float scale = definition.tyreFront.radius / WheelModelRadius;
 
             float halfTrack = definition.trackWidth * 0.5f;
             float front = definition.wheelbase * (1f - definition.frontWeightBias);
@@ -520,8 +532,9 @@ namespace CarRace.UnityGame.EditorTools
             };
             string[] names = { "Wheel FL", "Wheel FR", "Wheel RL", "Wheel RR" };
             var pivots = new Transform[4];
-            // Each wheel is an empty pivot: CarController sets its rotation to spin and steer
-            // every frame, which on a bare cylinder wiped out the 90 degrees that lays it down.
+            // Each wheel is an empty pivot that CarController steers, with the spinning "Wheel"
+            // as its first child (CarController.TurnWheel relies on that order) and the caliper,
+            // which does not spin, beside it.
             for (int i = 0; i < 4; i++)
             {
                 var pivot = new GameObject(names[i]) { layer = layer };
@@ -529,86 +542,88 @@ namespace CarRace.UnityGame.EditorTools
                 pivot.transform.localPosition = positions[i];
                 float outward = Mathf.Sign(positions[i].x);
 
-                // Built for the right side; the left wheels are the same mirrored.
+                // Built for the right side. The left wheels are turned half round rather than
+                // mirrored, which would print the sidewall lettering backwards.
                 var wheel = new GameObject("Wheel") { layer = layer };
                 wheel.transform.SetParent(pivot.transform, false);
-                wheel.transform.localScale = new Vector3(outward, 1f, 1f);
-                Part(wheel.transform, "Tyre", wheels.tyre, layer, tyre);
-                Part(wheel.transform, "Rim", wheels.rim, layer, rim);
-                Part(wheel.transform, "Brake Disc", wheels.disc, layer, disc);
+                wheel.transform.localScale = Vector3.one * scale;
+                Quaternion side = outward > 0f ? Quaternion.identity : Quaternion.Euler(0f, 180f, 0f);
+                Part(wheel.transform, "Tyre", wheels.tyre, layer, tyre).localRotation = side;
+                Part(wheel.transform, "Rim", wheels.rim, layer, rim).localRotation = side;
+                Part(wheel.transform, "Brake Disc", wheels.disc, layer, disc).localRotation = side;
+
+                // Mirrored, so it stays behind the axle on both sides.
+                Transform clamp = Part(pivot.transform, "Caliper", wheels.caliper, layer, caliper);
+                clamp.localScale = new Vector3(outward, 1f, 1f) * scale;
                 pivots[i] = pivot.transform;
             }
             return pivots;
         }
 
-        static void Part(Transform car, string name, Mesh mesh, int layer, params Material[] materials)
+        static Transform Part(Transform car, string name, Mesh mesh, int layer, params Material[] materials)
         {
             var part = new GameObject(name) { layer = layer };
             part.transform.SetParent(car, false);
             part.AddComponent<MeshFilter>().sharedMesh = mesh;
             part.AddComponent<MeshRenderer>().sharedMaterials = materials;
+            return part.transform;
         }
 
-        static (Mesh tyre, Mesh rim, Mesh disc) _wheels;
+        static (Mesh tyre, Mesh rim, Mesh disc, Mesh caliper) _wheels;
 
-        /// <summary>The wheel's parts, for the right side (outward +X), turned about the axle
-        /// from profiles in (x across the tyre, r out from the axle): a tyre with a flat tread,
-        /// rounded shoulders and a sidewall that bulges and tucks into the rim; a rim of barrel,
-        /// lip and ten spokes in five pairs dished back to the hub, with a centre cap; and a
-        /// brake disc inboard of the spokes.</summary>
-        static (Mesh tyre, Mesh rim, Mesh disc) EnsureWheels(float radius)
+        /// <summary>The wheel's meshes from Wheel.fbx, for the right side (outward +X). Checks
+        /// the import put them the right way round: Blender to Unity changes both the up axis
+        /// and the handedness, and a wrong setting in either shows as a rim facing inward or a
+        /// caliper ahead of the axle rather than as an error.</summary>
+        static (Mesh tyre, Mesh rim, Mesh disc, Mesh caliper) EnsureWheels()
         {
             if (_wheels.tyre != null) return _wheels;
-            float w = TyreWidthM * 0.5f, rimR = radius * 0.7f;
-            var tyre = new Builder(1);
-            Lathe(tyre, 0, new[]
+            string path = WheelArt + "/Wheel.fbx";
+            var importer = AssetImporter.GetAtPath(path) as ModelImporter;
+            if (importer == null)
+                throw new System.InvalidOperationException($"{path} is missing: run Tools/blender/wheel.py (its header has the command).");
+            if (importer.materialImportMode != ModelImporterMaterialImportMode.None || importer.isReadable)
             {
-                new Vector2(-w * 0.92f, rimR), new Vector2(-w * 1.04f, rimR + (radius - rimR) * 0.45f),
-                new Vector2(-w * 0.98f, radius - 0.03f), new Vector2(-w * 0.85f, radius - 0.008f), new Vector2(-w * 0.7f, radius),
-                new Vector2(w * 0.7f, radius), new Vector2(w * 0.85f, radius - 0.008f), new Vector2(w * 0.98f, radius - 0.03f),
-                new Vector2(w * 1.04f, rimR + (radius - rimR) * 0.45f), new Vector2(w * 0.92f, rimR),
-            }, 48, new Vector2(0f, (radius + rimR) * 0.5f));
-            var rim = new Builder(1);
-            Lathe(rim, 0, new[] { new Vector2(w * 0.95f, rimR + 0.012f), new Vector2(w * 0.95f, rimR - 0.004f), new Vector2(-w * 0.9f, rimR - 0.004f) }, 48, new Vector2(0f, rimR + 1f));
-            Lathe(rim, 0, new[] { new Vector2(w * 0.5f, 0f), new Vector2(w * 0.5f, 0.055f), new Vector2(w * 0.3f, 0.075f) }, 20, Vector2.zero);
-            float face = w * 0.9f, hub = w * 0.3f;
-            for (int k = 0; k < 10; k++)
-            {
-                float angle = (k / 2) * 72f + (k % 2 == 0 ? -6f : 6f);
-                Quaternion turn = Quaternion.Euler(angle, 0f, 0f);
-                Vector3 inner = new Vector3(hub, 0.07f, 0f), outer = new Vector3(face, rimR - 0.01f, 0f);
-                Vector3 mid = (inner + outer) * 0.5f;
-                Vector3 along = outer - inner;
-                rim.Box(0, turn * mid, new Vector3(0.022f, along.magnitude, 0.03f),
-                        turn * Quaternion.FromToRotation(Vector3.up, along.normalized));
+                importer.materialImportMode = ModelImporterMaterialImportMode.None;   // CarModel's own materials
+                importer.isReadable = false;
+                importer.SaveAndReimport();
             }
-            var disc = new Builder(1);
-            Lathe(disc, 0, new[] { new Vector2(-0.015f, radius * 0.3f), new Vector2(-0.015f, radius * 0.56f), new Vector2(0.015f, radius * 0.56f), new Vector2(0.015f, radius * 0.3f) }, 32, new Vector2(0f, radius * 0.43f));
-            Mesh Save(Builder b, string name) => SaveMesh(b.Build(name), $"{Folder}/{name}.asset");
-            _wheels = (Save(tyre, "Wheel Tyre"), Save(rim, "Wheel Rim"), Save(disc, "Wheel Disc"));
+            Mesh Find(string name)
+            {
+                foreach (Object asset in AssetDatabase.LoadAllAssetsAtPath(path))
+                    if (asset is Mesh mesh && mesh.name == name) return mesh;
+                throw new System.InvalidOperationException($"{path} has no mesh called {name}.");
+            }
+            _wheels = (Find("Tyre"), Find("Rim"), Find("Disc"), Find("Caliper"));
+
+            Bounds tyre = _wheels.tyre.bounds, rim = _wheels.rim.bounds, caliper = _wheels.caliper.bounds;
+            if (Mathf.Abs(tyre.extents.y - WheelModelRadius) > 0.01f || Mathf.Abs(tyre.extents.z - WheelModelRadius) > 0.01f)
+                throw new System.InvalidOperationException($"Wheel.fbx tyre is {tyre.extents}, not {WheelModelRadius} m round the X axis: the import scale or axes are wrong.");
+            if (rim.max.x < -rim.min.x)
+                throw new System.InvalidOperationException("Wheel.fbx rim faces inward: the import flipped X.");
+            if (caliper.center.z > 0f || caliper.center.y < 0f)
+                throw new System.InvalidOperationException($"Wheel.fbx caliper is at {caliper.center}, not behind and above the hub.");
             return _wheels;
         }
 
-        /// <summary>A profile (x along the axle, r from it) turned round the X axis, its
-        /// normals pointing away from `centre` in the profile's plane: the middle of the tyre's
-        /// section for the tyre, a point beyond the barrel for the rim's inside.</summary>
-        static void Lathe(Builder builder, int submesh, Vector2[] profile, int sides, Vector2 centre)
+        /// <summary>Puts one of wheel.py's baked textures on a material, marking a normal map as
+        /// one and anything else as data rather than colour.</summary>
+        static void Textured(Material material, string property, string keyword, string file, bool normalMap)
         {
-            for (int s = 0; s < sides; s++)
+            string path = $"{WheelArt}/{file}";
+            var importer = AssetImporter.GetAtPath(path) as TextureImporter;
+            if (importer == null)
+                throw new System.InvalidOperationException($"{path} is missing: run Tools/blender/wheel.py.");
+            var type = normalMap ? TextureImporterType.NormalMap : TextureImporterType.Default;
+            if (importer.textureType != type || importer.sRGBTexture)
             {
-                float a0 = s * Mathf.PI * 2f / sides, a1 = (s + 1) * Mathf.PI * 2f / sides;
-                Vector3 P(Vector2 p, float a) => new Vector3(p.x, Mathf.Cos(a) * p.y, Mathf.Sin(a) * p.y);
-                for (int i = 0; i + 1 < profile.Length; i++)
-                {
-                    Vector2 p0 = profile[i], p1 = profile[i + 1];
-                    Vector2 edge = p1 - p0;
-                    var n2 = new Vector2(edge.y, -edge.x).normalized;      // perpendicular in the profile
-                    if (Vector2.Dot(n2, (p0 + p1) * 0.5f - centre) < 0f) n2 = -n2;
-                    Vector3 N(float a) => new Vector3(n2.x, Mathf.Cos(a) * n2.y, Mathf.Sin(a) * n2.y);
-                    builder.Smooth(submesh, P(p0, a0), P(p1, a0), P(p1, a1), N(a0), N(a0), N(a1));
-                    builder.Smooth(submesh, P(p0, a0), P(p1, a1), P(p0, a1), N(a0), N(a1), N(a1));
-                }
+                importer.textureType = type;
+                importer.sRGBTexture = false;
+                importer.SaveAndReimport();
             }
+            material.SetTexture(property, AssetDatabase.LoadAssetAtPath<Texture2D>(path));
+            material.EnableKeyword(keyword);
+            EditorUtility.SetDirty(material);
         }
 
         /// <summary>The four designs on a stretch of road under the circuits' sky, from the

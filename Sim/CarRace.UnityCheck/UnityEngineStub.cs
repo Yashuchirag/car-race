@@ -119,6 +119,8 @@ namespace UnityEngine
         public Vector3 up => throw new NotImplementedException();
         public Vector3 TransformPoint(Vector3 local) => throw new NotImplementedException();
         public void SetPositionAndRotation(Vector3 p, Quaternion r) => throw new NotImplementedException();
+        public int childCount => throw new NotImplementedException();
+        public Transform GetChild(int index) => throw new NotImplementedException();
     }
 
     public enum ForceMode { Force, Acceleration, Impulse, VelocityChange }

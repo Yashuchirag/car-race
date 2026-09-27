@@ -109,3 +109,18 @@ every exported file.
 A circuit's geometry is factual and fine to recreate. Its name, logos, sponsor
 boards and liveries are not. Every catalogue entry therefore carries an `alias`,
 the name to use in game, alongside the real layout it derives from.
+
+## The wheel, in Blender
+
+`blender/wheel.py` builds the car's wheel in Blender (5.2 LTS, installed on Windows at
+`D:\Software\Blender`) and writes it into the Unity project, where `CarModel` picks it up.
+It runs headless from WSL in about half a minute:
+
+```bash
+/mnt/d/Software/Blender/blender.exe -b --factory-startup -P "$(wslpath -w Tools/blender/wheel.py)" -- \
+    --out 'D:\Dev\CarRace\Assets\Art\Wheel' --preview "$(wslpath -w Tools/out/wheel.png)"
+```
+
+Blender takes Windows paths, hence `wslpath -w`. Add `--blend <path>` to save the scene and
+open it in Blender to look around or change things by hand. After a change, rebuild the
+scenes: the car in each is built with the wheel's meshes and materials.
