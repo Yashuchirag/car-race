@@ -274,6 +274,27 @@ mkdir -p /mnt/d/Dev/CarRace/Assets/Scripts/Track
 cp Sim/CarRace.Track/*.cs Sim/CarRace.Harness/Analytic.cs /mnt/d/Dev/CarRace/Assets/Scripts/Track/
 ```
 
+LAN play: the networking copies in from `Sim/` next to the one Unity script that drives it:
+
+```bash
+mkdir -p /mnt/d/Dev/CarRace/Assets/Scripts/Net
+cp Sim/CarRace.Net/*.cs Unity/Assets/Scripts/Net/*.cs /mnt/d/Dev/CarRace/Assets/Scripts/Net/
+```
+
+To try a LAN lobby on one machine, run the built game twice, or once with bots:
+
+```bash
+cd /mnt/d/Dev/CarRace/Builds
+./Windows/CarRace.exe -lanHost -playerName Host -screen-fullscreen 0 &
+./Windows/CarRace.exe -lanJoin 127.0.0.1 -playerName Guest -screen-fullscreen 0 &   # or -lanBrowse
+./LanBots/CarRace.Harness.exe --lan-bots 127.0.0.1 --bots 4 --seconds 60
+```
+
+`LanBots` is the harness published for Windows (`dotnet publish Sim/CarRace.Harness -c Release
+-r win-x64 --self-contained -p:PublishSingleFile=true -o /mnt/d/Dev/CarRace/Builds/LanBots`).
+`-lanStartWhen N` has a host start once N players are in. Windows asks once whether the
+game may use the network; allow private networks.
+
 Each AI car's pace (the share of grip it uses) is on `RaceDirector`, 0.85, 0.82 and 0.79
 by default; the harness races 0.78 to 0.85. The AI plan on flat ground, as in the harness,
 so crests and dips on Spa are not in their plan.

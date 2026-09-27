@@ -10,17 +10,18 @@ concrete action is. Everything below it is detail.
 
 ## 1. Resume here
 
-**Last updated:** 2026-09-26 (LAN play, stage 1)
+**Last updated:** 2026-09-26 (LAN play, stage 2)
 
 **Last completed:** Realistic pass, stages 2 and 3 (section 3): generated grandstands,
 garages, marquees, billboards, braking boards and city buildings in photographed materials;
 smooth car bodies with clear-coat paint and real wheels. Before that, sound.
 
-**Next action:** LAN play, stage 2: the Unity lobby (Host or Join, the list of games found,
-a typed IP, up to six players with colours and designs, the host's circuit and AI count).
-Stage 1 is done: the protocol and a headless LAN race pass (section 3, Phase 5). The Unity
-side needs the scripts copied into `D:\Dev\CarRace` and, on Windows, UDP connection
-resets turned off on the sockets (the open issue in section 6).
+**Next action:** LAN play, stage 3: racing. The race scene has to spawn one car per player
+plus the AI from the start message, drive remote cars as proxies from `LanClient.Cars` /
+`LanHost.Cars`, send the local car, hold everyone to the host's GO, and repaint clashing
+colours. Stage 2, the Unity lobby, is done and checked in the built game (section 3,
+Phase 5); you have not tried it by hand yet. Until stage 3, a started LAN race loads the
+circuit on every machine but each races its own AI.
 
 ---
 
@@ -258,8 +259,9 @@ engine, and everything left in Phases 1 and 4 is not.
 | Interpolation buffer on the client | DONE | Renders two snapshot intervals late, handles reordering and loss. |
 | LAN discovery | DONE | 36 byte beacon, verified over loopback. Broadcast is sent but cannot be proved on a one-machine setup. |
 | Measured host to client run | DONE | `--net`. Section 7. |
-| Input prediction, collisions, lobby | WIP | 2026-09-26, planned, no code yet. Your decisions: each machine simulates its own car and sends its state (no input prediction, which PhysX cannot rewind cheaply); the host runs race control; any number of human players from 2 to 6, the host starting whenever it likes, and no AI in a LAN race (solo races keep their AI); no second PC yet, so testing is on one machine. Plan: TCP for join, lobby, start and results, UDP at 30 Hz for car states; discovery by the existing beacon plus a typed IP. Stages: (1) protocol and a headless host with clients over loopback, (2) Unity lobby Host/Join, (3) racing with remote cars as interpolated proxies and a synced countdown, (4) positions, finish and results from the host, a player leaving, (5) two real PCs, later. Later decisions: the host also sets how many AI cars join (the host simulates them), total grid capped at 8; remote cars are drawn at the present by extrapolating each car's last state forward with its velocity and turn rate, with clocks synced to the host, rather than 100 ms in the past by the interpolator, which would put a friend alongside you 5 m behind where they are. Stage 1 DONE (next row). Stage 2, the Unity lobby, is next. |
+| Input prediction, collisions, lobby | WIP | 2026-09-26, planned, no code yet. Your decisions: each machine simulates its own car and sends its state (no input prediction, which PhysX cannot rewind cheaply); the host runs race control; any number of human players from 2 to 6, the host starting whenever it likes, and no AI in a LAN race (solo races keep their AI); no second PC yet, so testing is on one machine. Plan: TCP for join, lobby, start and results, UDP at 30 Hz for car states; discovery by the existing beacon plus a typed IP. Stages: (1) protocol and a headless host with clients over loopback, (2) Unity lobby Host/Join, (3) racing with remote cars as interpolated proxies and a synced countdown, (4) positions, finish and results from the host, a player leaving, (5) two real PCs, later. Later decisions: the host also sets how many AI cars join (the host simulates them), total grid capped at 8; remote cars are drawn at the present by extrapolating each car's last state forward with its velocity and turn rate, with clocks synced to the host, rather than 100 ms in the past by the interpolator, which would put a friend alongside you 5 m behind where they are. Stages 1 and 2 DONE (next rows). Stage 3, racing, is next. |
 | LAN stage 1: protocol and headless race | DONE | 2026-09-26. `Sim/CarRace.Net` now holds the sockets, so the game runs the code the harness tests: `Control` (TCP messages: Hello, Welcome, Reject full/started/version, Lobby, Setup, Start, each behind a two byte length), `Transport` (datagram kinds Car, Snapshot, Ping, Pong; a non-blocking framed TCP socket), `LanHost` (listens on 47902 TCP and UDP, beacon every second until the start, up to 6 players and 8 cars, AI ids from 32, relays every client's latest car with the time it was true, drops a client silent for 5 s), `LanClient` (non-blocking connect with a 5 s timeout, clock sync from pings every 0.5 s keeping the shortest round trip of the last 16, sends its car stamped in host time), `LanBrowser` (beacon listener, forgets a host after 3.5 s), `Extrapolator` (each car carried forward from its last state by velocity and angular velocity, at most 0.25 s, corrections decaying over 0.1 s). Snapshot cars gained angular velocity and their age: 25.6 bytes a car (was 21). Beacon and control version 2. Nothing polls on a thread; the game calls `Poll(now)` each frame. `--lan` runs a host and bots, each simulating only its own car and racing the others as its network shows them, clocks up to 100 s apart, each bot's UDP through a proxy adding delay, jitter and loss, sends on independent beats. Default (6 players, 2 AI, 2 ms, 1 ms, 1% loss, Royal Park 30 s): all 11 checks pass; cars drawn p99 0.054 m, worst 0.084 m, heading worst 0.63 deg, from where they really are; drawn in the past as the interpolator would, 1.84 m mean behind; GO within 0.8 ms on every clock; a quitter gone from every track in 38 ms; 5.9 kB/s to each player, 1 kB/s from each. Also pass: 2 players no AI, 3 players 5 AI, and 25 ms / 10 ms / 5% loss (worst 0.335 m). A 60 ms / 20 ms / 10% loss network, far worse than any LAN, fails: GO 13 ms apart, worst 2.3 m. |
+| LAN stage 2: Unity lobby | DONE | 2026-09-26. `Scripts/Net/LanSession.cs`: the game's one connection (browsing, hosting or joined), kept across scene loads, polled each frame; keeps the game running while its window is in the background (Unity pauses it otherwise, and a host in the background dropped every player: found with two copies on one screen); loads the circuit on every machine when the host starts. `LobbyMenu`: the Players panel moves top right and becomes LAN's: off a game, your name and HOST LAN GAME / JOIN LAN GAME; joining, the games found (host, circuit, players) and a box for an IP address; in a game, everyone with colour, design, HOST and YOU, the AI cars (host: minus and plus, up to 8 cars in all), the host's IP on adapters with a gateway (so not WSL's), and LEAVE. PLAY becomes START RACE for a host with someone to race, WAITING FOR PLAYERS alone, WAITING FOR HOST for a client; only the host picks the circuit. Colour and design changes go to everyone. Test flags `-lanHost`, `-lanJoin IP`, `-lanBrowse`, `-lanStartWhen N`, `-playerName`, `-screenshotDelay`. Harness `--lan-bots IP --bots N` joins a real game, published for Windows to `Builds/LanBots`. Netcode changes found by the real game: Windows refuses `NoDelay` mid-connect (now set before); pings were answered up to a frame late, so round trips on one machine read 15 ms and clocks could be 8 ms off: a receive thread now stamps arrivals and the pong carries arrival and send times (NTP), round trips now 0.05 to 0.4 ms with recent offsets within 0.5 to 2 ms; beacons carry a random session id, since one host was listed twice (network and loopback); UDP connection resets turned off on Windows. Checked in the built game, headless and by screenshot: host plus a second copy plus 4 bots, six players listed on both with colours and designs, a colour change reaching all, a leaver removed; the Join screen lists the host once; `-lanStartWhen 4` starts, both copies log loading the circuit and bots get a 4 car grid with GO 4.9 s ahead. Not tried by hand: typing an IP, clicking a found game. |
 
 **What the sync measures.** Sixteen cars, real UDP sockets on loopback, with latency,
 jitter and loss added on purpose:
@@ -428,12 +430,14 @@ Known, deliberate, and not blocking. Recorded so they are not rediscovered.
 
 **Networking**
 
+- Two players may pick the same colour (the lobby allows it); the race scene must repaint
+  one, as `PlayerSetup` already does for AI cars. Stage 3.
+- A started LAN race has no "everyone has loaded" step: GO is 5 s after the host presses
+  start, and a slow machine could still be loading. Stage 3 should hold GO until every
+  player reports ready.
 - Two people's cars colliding is untested: the harness has no car to car contact, and in
   Unity each machine will bounce its own car off a moving proxy of the other. How that
   feels is stage 3's question.
-- On Windows a UDP socket that sends to a port nobody holds gets a connection reset on its
-  next receive. `LanHost` and `LanClient` catch it and carry on, but the usual fix is
-  `IOControl(SIO_UDP_CONNRESET, false)` on the sockets, Windows only. Do it in stage 2.
 - Clocks in the game are floats. Unity's `realtimeSinceStartup` loses precision after
   hours (4 ms steps past ten hours), fine for a session but worth a double if it matters.
 - Extrapolating assumes a LAN: past about 60 ms latency with 10% loss the worst car is
@@ -492,6 +496,10 @@ dotnet run --project Sim/CarRace.Harness -c Release -- --lan monza --seconds 30
 #   expect: every line "ok", "PASS", exit code 0, about a minute
 dotnet run --project Sim/CarRace.Harness -c Release -- --lan spa --seconds 20 --players 6 --latency 25 --jitter 10 --loss 5
 #   expect: "PASS", worst car under 0.5 m
+
+# LAN lobby in the built game: host, a second copy and bots (Unity/README.md has the lines)
+./LanBots/CarRace.Harness.exe --lan-bots 127.0.0.1 --bots 4 --seconds 30   # from D:\Dev\CarRace\Builds
+#   expect: "4 of 4 joined", round trips under 1 ms, and every player in both games' Players panels
 
 # a field of AI cars. The second is the Phase 3 exit criterion; try other seeds with
 # --seed N, since seed 1 was one of the easier ones before the fix.
@@ -557,6 +565,14 @@ learned, so context is not lost between sessions.
   never sent its first ping, so it never synced. The first version of the test sent every
   machine's car on the same instant, which hid how stale relayed states are; each machine
   now sends on its own beat.
+
+- Stage 2, the Unity lobby, built, run and checked in the real game (section 3). Running
+  the real game found four things the headless race could not: Windows refuses a socket
+  option mid-connect; a ping answered once a frame put 8 ms into the clock (now stamped
+  on arrival by a thread, NTP style); the same host heard twice was listed twice; and a
+  host whose window lost focus paused and dropped everyone. That last one was first
+  blamed on the receive thread; the pause was the real cause, and the thread stayed for
+  the clock.
 
 ### 2026-09-26, eleventh session
 

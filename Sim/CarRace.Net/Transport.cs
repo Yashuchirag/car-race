@@ -1,6 +1,11 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Net;
 using System.Net.Sockets;
+using System.Threading;
+using System.Runtime.InteropServices;
 
 namespace CarRace.Net
 {
@@ -41,13 +46,97 @@ namespace CarRace.Net
             return packet;
         }
 
-        public static byte[] Pong(float clientTime, float hostTime)
+        /// <summary>
+        /// On Windows, a datagram sent to a port nobody holds any more comes back as an ICMP
+        /// error, and the socket's next receive throws a connection reset, for every player
+        /// on the host's one socket. Turning that report off is the usual fix; elsewhere the
+        /// error never reaches the socket and there is nothing to do.
+        /// </summary>
+        public static void IgnoreConnectionReset(Socket socket)
         {
-            var packet = new byte[9];
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) return;
+            const int SIO_UDP_CONNRESET = unchecked((int)0x9800000C);
+            try { socket.IOControl(SIO_UDP_CONNRESET, new byte[4], null); }
+            catch (Exception) { }
+        }
+
+        /// <summary>The reply to a ping: when the ping was sent on the client's clock, and
+        /// when it arrived and when this reply left on the host's. The gap between those two
+        /// is the host's own delay, which the client takes out of the round trip.</summary>
+        public static byte[] Pong(float clientSent, float hostArrived, float hostSent)
+        {
+            var packet = new byte[13];
             packet[0] = (byte)Kind.Pong;
-            BitConverter.GetBytes(clientTime).CopyTo(packet, 1);
-            BitConverter.GetBytes(hostTime).CopyTo(packet, 5);
+            BitConverter.GetBytes(clientSent).CopyTo(packet, 1);
+            BitConverter.GetBytes(hostArrived).CopyTo(packet, 5);
+            BitConverter.GetBytes(hostSent).CopyTo(packet, 9);
             return packet;
+        }
+    }
+
+    /// <summary>
+    /// Receives datagrams on a thread of its own, noting the moment each one arrives.
+    ///
+    /// The game reads the network once a frame, so a packet can wait up to a frame before
+    /// anyone looks at it. For car states that does not matter, they carry their own time.
+    /// For the clock sync it does: a ping answered a frame late looks like a slow network,
+    /// and half of that wait lands in the clock's offset, 8 ms at 60 fps, half a metre at
+    /// racing speed. With the arrival time noted here, the wait can be taken out.
+    /// Nothing else happens on this thread; everything it receives is handed over in Poll.
+    /// </summary>
+    sealed class DatagramInbox : IDisposable
+    {
+        static readonly Stopwatch Clock = Stopwatch.StartNew();
+
+        readonly UdpClient _udp;
+        readonly ConcurrentQueue<(byte[] Data, IPEndPoint From, long Ticks)> _queue
+            = new ConcurrentQueue<(byte[], IPEndPoint, long)>();
+        volatile bool _closed;
+
+        public DatagramInbox(UdpClient udp)
+        {
+            _udp = udp;
+            new Thread(Run) { IsBackground = true, Name = "LAN receive" }.Start();
+        }
+
+        void Run()
+        {
+            while (!_closed)
+            {
+                try
+                {
+                    // Waits a millisecond at a time and reads only what has arrived, rather
+                    // than blocking in Receive, so the game's thread can send on the same
+                    // socket without ever meeting a call that is parked inside it.
+                    if (!_udp.Client.Poll(1000, SelectMode.SelectRead) || _udp.Available == 0) continue;
+                    var from = new IPEndPoint(IPAddress.Any, 0);
+                    byte[] data = _udp.Receive(ref from);
+                    _queue.Enqueue((data, from, Clock.ElapsedTicks));
+                }
+                catch (SocketException) { if (_closed) return; }   // a reset from a player who left
+                catch (ObjectDisposedException) { return; }
+            }
+        }
+
+        /// <summary>The next datagram, and when it arrived on the caller's clock, whose time
+        /// is now.</summary>
+        public bool TryTake(float now, out byte[] data, out IPEndPoint from, out float arrived)
+        {
+            if (!_queue.TryDequeue(out var item))
+            {
+                data = null; from = null; arrived = now;
+                return false;
+            }
+            data = item.Data;
+            from = item.From;
+            arrived = now - (float)((Clock.ElapsedTicks - item.Ticks) / (double)Stopwatch.Frequency);
+            return true;
+        }
+
+        public void Dispose()
+        {
+            _closed = true;
+            _udp.Dispose();
         }
     }
 
@@ -70,8 +159,7 @@ namespace CarRace.Net
         public FrameSocket(Socket socket)
         {
             _socket = socket;
-            _socket.Blocking = false;
-            _socket.NoDelay = true;
+            _socket.Blocking = false;   // NoDelay is set by whoever made it: Windows refuses it mid-connect
         }
 
         public void Send(byte[] message)

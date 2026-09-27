@@ -21,6 +21,7 @@ namespace CarRace.Net
 
         readonly FrameSocket _tcp;
         readonly UdpClient _udp;
+        readonly DatagramInbox _inbox;
         readonly IPEndPoint _hostUdp;
         readonly PlayerInfo _me;
         readonly BitWriter _writer = new BitWriter(new byte[SnapshotCodec.MaxBytes(1) + 16]);
@@ -48,6 +49,10 @@ namespace CarRace.Net
         public bool Synced => _sampleCount > 0;
         public float OffsetSeconds { get; private set; }
         public float RoundTripSeconds { get; private set; }
+
+        /// <summary>How far apart the offsets of the recent pings are: how well the clock is
+        /// known. A millisecond or two on a LAN.</summary>
+        public float OffsetSpreadSeconds { get; private set; }
         public float HostNow(float now) => now + OffsetSeconds;
 
         /// <summary>Set when the lobby or the start changes, for the menu to redraw from.</summary>
@@ -60,7 +65,7 @@ namespace CarRace.Net
             _me = me;
             _hostUdp = new IPEndPoint(host, udpPort != 0 ? udpPort : port);
 
-            var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp) { Blocking = false };
+            var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp) { Blocking = false, NoDelay = true };
             try { socket.Connect(host, port); }
             catch (SocketException e) when (e.SocketErrorCode == SocketError.WouldBlock
                                             || e.SocketErrorCode == SocketError.InProgress) { }
@@ -68,6 +73,8 @@ namespace CarRace.Net
 
             _udp = new UdpClient(new IPEndPoint(IPAddress.Any, 0));
             _udp.Client.ReceiveBufferSize = 1 << 20;
+            Datagram.IgnoreConnectionReset(_udp.Client);
+            _inbox = new DatagramInbox(_udp);
         }
 
         public void Poll(float now)
@@ -162,21 +169,18 @@ namespace CarRace.Net
 
         void ReadDatagrams(float now)
         {
-            var from = new IPEndPoint(IPAddress.Any, 0);
-            while (_udp.Available > 0)
+            while (_inbox.TryTake(now, out byte[] data, out IPEndPoint from, out float arrived))
             {
-                byte[] data;
-                try { data = _udp.Receive(ref from); }
-                catch (SocketException) { continue; }
                 if (!from.Address.Equals(_hostUdp.Address) || data.Length < 2) continue;
 
                 try
                 {
                     switch ((Datagram.Kind)data[0])
                     {
-                        case Datagram.Kind.Pong when data.Length >= 9:
+                        case Datagram.Kind.Pong when data.Length >= 13:
                             _lastHeard = now;
-                            Synchronise(BitConverter.ToSingle(data, 1), BitConverter.ToSingle(data, 5), now);
+                            Synchronise(BitConverter.ToSingle(data, 1), BitConverter.ToSingle(data, 5),
+                                        BitConverter.ToSingle(data, 9), arrived);
                             break;
                         case Datagram.Kind.Snapshot:
                             Snapshot snapshot = Datagram.Unpack(data, data.Length);
@@ -202,12 +206,17 @@ namespace CarRace.Net
                 if (Array.FindIndex(snapshot.Cars, c => c.Id == id) < 0) Cars.Remove(id);
         }
 
-        void Synchronise(float sentAt, float hostTime, float now)
+        /// <summary>
+        /// NTP's arithmetic. The round trip is the time away less the time the host held the
+        /// ping; the offset assumes the rest was split evenly between the two directions,
+        /// which on a LAN is true to well under a millisecond.
+        /// </summary>
+        void Synchronise(float sent, float hostArrived, float hostSent, float arrived)
         {
-            float rtt = now - sentAt;
+            float rtt = (arrived - sent) - (hostSent - hostArrived);
             if (rtt < 0f || rtt > 2f) return;
 
-            _samples[_sampleAt] = (rtt, hostTime + rtt * 0.5f - now);
+            _samples[_sampleAt] = (rtt, ((hostArrived - sent) + (hostSent - arrived)) * 0.5f);
             _sampleAt = (_sampleAt + 1) % _samples.Length;
             if (_sampleCount < _samples.Length) _sampleCount++;
 
@@ -216,6 +225,14 @@ namespace CarRace.Net
                 if (_samples[i].Rtt < _samples[best].Rtt) best = i;
             RoundTripSeconds = _samples[best].Rtt;
             OffsetSeconds = _samples[best].Offset;
+
+            float low = float.MaxValue, high = float.MinValue;
+            for (int i = 0; i < _sampleCount; i++)
+            {
+                low = Math.Min(low, _samples[i].Offset);
+                high = Math.Max(high, _samples[i].Offset);
+            }
+            OffsetSpreadSeconds = high - low;
         }
 
         void Send(byte[] packet)
@@ -234,7 +251,7 @@ namespace CarRace.Net
         public void Dispose()
         {
             _tcp.Dispose();
-            _udp.Dispose();
+            _inbox.Dispose();
         }
     }
 }

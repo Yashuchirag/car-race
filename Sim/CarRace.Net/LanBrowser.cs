@@ -31,6 +31,7 @@ namespace CarRace.Net
             _udp = new UdpClient();
             _udp.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
             _udp.Client.Bind(new IPEndPoint(IPAddress.Any, Beacon.Port));
+            Datagram.IgnoreConnectionReset(_udp.Client);
         }
 
         public void Poll(float now)
@@ -43,8 +44,12 @@ namespace CarRace.Net
                 catch (SocketException) { continue; }
                 if (!Beacon.TryParse(data, out Beacon beacon)) continue;
 
-                Game game = _games.Find(g => g.Address.Equals(from.Address) && g.Beacon.GamePort == beacon.GamePort);
+                Game game = _games.Find(g => g.Beacon.Session == beacon.Session);
                 if (game == null) _games.Add(game = new Game { Address = from.Address });
+
+                // Heard over the network as well as over loopback: the network address is
+                // the one worth showing, and it works from this machine too.
+                if (IPAddress.IsLoopback(game.Address) && !IPAddress.IsLoopback(from.Address)) game.Address = from.Address;
                 game.Beacon = beacon;
                 game.LastHeard = now;
             }

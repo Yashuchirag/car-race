@@ -38,10 +38,12 @@ namespace CarRace.Net
 
         readonly Socket _listener;
         readonly UdpClient _udp;
+        readonly DatagramInbox _inbox;
         readonly UdpClient _beacon;
         readonly List<Client> _clients = new List<Client>();
         readonly BitWriter _writer = new BitWriter(new byte[SnapshotCodec.MaxBytes(MaxCars) + 16]);
         readonly string _hostName;
+        readonly uint _session = (uint)new Random().Next();
         byte _nextId = 1;
         float _nextBeacon;
         uint _tick;
@@ -79,6 +81,8 @@ namespace CarRace.Net
 
             _udp = new UdpClient(new IPEndPoint(IPAddress.Any, port));
             _udp.Client.ReceiveBufferSize = 1 << 20;
+            Datagram.IgnoreConnectionReset(_udp.Client);
+            _inbox = new DatagramInbox(_udp);
             _beacon = new UdpClient { EnableBroadcast = true };
         }
 
@@ -169,7 +173,7 @@ namespace CarRace.Net
         {
             byte[] bytes = new Beacon
             {
-                HostName = _hostName, Track = Lobby.Track, GamePort = (ushort)Port,
+                Session = _session, HostName = _hostName, Track = Lobby.Track, GamePort = (ushort)Port,
                 Players = (byte)Humans, Capacity = MaxPlayers,
             }.ToBytes();
 
@@ -189,6 +193,7 @@ namespace CarRace.Net
                 Socket socket;
                 try { socket = _listener.Accept(); }
                 catch (SocketException) { return; }   // nobody waiting
+                socket.NoDelay = true;
                 _clients.Add(new Client { Tcp = new FrameSocket(socket), LastHeard = now });
             }
         }
@@ -243,12 +248,8 @@ namespace CarRace.Net
 
         void ReadDatagrams(float now)
         {
-            var from = new IPEndPoint(IPAddress.Any, 0);
-            while (_udp.Available > 0)
+            while (_inbox.TryTake(now, out byte[] data, out IPEndPoint from, out float arrived))
             {
-                byte[] data;
-                try { data = _udp.Receive(ref from); }
-                catch (SocketException) { continue; }   // e.g. an ICMP unreachable from a client that left
                 if (data.Length < 2) continue;
 
                 try
@@ -261,7 +262,7 @@ namespace CarRace.Net
                             if (client == null) break;
                             client.Udp = from;
                             client.LastHeard = now;
-                            Send(Datagram.Pong(BitConverter.ToSingle(data, 2), now), from);
+                            Send(Datagram.Pong(BitConverter.ToSingle(data, 2), arrived, now), from);
                             break;
                         }
                         case Datagram.Kind.Car:
@@ -329,7 +330,7 @@ namespace CarRace.Net
             foreach (Client client in _clients) client.Tcp.Dispose();
             _clients.Clear();
             _listener.Close();
-            _udp.Dispose();
+            _inbox.Dispose();
             _beacon.Dispose();
         }
     }

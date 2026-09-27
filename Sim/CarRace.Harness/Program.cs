@@ -56,6 +56,10 @@ namespace CarRace.Harness
                                   Array.IndexOf(args, "--verbose") >= 0);
             }
 
+            int botsIndex = Array.IndexOf(args, "--lan-bots");
+            if (botsIndex >= 0 && botsIndex + 1 < args.Length)
+                return LanBots.Run(args[botsIndex + 1], Option(args, "--bots", 5), Option(args, "--seconds", 60));
+
             int lanIndex = Array.IndexOf(args, "--lan");
             if (lanIndex >= 0)
             {

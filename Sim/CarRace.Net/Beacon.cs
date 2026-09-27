@@ -18,6 +18,9 @@ namespace CarRace.Net
         public const int Port = 47901;
         static readonly byte[] Magic = { (byte)'C', (byte)'R', (byte)'C', (byte)'E' };
 
+        /// <summary>Random per hosted game, so one host heard twice, over the network and
+        /// over loopback, is listed once.</summary>
+        public uint Session;
         public string HostName;
         public string Track;
         public ushort GamePort;
@@ -31,10 +34,11 @@ namespace CarRace.Net
             if (host.Length > 63) Array.Resize(ref host, 63);
             if (track.Length > 63) Array.Resize(ref track, 63);
 
-            var bytes = new byte[4 + 1 + 2 + 1 + 1 + 1 + host.Length + 1 + track.Length];
+            var bytes = new byte[4 + 1 + 4 + 2 + 1 + 1 + 1 + host.Length + 1 + track.Length];
             int at = 0;
             Array.Copy(Magic, 0, bytes, at, 4); at += 4;
             bytes[at++] = Version;
+            BitConverter.GetBytes(Session).CopyTo(bytes, at); at += 4;
             bytes[at++] = (byte)(GamePort & 0xFF);
             bytes[at++] = (byte)(GamePort >> 8);
             bytes[at++] = Players;
@@ -54,11 +58,12 @@ namespace CarRace.Net
         public static bool TryParse(byte[] bytes, out Beacon beacon)
         {
             beacon = default;
-            if (bytes == null || bytes.Length < 11) return false;
+            if (bytes == null || bytes.Length < 15) return false;
             for (int i = 0; i < 4; i++) if (bytes[i] != Magic[i]) return false;
             if (bytes[4] != Version) return false;
 
             int at = 5;
+            uint session = BitConverter.ToUInt32(bytes, at); at += 4;
             ushort port = (ushort)(bytes[at] | (bytes[at + 1] << 8)); at += 2;
             byte players = bytes[at++];
             byte capacity = bytes[at++];
@@ -73,7 +78,7 @@ namespace CarRace.Net
 
             beacon = new Beacon
             {
-                HostName = host, Track = track, GamePort = port,
+                Session = session, HostName = host, Track = track, GamePort = port,
                 Players = players, Capacity = capacity,
             };
             return true;

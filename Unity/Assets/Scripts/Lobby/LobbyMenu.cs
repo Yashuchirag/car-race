@@ -1,5 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Net;
+using System.Net.NetworkInformation;
+using System.Net.Sockets;
+using CarRace.Net;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -9,8 +13,11 @@ namespace CarRace.UnityGame
     /// The front end: the game's title, a players panel, a circuit panel with a card for each
     /// circuit in the build (its outline, name, length and surroundings), and a car panel with
     /// colour swatches and a PLAY button that loads the chosen circuit. The car turns on a platform behind the panels,
-    /// repainted as a colour is picked. The players panel lists only the local player for now;
-    /// it is where LAN play will list everyone who has joined before the host starts the race.
+    /// repainted as a colour is picked. The players panel is also LAN play's: host a game or
+    /// join one, see everyone who has joined, and as host set the AI cars and start the race.
+    /// In a LAN game only the host picks the circuit. -lanHost hosts at once, -lanJoin
+    /// 127.0.0.1 joins that address and -lanBrowse opens the Join screen, for testing
+    /// several copies on one machine.
     ///
     /// With -benchmark on the command line it goes straight to the race, so the benchmark
     /// still measures racing.
@@ -27,7 +34,9 @@ namespace CarRace.UnityGame
         static readonly Color Muted = new Color(0.62f, 0.64f, 0.72f);
         static readonly Color Row = new Color(0.12f, 0.13f, 0.18f, 0.95f);
 
-        GUIStyle _title, _subtitle, _header, _text, _small, _play, _cardName;
+        GUIStyle _title, _subtitle, _header, _text, _small, _play, _cardName, _field, _button;
+        string _typedAddress = "";
+        string _localAddresses;
         readonly List<TrackCatalog.Entry> _circuits = new List<TrackCatalog.Entry>();
         readonly Dictionary<string, Texture2D> _outlines = new Dictionary<string, Texture2D>();
         int _outlinePixels;
@@ -70,7 +79,16 @@ namespace CarRace.UnityGame
             CarDesigns.Apply(displayCar, PlayerSetup.DesignIndex);
             PlayerSetup.Paint(displayCar != null ? displayCar.Find("Body") : null, PlayerSetup.Colour);
 
-            // -lobbyScreenshot <file>: a picture of the lobby after a few seconds, then quit.
+            // Back from a LAN race: that game is over.
+            if (LanSession.Active && LanSession.Current.Race != null) LanSession.Current.Leave();
+
+            string join = LanSession.Flag("-lanJoin");
+            if (!LanSession.Active && Array.IndexOf(args, "-lanHost") >= 0) LanSession.Current.StartHosting(ChosenScene);
+            else if (!LanSession.Active && !string.IsNullOrEmpty(join)) LanSession.Current.Join(join);
+            else if (!LanSession.Active && Array.IndexOf(args, "-lanBrowse") >= 0) LanSession.Current.StartBrowsing();
+
+            // -lobbyScreenshot <file>: a picture of the lobby after a few seconds (or
+            // -screenshotDelay seconds), then quit.
             int shot = Array.IndexOf(args, "-lobbyScreenshot");
             if (shot >= 0 && shot + 1 < args.Length) StartCoroutine(ScreenshotAndQuit(args[shot + 1]));
         }
@@ -78,11 +96,24 @@ namespace CarRace.UnityGame
         void Update()
         {
             if (displayCar != null) displayCar.Rotate(0f, turnDegreesPerSecond * Time.deltaTime, 0f, Space.World);
-            if (Input.GetKeyDown(KeyCode.Return)) Play();
+            if (Input.GetKeyDown(KeyCode.Return) && GUIUtility.keyboardControl == 0) Play();
         }
 
+        /// <summary>PLAY, or Enter: a race against the AI, or in a LAN game the host's start.
+        /// A client waits for the host.</summary>
         void Play()
         {
+            if (LanSession.Active)
+            {
+                if (LanSession.Current.State == LanSession.Mode.Hosting && LanSession.Current.Host.Humans >= 2)
+                {
+                    GameAudio.Confirm();
+                    LanSession.Current.StartRace();
+                }
+                return;
+            }
+            if (LanSession.Browsing) LanSession.Current.Leave();
+
             // -track "Track Royal Park Speedway" picks the circuit for one session, so the
             // benchmark always races the same one.
             string[] args = Environment.GetCommandLineArgs();
@@ -95,7 +126,7 @@ namespace CarRace.UnityGame
 
         System.Collections.IEnumerator ScreenshotAndQuit(string path)
         {
-            yield return new WaitForSeconds(4f);
+            yield return new WaitForSeconds(float.TryParse(LanSession.Flag("-screenshotDelay"), out float delay) ? delay : 4f);
             ScreenCapture.CaptureScreenshot(path);
             yield return new WaitForSeconds(1f);
             Application.Quit();
@@ -115,26 +146,17 @@ namespace CarRace.UnityGame
             Hud.Fill(new Rect(margin + Hud.Px(120f), Hud.Px(104f), Hud.Px(60f), Hud.Px(5f)), AccentLight);
             GUI.Label(new Rect(margin, Hud.Px(114f), Hud.Px(700f), Hud.Px(30f)), "LOBBY", _subtitle);
 
-            // Players, left.
-            var players = new Rect(margin, Hud.Px(180f), Hud.Px(400f), Hud.Px(230f));
-            PanelWithHeader(players, "PLAYERS");
-            var entry = new Rect(players.x + Hud.Px(14f), players.y + Hud.Px(52f), players.width - Hud.Px(28f), Hud.Px(48f));
-            Hud.Rounded(entry, Row);
-            Hud.Rounded(new Rect(entry.x + Hud.Px(10f), entry.y + Hud.Px(10f), Hud.Px(28f), Hud.Px(28f)), PlayerSetup.Colour);
-            GUI.Label(new Rect(entry.x + Hud.Px(50f), entry.y, entry.width, entry.height), "Player 1", _text);
-            _small.alignment = TextAnchor.MiddleRight;
-            GUI.Label(new Rect(entry.x, entry.y, entry.width - Hud.Px(12f), entry.height), "YOU  ·  HOST", _small);
-            _small.alignment = TextAnchor.UpperLeft;
-            GUI.Label(new Rect(players.x + Hud.Px(16f), entry.yMax + Hud.Px(14f), players.width - Hud.Px(32f), Hud.Px(60f)),
-                      "Local play. Players on your network will appear here once LAN racing is added.", _small);
-
-            CircuitPanel(new Rect(margin, Hud.Px(440f), Hud.Px(400f), Hud.Px(560f)));
+            CircuitPanel(new Rect(margin, Hud.Px(180f), Hud.Px(400f), Hud.Px(560f)));
 
             // Car, right: the body designs, colour swatches, the colour's name and PLAY.
             int designs = CarDesigns.Count;
             float designRow = designs > 0 ? Hud.Px(62f) : 0f;
             float width = Hud.Px(460f), height = Hud.Px(380f) + designRow;
             var car = new Rect(Screen.width - margin - width, Screen.height - margin - height, width, height);
+
+            // Players, top right, above the car.
+            PlayersPanel(new Rect(car.x, margin, width, car.y - margin - Hud.Px(20f)));
+
             PanelWithHeader(car, "YOUR CAR");
             float size = Hud.Px(80f), gap = Hud.Px(20f);
             float left = car.x + (width - (4f * size + 3f * gap)) * 0.5f, top = car.y + Hud.Px(56f);
@@ -155,6 +177,7 @@ namespace CarRace.UnityGame
                         GameAudio.Select();
                         PlayerSetup.DesignIndex = i;
                         CarDesigns.Apply(displayCar, i);
+                        if (LanSession.Active) LanSession.Current.SendSetup();
                     }
                 }
                 top += designRow;
@@ -184,6 +207,7 @@ namespace CarRace.UnityGame
                     GameAudio.Select();
                     PlayerSetup.ColourIndex = i;
                     PlayerSetup.Paint(displayCar != null ? displayCar.Find("Body") : null, PlayerSetup.Colour);
+                    if (LanSession.Active) LanSession.Current.SendSetup();
                 }
             }
             _text.alignment = TextAnchor.MiddleCenter;
@@ -192,15 +216,234 @@ namespace CarRace.UnityGame
             _text.alignment = TextAnchor.MiddleLeft;
 
             var play = new Rect(car.x + Hud.Px(20f), car.yMax - Hud.Px(84f), width - Hud.Px(40f), Hud.Px(64f));
-            bool over = play.Contains(Event.current.mousePosition);
-            Hud.Rounded(play, over ? AccentLight : Accent);
-            GUI.Label(play, "PLAY  ▶", _play);
-            _hover.Watch(play);
-            if (GUI.Button(play, GUIContent.none, GUIStyle.none)) Play();
+            string label = "PLAY  ▶";
+            bool ready = true;
+            if (LanSession.Active && LanSession.Current.State == LanSession.Mode.Joined) { label = "WAITING FOR HOST"; ready = false; }
+            else if (LanSession.Active && LanSession.Current.Host.Humans < 2) { label = "WAITING FOR PLAYERS"; ready = false; }
+            else if (LanSession.Active) label = "START RACE  ▶";
+            bool over = ready && play.Contains(Event.current.mousePosition);
+            Hud.Rounded(play, !ready ? Row : over ? AccentLight : Accent);
+            _play.fontSize = Hud.Font(ready ? 30 : 22);
+            GUI.Label(play, label, _play);
+            if (ready)
+            {
+                _hover.Watch(play);
+                if (GUI.Button(play, GUIContent.none, GUIStyle.none)) Play();
+            }
 
             _small.alignment = TextAnchor.MiddleRight;
-            GUI.Label(new Rect(car.x, car.yMax + Hud.Px(6f), width, Hud.Px(24f)), "Enter: play", _small);
+            GUI.Label(new Rect(car.x, car.yMax + Hud.Px(6f), width, Hud.Px(24f)), ready ? "Enter: play" : "", _small);
             _small.alignment = TextAnchor.UpperLeft;
+        }
+
+        /// <summary>
+        /// Who is racing. Off a LAN game: your name, and Host or Join. Joining: the games
+        /// found on the network and a box for an address. In a game: everyone in it, the AI
+        /// cars (the host sets them), and Leave.
+        /// </summary>
+        void PlayersPanel(Rect panel)
+        {
+            LanSession session = LanSession.Active || LanSession.Browsing ? LanSession.Current : null;
+            LanSession.Mode mode = session != null ? session.State : LanSession.Mode.Off;
+            PanelWithHeader(panel, mode == LanSession.Mode.Browsing ? "JOIN A LAN GAME" : "PLAYERS");
+
+            float pad = Hud.Px(14f), rowHeight = Hud.Px(36f), gap = Hud.Px(6f);
+            float x = panel.x + pad, width = panel.width - 2f * pad, y = panel.y + Hud.Px(52f);
+            string message = LanSession.Message;
+
+            if (mode == LanSession.Mode.Off)
+            {
+                var row = new Rect(x, y, width, Hud.Px(44f));
+                Hud.Rounded(row, Row);
+                _small.alignment = TextAnchor.MiddleLeft;
+                GUI.Label(new Rect(row.x + Hud.Px(12f), row.y, Hud.Px(80f), row.height), "NAME", _small);
+                _small.alignment = TextAnchor.UpperLeft;
+                string name = GUI.TextField(new Rect(row.x + Hud.Px(76f), row.y, row.width - Hud.Px(80f), row.height),
+                                            LanSession.PlayerName, 24, _field);
+                if (name != LanSession.PlayerName && name.Trim().Length > 0) LanSession.PlayerName = name;
+                y = row.yMax + Hud.Px(12f);
+
+                float half = (width - gap) * 0.5f;
+                if (Button(new Rect(x, y, half, Hud.Px(48f)), "HOST LAN GAME", true))
+                    LanSession.Current.StartHosting(ChosenScene);
+                if (Button(new Rect(x + half + gap, y, half, Hud.Px(48f)), "JOIN LAN GAME", true))
+                    LanSession.Current.StartBrowsing();
+                y += Hud.Px(62f);
+
+                GUI.Label(new Rect(x + Hud.Px(2f), y, width, Hud.Px(60f)),
+                          "PLAY races the AI on your own. Host or join to race people on your network.", _small);
+                y += Hud.Px(48f);
+            }
+            else if (mode == LanSession.Mode.Browsing)
+            {
+                IReadOnlyList<LanBrowser.Game> games = session.Browser.Games;
+                if (games.Count == 0)
+                {
+                    GUI.Label(new Rect(x + Hud.Px(2f), y, width, rowHeight), "Looking for games on your network...", _small);
+                    y += rowHeight + gap;
+                }
+                for (int i = 0; i < games.Count && i < 5; i++)
+                {
+                    LanBrowser.Game game = games[i];
+                    var row = new Rect(x, y, width, rowHeight);
+                    bool hover = row.Contains(Event.current.mousePosition);
+                    Hud.Rounded(row, hover ? new Color(1f, 1f, 1f, 0.16f) : Row);
+                    GUI.Label(new Rect(row.x + Hud.Px(12f), row.y, row.width, row.height), game.Beacon.HostName, _text);
+                    _small.alignment = TextAnchor.MiddleRight;
+                    GUI.Label(new Rect(row.x, row.y, row.width - Hud.Px(12f), row.height),
+                              $"{CircuitName(game.Beacon.Track)}  ·  {game.Beacon.Players}/{game.Beacon.Capacity}", _small);
+                    _small.alignment = TextAnchor.UpperLeft;
+                    _hover.Watch(row);
+                    if (GUI.Button(row, GUIContent.none, GUIStyle.none))
+                    {
+                        GameAudio.Confirm();
+                        session.Join(game.Address, game.Beacon.GamePort);
+                    }
+                    y += rowHeight + gap;
+                }
+
+                y += Hud.Px(6f);
+                var field = new Rect(x, y, width - Hud.Px(96f), Hud.Px(44f));
+                Hud.Rounded(field, Row);
+                if (_typedAddress.Length == 0 && GUIUtility.keyboardControl == 0)
+                {
+                    _small.alignment = TextAnchor.MiddleLeft;
+                    GUI.Label(new Rect(field.x + Hud.Px(10f), field.y, field.width, field.height), "Or type the host's IP address", _small);
+                    _small.alignment = TextAnchor.UpperLeft;
+                }
+                _typedAddress = GUI.TextField(field, _typedAddress, 40, _field);
+                bool typedEnter = Event.current.type == EventType.KeyDown && Event.current.keyCode == KeyCode.Return
+                                  && GUIUtility.keyboardControl != 0;
+                if (Button(new Rect(field.xMax + gap, y, Hud.Px(90f), field.height), "JOIN", _typedAddress.Trim().Length > 0)
+                    || typedEnter && _typedAddress.Trim().Length > 0)
+                {
+                    GUIUtility.keyboardControl = 0;
+                    session.Join(_typedAddress);
+                }
+                y = field.yMax + Hud.Px(12f);
+
+                if (Button(new Rect(x, y, Hud.Px(120f), Hud.Px(40f)), "BACK", true, back: true)) session.Leave();
+                y += Hud.Px(52f);
+            }
+            else
+            {
+                LobbyState lobby = session.Lobby;
+                bool hosting = mode == LanSession.Mode.Hosting;
+                if (lobby == null)
+                {
+                    GUI.Label(new Rect(x + Hud.Px(2f), y, width, rowHeight), message ?? "Connecting...", _small);
+                    message = null;
+                    y += rowHeight + gap;
+                }
+                else
+                {
+                    foreach (PlayerInfo player in lobby.Players)
+                    {
+                        var row = new Rect(x, y, width, rowHeight);
+                        Hud.Rounded(row, Row);
+                        Color colour = PlayerSetup.Colours[Mathf.Clamp(player.Colour, 0, PlayerSetup.Colours.Length - 1)].colour;
+                        Hud.Rounded(new Rect(row.x + Hud.Px(8f), row.y + Hud.Px(7f), Hud.Px(22f), Hud.Px(22f)), colour);
+                        GUI.Label(new Rect(row.x + Hud.Px(40f), row.y, row.width, row.height), player.Name, _text);
+                        string tags = CarDesigns.Count > 0 ? CarDesigns.NameOf(Mathf.Clamp(player.Design, 0, CarDesigns.Count - 1)).ToUpperInvariant() : "";
+                        if (player.Id == 0) tags += "  ·  HOST";
+                        if (player.Id == session.MyId) tags += "  ·  YOU";
+                        _small.alignment = TextAnchor.MiddleRight;
+                        GUI.Label(new Rect(row.x, row.y, row.width - Hud.Px(12f), row.height), tags, _small);
+                        _small.alignment = TextAnchor.UpperLeft;
+                        y += rowHeight + gap;
+                    }
+
+                    // The AI cars: the host sets how many, up to a grid of eight.
+                    y += Hud.Px(4f);
+                    var ai = new Rect(x, y, width, Hud.Px(40f));
+                    Hud.Rounded(ai, Row);
+                    GUI.Label(new Rect(ai.x + Hud.Px(12f), ai.y, ai.width, ai.height), "AI CARS", _text);
+                    int most = LanHost.MaxCars - lobby.Players.Count;
+                    _text.alignment = TextAnchor.MiddleCenter;
+                    var count = new Rect(ai.xMax - Hud.Px(100f), ai.y, Hud.Px(40f), ai.height);
+                    GUI.Label(hosting ? count : new Rect(ai.xMax - Hud.Px(60f), ai.y, Hud.Px(40f), ai.height), lobby.AiCars.ToString(), _text);
+                    _text.alignment = TextAnchor.MiddleLeft;
+                    if (hosting)
+                    {
+                        if (Button(new Rect(count.x - Hud.Px(36f), ai.y + Hud.Px(5f), Hud.Px(30f), Hud.Px(30f)), "−", lobby.AiCars > 0))
+                            session.Host.SetAiCars(lobby.AiCars - 1);
+                        if (Button(new Rect(count.xMax + Hud.Px(6f), ai.y + Hud.Px(5f), Hud.Px(30f), Hud.Px(30f)), "+", lobby.AiCars < most))
+                            session.Host.SetAiCars(lobby.AiCars + 1);
+                    }
+                    y = ai.yMax + Hud.Px(10f);
+
+                    string status = hosting
+                        ? $"{lobby.Players.Count} of {LanHost.MaxPlayers} players, {lobby.Players.Count + lobby.AiCars} of {LanHost.MaxCars} cars. Others join from your IP: {LocalAddresses()}"
+                        : $"{lobby.Players.Count + lobby.AiCars} cars. Waiting for the host to start the race.";
+                    GUI.Label(new Rect(x + Hud.Px(2f), y, width, Hud.Px(40f)), status, _small);
+                    y += Hud.Px(44f);
+                }
+
+                if (Button(new Rect(x, y, Hud.Px(120f), Hud.Px(40f)), "LEAVE", true, back: true)) session.Leave();
+                y += Hud.Px(52f);
+            }
+
+            if (!string.IsNullOrEmpty(message))
+            {
+                _small.normal.textColor = AccentLight;
+                GUI.Label(new Rect(x + Hud.Px(2f), y, width, Hud.Px(44f)), message, _small);
+                _small.normal.textColor = Muted;
+            }
+        }
+
+        /// <summary>A rounded button with a label; false and greyed when not enabled.</summary>
+        bool Button(Rect rect, string label, bool enabled, bool back = false)
+        {
+            bool hover = enabled && rect.Contains(Event.current.mousePosition);
+            Hud.Rounded(rect, !enabled ? new Color(1f, 1f, 1f, 0.06f) : hover ? AccentLight : back ? Row : Accent);
+            _button.normal.textColor = enabled ? Color.white : new Color(1f, 1f, 1f, 0.3f);
+            GUI.Label(rect, label, _button);
+            if (!enabled) return false;
+            _hover.Watch(rect);
+            if (!GUI.Button(rect, GUIContent.none, GUIStyle.none)) return false;
+            if (back) GameAudio.Back(); else GameAudio.Select();
+            return true;
+        }
+
+        string CircuitName(string scene)
+        {
+            var entry = _circuits.Find(c => c.scene == scene);
+            return entry != null ? entry.displayName : scene;
+        }
+
+        /// <summary>This machine's IPv4 addresses on the network, for the host to read out:
+        /// those on an adapter with a gateway, which leaves out virtual ones such as WSL's.</summary>
+        string LocalAddresses()
+        {
+            if (_localAddresses != null) return _localAddresses;
+            var found = new List<string>();
+            try
+            {
+                foreach (NetworkInterface adapter in NetworkInterface.GetAllNetworkInterfaces())
+                {
+                    if (adapter.OperationalStatus != OperationalStatus.Up) continue;
+                    IPInterfaceProperties properties = adapter.GetIPProperties();
+                    bool routed = false;
+                    foreach (GatewayIPAddressInformation gateway in properties.GatewayAddresses)
+                        routed |= gateway.Address.AddressFamily == AddressFamily.InterNetwork && !gateway.Address.Equals(IPAddress.Any);
+                    if (!routed) continue;
+                    foreach (UnicastIPAddressInformation address in properties.UnicastAddresses)
+                        if (address.Address.AddressFamily == AddressFamily.InterNetwork && !IPAddress.IsLoopback(address.Address))
+                            found.Add(address.Address.ToString());
+                }
+            }
+            catch (Exception) { }   // not every platform can list its adapters
+            if (found.Count == 0)
+            {
+                try
+                {
+                    foreach (IPAddress address in Dns.GetHostAddresses(Dns.GetHostName()))
+                        if (address.AddressFamily == AddressFamily.InterNetwork && !IPAddress.IsLoopback(address))
+                            found.Add(address.ToString());
+                }
+                catch (SocketException) { }
+            }
+            return _localAddresses = found.Count > 0 ? string.Join(", ", found) : "unknown";
         }
 
         /// <summary>A card per circuit, two across: its outline, name, length and surroundings.</summary>
@@ -224,14 +467,17 @@ namespace CarRace.UnityGame
                 _outlinePixels = outlinePixels;
             }
 
-            string chosen = ChosenScene;
+            // In a LAN game the lobby's circuit is the one that counts, and only the host changes it.
+            bool lan = LanSession.Active;
+            bool mayChoose = !lan || LanSession.Current.State == LanSession.Mode.Hosting;
+            string chosen = lan && LanSession.Current.Lobby != null ? LanSession.Current.Lobby.Track : ChosenScene;
             for (int i = 0; i < _circuits.Count; i++)
             {
                 var entry = _circuits[i];
                 var card = new Rect(panel.x + pad + (i % 2) * (cardWidth + gap),
                                     panel.y + Hud.Px(52f) + (i / 2) * (cardHeight + gap), cardWidth, cardHeight);
                 bool selected = entry.scene == chosen;
-                bool hover = card.Contains(Event.current.mousePosition);
+                bool hover = mayChoose && card.Contains(Event.current.mousePosition);
                 if (selected || hover)
                 {
                     float ring = Hud.Px(selected ? 3f : 2f);
@@ -251,11 +497,13 @@ namespace CarRace.UnityGame
                           $"{entry.lengthKm:0.0} km  ·  {entry.theme}", _small);
                 _small.alignment = TextAnchor.UpperLeft;
 
+                if (!mayChoose) continue;
                 _hover.Watch(card);
                 if (GUI.Button(card, GUIContent.none, GUIStyle.none))
                 {
                     GameAudio.Select();
                     ChosenScene = entry.scene;
+                    if (lan) LanSession.Current.Host.SetTrack(entry.scene);
                 }
             }
         }
@@ -311,6 +559,17 @@ namespace CarRace.UnityGame
             _small ??= new GUIStyle(GUI.skin.label) { wordWrap = true, normal = { textColor = Muted } };
             _play ??= new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.BoldAndItalic, alignment = TextAnchor.MiddleCenter, normal = { textColor = Color.white } };
             _cardName ??= new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            _field ??= new GUIStyle(GUI.skin.textField)
+            {
+                alignment = TextAnchor.MiddleLeft, fontStyle = FontStyle.Bold,
+                normal = { background = null, textColor = Color.white },
+                focused = { background = null, textColor = Color.white },
+                hover = { background = null, textColor = Color.white },
+            };
+            _button ??= new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.BoldAndItalic, alignment = TextAnchor.MiddleCenter, normal = { textColor = Color.white } };
+            _field.fontSize = Hud.Font(17);
+            _field.padding = new RectOffset(Mathf.RoundToInt(Hud.Px(10f)), 4, 0, 0);
+            _button.fontSize = Hud.Font(16);
             _cardName.fontSize = Hud.Font(14);
             _title.fontSize = Hud.Font(72);
             _subtitle.fontSize = Hud.Font(20);
