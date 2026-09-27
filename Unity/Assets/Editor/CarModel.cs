@@ -38,8 +38,14 @@ namespace CarRace.UnityGame.EditorTools
     /// the caliper is mirrored, to stay behind the axle. None of it has a collider: the car's
     /// box does that.
     ///
-    /// Every design's meshes are saved under Assets/Cars and listed in the CarDesigns asset in
-    /// Resources, which the game uses to put the chosen design on the player's car.
+    /// The GT is not generated: it is modelled in Blender (Tools/blender/car.py, which writes
+    /// Assets/Art/Cars/GT.fbx), with an interior behind clear glass, shut lines, mirrors, LED
+    /// headlights, exhausts and a swan-neck wing, and its details in six materials to the
+    /// generated designs' four. Each design carries its own detail materials for that reason.
+    ///
+    /// Every design's meshes are saved under Assets/Cars (or imported from Assets/Art/Cars) and
+    /// listed in the CarDesigns asset in Resources, which the game uses to put the chosen design
+    /// on the player's car.
     /// </summary>
     public static class CarModel
     {
@@ -53,6 +59,10 @@ namespace CarRace.UnityGame.EditorTools
         const string DarkRimPath = "Assets/Materials/CarRimDark.mat";
         const string DiscPath = "Assets/Materials/CarBrakeDisc.mat";
         const string CaliperPath = "Assets/Materials/CarCaliper.mat";
+        const string ClearGlassPath = "Assets/Materials/CarGlassClear.mat";
+        const string InteriorPath = "Assets/Materials/CarInterior.mat";
+        const string ChromePath = "Assets/Materials/CarChrome.mat";
+        const string CarArt = "Assets/Art/Cars";
         const string WheelArt = "Assets/Art/Wheel";
         /// <summary>The tyre radius wheel.py builds to; other radii scale the wheel.</summary>
         const float WheelModelRadius = 0.34f;
@@ -86,7 +96,7 @@ namespace CarRace.UnityGame.EditorTools
                 case Muscle: return new Cabin { RearFrom = -1.05f, RoofFrom = -0.75f, RoofTo = 0.0f, ScreenTo = 0.62f, Roof = 1.28f, Crown = 0.07f };
                 case Supercar: return new Cabin { RearFrom = -1.55f, RoofFrom = -0.3f, RoofTo = 0.35f, ScreenTo = 1.1f, Roof = 1.08f, Crown = -0.03f };
                 case HotHatch: return new Cabin { RearFrom = -1.93f, RoofFrom = -1.72f, RoofTo = 0.2f, ScreenTo = 0.85f, Roof = 1.38f, Crown = 0.07f };
-                default: return new Cabin { RearFrom = -1.35f, RoofFrom = -0.5f, RoofTo = 0.25f, ScreenTo = 0.95f, Roof = 1.2f, Crown = 0.07f };
+                default: throw new System.ArgumentOutOfRangeException(nameof(design), "The GT is modelled in Blender (Tools/blender/car.py), not generated.");
             }
         }
 
@@ -138,17 +148,8 @@ namespace CarRace.UnityGame.EditorTools
                     s.Add(new Station(2.00f, 0.16f, 0.94f, 0.50f, 0.88f, 0.78f));
                     s.Add(new Station(2.12f, 0.20f, 0.86f, 0.44f, 0.80f, 0.70f));
                     break;
-                default:   // GT: a fastback coupe
-                    s.Add(new Station(-2.25f, 0.24f, 0.86f, 0.46f, 0.80f, 0.74f));
-                    s.Add(new Station(-2.12f, 0.16f, 0.94f, 0.50f, 0.88f, 0.84f));
-                    Arch(s, rearAxle, archTop + 0.07f, 0.90f);
-                    s.Add(new Station(-0.50f, 0.16f, 0.95f, 0.52f, 0.90f, 0.90f));
-                    s.Add(new Station(0.25f, 0.16f, 0.95f, 0.52f, 0.90f, 0.88f));
-                    s.Add(new Station(0.62f, 0.16f, 0.95f, 0.52f, 0.90f, 0.87f));
-                    Arch(s, frontAxle, archTop + 0.05f, 0.82f);
-                    s.Add(new Station(2.10f, 0.14f, 0.90f, 0.42f, 0.82f, 0.62f));
-                    s.Add(new Station(2.25f, 0.18f, 0.80f, 0.34f, 0.72f, 0.52f));
-                    break;
+                default:
+                    throw new System.ArgumentOutOfRangeException(nameof(design), "The GT is modelled in Blender (Tools/blender/car.py), not generated.");
             }
             s.Sort((a, b) => a.Z.CompareTo(b.Z));
 
@@ -279,14 +280,6 @@ namespace CarRace.UnityGame.EditorTools
                 details.Box(Trim, new Vector3(0.99f * side, y(ShoulderAt(mirrorZ) + 0.1f), mirrorZ), new Vector3(0.14f, 0.09f, 0.1f), Quaternion.identity);
             switch (design)
             {
-                case GT:   // a big wing on two struts, with end plates
-                    foreach (float side in new[] { -1f, 1f })
-                    {
-                        details.Box(Trim, new Vector3(0.45f * side, y(1.0f), tail.Z + 0.27f), new Vector3(0.05f, 0.26f, 0.16f), Quaternion.identity);
-                        details.Box(Trim, new Vector3(0.86f * side, y(1.14f), tail.Z + 0.25f), new Vector3(0.02f, 0.2f, 0.42f), Quaternion.identity);
-                    }
-                    details.Box(Trim, new Vector3(0f, y(1.15f), tail.Z + 0.25f), new Vector3(1.72f, 0.04f, 0.34f), Quaternion.Euler(-6f, 0f, 0f));
-                    break;
                 case Muscle:   // a ducktail, in the body's paint
                     body.Box(0, new Vector3(0f, y(tail.ShoulderY + 0.05f), tail.Z + 0.14f), new Vector3(1.56f, 0.05f, 0.3f), Quaternion.Euler(-14f, 0f, 0f));
                     break;
@@ -479,12 +472,35 @@ namespace CarRace.UnityGame.EditorTools
             catalog.designs.Clear();
             for (int d = 0; d < Designs.Length; d++)
             {
-                var (body, details) = Meshes(definition, d);
+                if (d == GT)
+                {
+                    var (body, details) = BlenderDesign(definition, Designs[d]);
+                    catalog.designs.Add(new CarDesigns.Design
+                    {
+                        name = Designs[d], body = body, details = details,
+                        detailMaterials = new[]
+                        {
+                            ClearGlass(), Lit(TrimPath, new Color(0.035f, 0.035f, 0.04f), 0.35f, 0f),
+                            Glow(HeadlightPath, new Color(1f, 0.97f, 0.9f) * 2.2f), Glow(TaillightPath, new Color(1.3f, 0.02f, 0.02f)),
+                            Lit(InteriorPath, new Color(0.075f, 0.075f, 0.08f), 0.25f, 0f),
+                            Lit(ChromePath, new Color(0.85f, 0.85f, 0.87f), 0.9f, 1f),
+                        },
+                    });
+                    continue;
+                }
+                var (generatedBody, generatedDetails) = Meshes(definition, d);
                 catalog.designs.Add(new CarDesigns.Design
                 {
                     name = Designs[d],
-                    body = SaveMesh(body, $"{Folder}/CarBody {Designs[d]}.asset"),
-                    details = SaveMesh(details, $"{Folder}/CarDetails {Designs[d]}.asset"),
+                    body = SaveMesh(generatedBody, $"{Folder}/CarBody {Designs[d]}.asset"),
+                    details = SaveMesh(generatedDetails, $"{Folder}/CarDetails {Designs[d]}.asset"),
+                    detailMaterials = new[]
+                    {
+                        Lit(GlassPath, new Color(0.06f, 0.08f, 0.11f), 0.92f, 0f),
+                        Lit(TrimPath, new Color(0.035f, 0.035f, 0.04f), 0.35f, 0f),
+                        Glow(HeadlightPath, new Color(1f, 0.97f, 0.9f) * 2.2f),
+                        Glow(TaillightPath, new Color(1.3f, 0.02f, 0.02f)),   // brighter and the bloom turns it orange
+                    },
                 });
             }
             EditorUtility.SetDirty(catalog);
@@ -503,11 +519,7 @@ namespace CarRace.UnityGame.EditorTools
 
             MakePaint(paint);
             Part(car, "Body", bodyMesh, layer, paint);
-            Part(car, "Body Details", detailsMesh, layer,
-                 Lit(GlassPath, new Color(0.06f, 0.08f, 0.11f), 0.92f, 0f),
-                 Lit(TrimPath, new Color(0.035f, 0.035f, 0.04f), 0.35f, 0f),
-                 Glow(HeadlightPath, new Color(1f, 0.97f, 0.9f) * 2.2f),
-                 Glow(TaillightPath, new Color(1.3f, 0.02f, 0.02f)));   // brighter and the bloom turns it orange
+            Part(car, "Body Details", detailsMesh, layer, catalog.designs[design].detailMaterials);
 
             Material tyre = Lit(SkidpadSceneBuilder.TyreMaterialPath, new Color(0.055f, 0.055f, 0.06f), 0.28f, 0f);
             Textured(tyre, "_BumpMap", "_NORMALMAP", "Tyre Normal.png", normalMap: true);
@@ -604,6 +616,65 @@ namespace CarRace.UnityGame.EditorTools
             if (caliper.center.z > 0f || caliper.center.y < 0f)
                 throw new System.InvalidOperationException($"Wheel.fbx caliper is at {caliper.center}, not behind and above the hub.");
             return _wheels;
+        }
+
+        /// <summary>A design's Body and Details meshes from its FBX, which car.py builds round the
+        /// default car: checked against the definition, since a different wheelbase or track
+        /// would leave the wheels outside their arches, and against the import, whose axes can
+        /// go wrong without an error (headlights must end up in front, taillights behind).</summary>
+        static (Mesh body, Mesh details) BlenderDesign(CarDefinition definition, string name)
+        {
+            if (Mathf.Abs(definition.wheelbase - 2.65f) > 0.005f || Mathf.Abs(definition.frontWeightBias - 0.48f) > 0.005f
+                || Mathf.Abs(definition.trackWidth - 1.6f) > 0.005f || Mathf.Abs(definition.cgHeight - 0.45f) > 0.005f)
+                throw new System.InvalidOperationException(
+                    $"The {name} body is built for a 2.65 m wheelbase, 0.48 front bias, 1.6 m track and 0.45 m CG: change KEYS and the constants in Tools/blender/car.py to match the Car Definition and rerun it.");
+            string path = $"{CarArt}/{name}.fbx";
+            var importer = AssetImporter.GetAtPath(path) as ModelImporter;
+            if (importer == null)
+                throw new System.InvalidOperationException($"{path} is missing: run Tools/blender/car.py (its header has the command).");
+            if (importer.materialImportMode != ModelImporterMaterialImportMode.None || importer.isReadable)
+            {
+                importer.materialImportMode = ModelImporterMaterialImportMode.None;
+                importer.isReadable = false;
+                importer.SaveAndReimport();
+            }
+            Mesh body = null, details = null;
+            foreach (Object asset in AssetDatabase.LoadAllAssetsAtPath(path))
+                if (asset is Mesh mesh)
+                {
+                    if (mesh.name == "Body") body = mesh;
+                    if (mesh.name == "Details") details = mesh;
+                }
+            if (body == null || details == null)
+                throw new System.InvalidOperationException($"{path} needs meshes called Body and Details.");
+            if (body.subMeshCount != 1 || details.subMeshCount != 6)
+                throw new System.InvalidOperationException($"{path}: Body has {body.subMeshCount} materials (want 1), Details {details.subMeshCount} (want 6).");
+            float headlights = details.GetSubMesh(2).bounds.center.z, taillights = details.GetSubMesh(3).bounds.center.z;
+            if (headlights < 1.5f || taillights > -1.8f)
+                throw new System.InvalidOperationException($"{path}: headlights at z {headlights:0.00} and taillights at {taillights:0.00}; the import turned the car round.");
+            if (Mathf.Abs(body.bounds.center.x) > 0.05f || body.bounds.size.z < 4.2f)
+                throw new System.InvalidOperationException($"{path}: body bounds {body.bounds} are not a car centred on its axis.");
+            return (body, details);
+        }
+
+        /// <summary>Glass you can see into: dark tinted and transparent, premultiplied so its
+        /// reflections stay bright over the cabin behind it.</summary>
+        static Material ClearGlass()
+        {
+            Material glass = Lit(ClearGlassPath, new Color(0.04f, 0.05f, 0.06f, 0.55f), 0.95f, 0f);
+            glass.SetFloat("_Surface", 1f);
+            glass.SetFloat("_Blend", 1f);
+            glass.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.One);
+            glass.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            glass.SetFloat("_SrcBlendAlpha", (float)UnityEngine.Rendering.BlendMode.One);
+            glass.SetFloat("_DstBlendAlpha", (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            glass.SetFloat("_ZWrite", 0f);
+            glass.SetOverrideTag("RenderType", "Transparent");
+            glass.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            glass.EnableKeyword("_ALPHAPREMULTIPLY_ON");
+            glass.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
+            EditorUtility.SetDirty(glass);
+            return glass;
         }
 
         /// <summary>Puts one of wheel.py's baked textures on a material, marking a normal map as

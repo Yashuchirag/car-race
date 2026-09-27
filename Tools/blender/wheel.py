@@ -632,4 +632,6 @@ def main():
         bpy.ops.wm.save_as_mainfile(filepath=args.blend)
 
 
-main()
+# Run as a script; car.py imports the helpers and parts above without running it.
+if __name__ == "__main__":
+    main()

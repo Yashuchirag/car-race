@@ -17,6 +17,10 @@ namespace CarRace.UnityGame
             public string name;
             public Mesh body;
             public Mesh details;
+            /// <summary>The details' materials, one per submesh. A design modelled in Blender
+            /// has more parts than a generated one, and clear glass with a cabin behind it
+            /// where the generated ones have dark glass over nothing.</summary>
+            public Material[] detailMaterials;
         }
 
         public List<Design> designs = new List<Design>();
@@ -31,13 +35,18 @@ namespace CarRace.UnityGame
         public static string NameOf(int index) =>
             Load() != null && index >= 0 && index < Count ? Load().designs[index].name : "";
 
-        /// <summary>Puts design <paramref name="index"/> on a car: its "Body" and "Body Details".</summary>
+        /// <summary>Puts design <paramref name="index"/> on a car: its "Body" and "Body Details",
+        /// and the details' materials.</summary>
         public static void Apply(Transform car, int index)
         {
             if (car == null || index < 0 || index >= Count) return;
             Design design = Load().designs[index];
             Set(car.Find("Body"), design.body);
-            Set(car.Find("Body Details"), design.details);
+            Transform details = car.Find("Body Details");
+            Set(details, design.details);
+            var renderer = details != null ? details.GetComponent<MeshRenderer>() : null;
+            if (renderer != null && design.detailMaterials != null && design.detailMaterials.Length > 0)
+                renderer.sharedMaterials = design.detailMaterials;
         }
 
         static void Set(Transform part, Mesh mesh)
