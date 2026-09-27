@@ -61,12 +61,14 @@ namespace CarRace.UnityGame
         readonly List<(float t, int steps, int gc, long memory)> _rows = new List<(float, int, int, long)>(20000);
         int _fixedSteps, _lastCollections;
 
+        // Times in milliseconds; the Count counters come out divided by a million.
         static readonly string[] Markers =
         {
-            "FixedBehaviourUpdate", "Physics.Simulate", "Physics.Processing", "Physics.FetchResults",
-            "BehaviourUpdate", "LateBehaviourUpdate", "GUIUtility.ProcessEvent", "GUI.Repaint",
-            "Gfx.WaitForPresentOnGfxThread", "Gfx.PresentFrame", "RenderPipelineManager.DoRenderLoop_Internal()",
-            "Inl_UniversalRenderPipeline.RenderSingleCameraInternal", "GC.Collect", "Texture2D.Apply",
+            "CPU Main Thread Frame Time", "CPU Render Thread Frame Time", "GPU Frame Time",
+            "FixedBehaviourUpdate", "Physics.Simulate", "BehaviourUpdate", "LateBehaviourUpdate", "GUI.Repaint",
+            "Gfx.WaitForPresentOnGfxThread", "Gfx.WaitForGfxCommandsFromMainThread", "Camera.Render", "CullScriptable",
+            "Inl_MainLightShadow", "Inl_DrawOpaqueObjects", "Inl_SSAO", "GC.Collect",
+            "Draw Calls Count", "Batches Count",
         };
         ProfilerRecorder[] _recorders = new ProfilerRecorder[0];
         readonly List<float[]> _markerMs = new List<float[]>(20000);
@@ -106,8 +108,8 @@ namespace CarRace.UnityGame
             // Unless a -driveScript is driving it instead, to test the inputs.
             director.AiDrivesPlayer = !DriverInput.Scripted;
 
-            // -hideObjects a,b switches those objects off, for measuring what a part of the
-            // scenery costs by timing the same build with and without it.
+            // -hideObjects a,b switches those objects off, or scripts of that type (LapTimer,
+            // Dashboard), for measuring what a part costs by timing the same build without it.
             string[] args = Environment.GetCommandLineArgs();
             int hide = Array.IndexOf(args, "-hideObjects");
             if (hide >= 0 && hide + 1 < args.Length)
@@ -119,6 +121,8 @@ namespace CarRace.UnityGame
                         found.SetActive(false);
                         found = GameObject.Find(name);
                     }
+                    foreach (var script in FindObjectsByType<MonoBehaviour>(FindObjectsSortMode.None))
+                        if (script.GetType().Name == name) script.enabled = false;
                 }
 
             // A disabled component's Start never runs, so the recorder opens no file.

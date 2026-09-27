@@ -17,6 +17,9 @@ namespace CarRace.UnityGame
             public string name;
             public Mesh body;
             public Mesh details;
+            /// <summary>The cabin and its lining, a renderer of its own ("Body Interior") so it
+            /// casts no shadow.</summary>
+            public Mesh interior;
             /// <summary>The details' materials, one per submesh. A design modelled in Blender
             /// has more parts than a generated one, and clear glass with a cabin behind it
             /// where the generated ones have dark glass over nothing.</summary>
@@ -29,6 +32,7 @@ namespace CarRace.UnityGame
         public List<Design> designs = new List<Design>();
 
         public const string ResourceName = "CarDesigns";
+        public const string InteriorName = "Body Interior";
         static CarDesigns _loaded;
 
         public static CarDesigns Load() => _loaded != null ? _loaded : _loaded = Resources.Load<CarDesigns>(ResourceName);
@@ -47,6 +51,7 @@ namespace CarRace.UnityGame
             Set(car.Find("Body"), design.body);
             Transform details = car.Find("Body Details");
             Set(details, design.details);
+            Set(car.Find(InteriorName), design.interior);
             var renderer = details != null ? details.GetComponent<MeshRenderer>() : null;
             if (renderer != null && design.detailMaterials != null && design.detailMaterials.Length > 0)
                 renderer.sharedMaterials = design.detailMaterials;

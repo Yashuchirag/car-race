@@ -52,6 +52,9 @@ namespace CarRace.UnityGame
 
         void OnGUI()
         {
+            // Display only: draw on the repaint and skip the layout and input events Unity
+            // also sends, which cost as much and draw nothing.
+            if (Event.current.type != EventType.Repaint) return;
             if (Hud.Hidden || _car == null || _car.Sim == null) return;
             int size = Mathf.RoundToInt(Hud.Px(DiameterPx));
             if (size != _facePixels) BuildFaces(size);

@@ -127,6 +127,8 @@ namespace CarRace.UnityGame
 
         void Start()
         {
+            // No GUILayout here: skip the layout pass Unity would otherwise run before each event.
+            useGUILayout = false;
             if (track == null || player == null || track.line.Length < 3 || aiCars.Length == 0 && !Lan)
             {
                 enabled = false;

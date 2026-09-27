@@ -65,6 +65,8 @@ namespace CarRace.UnityGame
 
         void Awake()
         {
+            // No GUILayout here: skip the layout pass Unity would otherwise run before each event.
+            useGUILayout = false;
             // Only circuits that are in this build can be offered.
             if (catalog == null) return;
             foreach (var entry in catalog.entries)

@@ -19,8 +19,10 @@ namespace CarRace.UnityGame.EditorTools
     /// metallic base, as car paint is.
     ///
     /// Only the painted panels are on "Body", so the colour picker's property block and the AI
-    /// cars' materials recolour the paint and nothing else. Glass, black trim, the lights, the
-    /// interior and chrome are on "Body Details", in that order of materials.
+    /// cars' materials recolour the paint and nothing else. Glass, black trim, the lights and
+    /// chrome are on "Body Details", in that order of materials, and the cabin on "Body
+    /// Interior", which casts no shadow. Each wheel is a LOD group: near, the full wheel; far, a
+    /// tyre and rim at an eighth of the triangles.
     /// The wheels come from Blender (Tools/blender/wheel.py, which writes Assets/Art/Wheel): a
     /// tyre whose tread, shoulder blocks and sidewall lettering are a baked normal map, a
     /// ten-spoke alloy rim with ambient occlusion baked in, a vented disc and a caliper. Each
@@ -81,16 +83,15 @@ namespace CarRace.UnityGame.EditorTools
                 ClearGlass(), Lit(TrimPath, new Color(0.035f, 0.035f, 0.04f), 0.35f, 0f),
                 Glow(HeadlightPath, new Color(1f, 0.97f, 0.9f) * 2.2f),
                 Glow(TaillightPath, new Color(1.3f, 0.02f, 0.02f)),   // brighter and the bloom turns it orange
-                Lit(InteriorPath, new Color(0.075f, 0.075f, 0.08f), 0.25f, 0f),
                 Lit(ChromePath, new Color(0.85f, 0.85f, 0.87f), 0.9f, 1f),
             };
             for (int d = 0; d < Designs.Length; d++)
             {
-                var (body, details) = BlenderDesign(definition, Designs[d]);
+                var (body, details, interior) = BlenderDesign(definition, Designs[d]);
                 Vector3 eye = Eyes[d];
                 catalog.designs.Add(new CarDesigns.Design
                 {
-                    name = Designs[d], body = body, details = details, detailMaterials = detailMaterials,
+                    name = Designs[d], body = body, details = details, interior = interior, detailMaterials = detailMaterials,
                     eye = new Vector3(eye.x, eye.y - definition.cgHeight, eye.z),
                 });
             }
@@ -111,6 +112,11 @@ namespace CarRace.UnityGame.EditorTools
             MakePaint(paint);
             Part(car, "Body", bodyMesh, layer, paint);
             Part(car, "Body Details", detailsMesh, layer, catalog.designs[design].detailMaterials);
+            // The cabin, apart so that it casts no shadow: its shadows fall inside the body, and
+            // every car drew them into all four shadow cascades for nothing.
+            Transform cabin = Part(car, CarDesigns.InteriorName, catalog.designs[design].interior, layer,
+                                   Lit(InteriorPath, new Color(0.075f, 0.075f, 0.08f), 0.25f, 0f));
+            cabin.GetComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             var cockpit = new GameObject(CarCamera.CockpitName) { layer = layer };
             cockpit.transform.SetParent(car, false);
             cockpit.transform.localPosition = catalog.designs[design].eye;
@@ -121,6 +127,9 @@ namespace CarRace.UnityGame.EditorTools
             Material rim = darkRims ? Lit(DarkRimPath, new Color(0.16f, 0.16f, 0.17f), 0.6f, 0.9f)
                                     : Lit(RimPath, new Color(0.8f, 0.81f, 0.83f), 0.78f, 1f);
             Textured(rim, "_OcclusionMap", "_OCCLUSIONMAP", "Rim AO.png", normalMap: false);
+            // The far rim has no texture coordinates for the ambient occlusion map, so its own copy.
+            Material rimFar = darkRims ? Lit(DarkRimPath.Replace(".mat", " Far.mat"), new Color(0.16f, 0.16f, 0.17f), 0.6f, 0.9f)
+                                       : Lit(RimPath.Replace(".mat", " Far.mat"), new Color(0.8f, 0.81f, 0.83f), 0.78f, 1f);
             Material disc = Lit(DiscPath, new Color(0.42f, 0.42f, 0.43f), 0.5f, 0.9f);
             Material caliper = Lit(CaliperPath, new Color(0.62f, 0.03f, 0.02f), 0.72f, 0f);
             var wheels = EnsureWheels();
@@ -154,13 +163,29 @@ namespace CarRace.UnityGame.EditorTools
                 wheel.transform.SetParent(pivot.transform, false);
                 wheel.transform.localScale = Vector3.one * scale;
                 Quaternion side = outward > 0f ? Quaternion.identity : Quaternion.Euler(0f, 180f, 0f);
-                Part(wheel.transform, "Tyre", wheels.tyre, layer, tyre).localRotation = side;
-                Part(wheel.transform, "Rim", wheels.rim, layer, rim).localRotation = side;
-                Part(wheel.transform, "Brake Disc", wheels.disc, layer, disc).localRotation = side;
+                Transform tyreNear = Part(wheel.transform, "Tyre", wheels.tyre, layer, tyre);
+                Transform rimNear = Part(wheel.transform, "Rim", wheels.rim, layer, rim);
+                Transform discPart = Part(wheel.transform, "Brake Disc", wheels.disc, layer, disc);
+                Transform tyreFar = Part(wheel.transform, "Tyre LOD1", wheels.tyreFar, layer, tyre);
+                Transform rimFar2 = Part(wheel.transform, "Rim LOD1", wheels.rimFar, layer, rimFar);
+                foreach (Transform t in new[] { tyreNear, rimNear, discPart, tyreFar, rimFar2 }) t.localRotation = side;
 
                 // Mirrored, so it stays behind the axle on both sides.
                 Transform clamp = Part(pivot.transform, "Caliper", wheels.caliper, layer, caliper);
                 clamp.localScale = new Vector3(outward, 1f, 1f) * scale;
+
+                // Disc and caliper sit inside the wheel: their shadows fall where nobody sees.
+                discPart.GetComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                clamp.GetComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                // Near, the full wheel; past a few per cent of the screen's height, the far tyre
+                // and rim at an eighth of the triangles; smaller than a few pixels, nothing.
+                var lod = pivot.AddComponent<LODGroup>();
+                Renderer R(Transform t) => t.GetComponent<MeshRenderer>();
+                lod.SetLODs(new[]
+                {
+                    new LOD(0.06f, new[] { R(tyreNear), R(rimNear), R(discPart), R(clamp) }),
+                    new LOD(0.006f, new[] { R(tyreFar), R(rimFar2) }),
+                });
                 pivots[i] = pivot.transform;
             }
             return pivots;
@@ -175,13 +200,13 @@ namespace CarRace.UnityGame.EditorTools
             return part.transform;
         }
 
-        static (Mesh tyre, Mesh rim, Mesh disc, Mesh caliper) _wheels;
+        static (Mesh tyre, Mesh rim, Mesh disc, Mesh caliper, Mesh tyreFar, Mesh rimFar) _wheels;
 
         /// <summary>The wheel's meshes from Wheel.fbx, for the right side (outward +X). Checks
         /// the import put them the right way round: Blender to Unity changes both the up axis
         /// and the handedness, and a wrong setting in either shows as a rim facing inward or a
         /// caliper ahead of the axle rather than as an error.</summary>
-        static (Mesh tyre, Mesh rim, Mesh disc, Mesh caliper) EnsureWheels()
+        static (Mesh tyre, Mesh rim, Mesh disc, Mesh caliper, Mesh tyreFar, Mesh rimFar) EnsureWheels()
         {
             if (_wheels.tyre != null) return _wheels;
             string path = WheelArt + "/Wheel.fbx";
@@ -200,7 +225,7 @@ namespace CarRace.UnityGame.EditorTools
                     if (asset is Mesh mesh && mesh.name == name) return mesh;
                 throw new System.InvalidOperationException($"{path} has no mesh called {name}.");
             }
-            _wheels = (Find("Tyre"), Find("Rim"), Find("Disc"), Find("Caliper"));
+            _wheels = (Find("Tyre"), Find("Rim"), Find("Disc"), Find("Caliper"), Find("Tyre LOD1"), Find("Rim LOD1"));
 
             Bounds tyre = _wheels.tyre.bounds, rim = _wheels.rim.bounds, caliper = _wheels.caliper.bounds;
             if (Mathf.Abs(tyre.extents.y - WheelModelRadius) > 0.01f || Mathf.Abs(tyre.extents.z - WheelModelRadius) > 0.01f)
@@ -216,7 +241,7 @@ namespace CarRace.UnityGame.EditorTools
         /// default car: checked against the definition, since a different wheelbase or track
         /// would leave the wheels outside their arches, and against the import, whose axes can
         /// go wrong without an error (headlights must end up in front, taillights behind).</summary>
-        static (Mesh body, Mesh details) BlenderDesign(CarDefinition definition, string name)
+        static (Mesh body, Mesh details, Mesh interior) BlenderDesign(CarDefinition definition, string name)
         {
             if (Mathf.Abs(definition.wheelbase - 2.65f) > 0.005f || Mathf.Abs(definition.frontWeightBias - 0.48f) > 0.005f
                 || Mathf.Abs(definition.trackWidth - 1.6f) > 0.005f || Mathf.Abs(definition.cgHeight - 0.45f) > 0.005f)
@@ -232,23 +257,24 @@ namespace CarRace.UnityGame.EditorTools
                 importer.isReadable = false;
                 importer.SaveAndReimport();
             }
-            Mesh body = null, details = null;
+            Mesh body = null, details = null, interior = null;
             foreach (Object asset in AssetDatabase.LoadAllAssetsAtPath(path))
                 if (asset is Mesh mesh)
                 {
                     if (mesh.name == "Body") body = mesh;
                     if (mesh.name == "Details") details = mesh;
+                    if (mesh.name == "Interior") interior = mesh;
                 }
-            if (body == null || details == null)
-                throw new System.InvalidOperationException($"{path} needs meshes called Body and Details.");
-            if (body.subMeshCount != 1 || details.subMeshCount != 6)
-                throw new System.InvalidOperationException($"{path}: Body has {body.subMeshCount} materials (want 1), Details {details.subMeshCount} (want 6).");
+            if (body == null || details == null || interior == null)
+                throw new System.InvalidOperationException($"{path} needs meshes called Body, Details and Interior.");
+            if (body.subMeshCount != 1 || details.subMeshCount != 5 || interior.subMeshCount != 1)
+                throw new System.InvalidOperationException($"{path}: Body has {body.subMeshCount} materials (want 1), Details {details.subMeshCount} (want 5), Interior {interior.subMeshCount} (want 1).");
             float headlights = details.GetSubMesh(2).bounds.center.z, taillights = details.GetSubMesh(3).bounds.center.z;
             if (headlights < 1.5f || taillights > -1.8f)
                 throw new System.InvalidOperationException($"{path}: headlights at z {headlights:0.00} and taillights at {taillights:0.00}; the import turned the car round.");
             if (Mathf.Abs(body.bounds.center.x) > 0.05f || body.bounds.size.z < 4.2f)
                 throw new System.InvalidOperationException($"{path}: body bounds {body.bounds} are not a car centred on its axis.");
-            return (body, details);
+            return (body, details, interior);
         }
 
         /// <summary>Glass you can see into: dark tinted and transparent, premultiplied so its

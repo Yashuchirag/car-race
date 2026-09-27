@@ -70,6 +70,9 @@ namespace CarRace.UnityGame
 
         readonly GameAudio.HoverTracker _hover = new GameAudio.HoverTracker();
 
+        // No GUILayout here: skip the layout pass Unity would otherwise run before each event.
+        void Awake() => useGUILayout = false;
+
         void OnGUI()
         {
             if (!_open) return;

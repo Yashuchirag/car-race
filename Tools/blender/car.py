@@ -6,9 +6,10 @@ Run headless from WSL (Blender takes Windows paths):
         -P "$(wslpath -w Tools/blender/car.py)" -- \
         --out 'D:\\Dev\\CarRace\\Assets\\Art\\Cars' --preview "$(wslpath -w Tools/out/car)"
 
-Writes <design>.fbx to --out for each design (or only --design), with two meshes: "Body",
-the painted panels, one material; and "Details", in six materials in this order: glass,
-trim, headlight, taillight, interior, metal. --preview renders each from three sides, to
+Writes <design>.fbx to --out for each design (or only --design), with three meshes: "Body",
+the painted panels, one material; "Details", in five materials in this order: glass, trim,
+headlight, taillight, metal; and "Interior", the cabin and its lining, which Unity draws
+without shadows, as they fall inside the body where nobody sees them. --preview renders each from three sides, to
 <prefix>-<design>-front.png, -rear.png and -side.png.
 
 How the shape is made. A cage of cross-sections ("stations"), each the same thirteen points
@@ -44,7 +45,7 @@ ARCH_R = 0.378                                  # the arch's edge, round the axl
 
 # Parts, as material slots. Body gets PAINT; Details the rest, in this order.
 PAINT, GLASS, TRIM, HEADLIGHT, TAILLIGHT, INTERIOR, METAL = range(7)
-DETAIL_PARTS = (GLASS, TRIM, HEADLIGHT, TAILLIGHT, INTERIOR, METAL)
+DETAIL_PARTS = (GLASS, TRIM, HEADLIGHT, TAILLIGHT, METAL)
 PART_NAMES = ("Paint", "Glass", "Trim", "Headlight", "Taillight", "Interior", "Metal")
 
 
@@ -1132,7 +1133,8 @@ def build(name, args):
 
     body = parts.build("Body", {PAINT}, [PAINT])
     details = parts.build("Details", set(DETAIL_PARTS), list(DETAIL_PARTS))
-    for obj in (body, details):
+    cabin = parts.build("Interior", {INTERIOR}, [INTERIOR])
+    for obj in (body, details, cabin):
         counts = {}
         for p in obj.data.polygons:
             part = obj.data.materials[p.material_index].name
@@ -1142,7 +1144,7 @@ def build(name, args):
     if args.out:
         os.makedirs(args.out, exist_ok=True)
         bpy.ops.object.select_all(action="DESELECT")
-        for obj in (body, details):
+        for obj in (body, details, cabin):
             obj.select_set(True)
         path = os.path.join(args.out, f"{name}.fbx")
         bpy.ops.export_scene.fbx(

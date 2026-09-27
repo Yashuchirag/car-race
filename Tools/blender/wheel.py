@@ -6,7 +6,7 @@ Run headless from WSL (Blender is a Windows program, so paths are Windows paths)
         -P "$(wslpath -w Tools/blender/wheel.py)" -- \
         --out 'D:\\Dev\\CarRace\\Assets\\Art\\Wheel' --preview "$(wslpath -w Tools/out/wheel.png)"
 
-Writes Wheel.fbx (meshes Tyre, Rim, Disc, Caliper), Tyre Normal.png and Rim AO.png to --out, and optionally a render to --preview and the scene to --blend.
+Writes Wheel.fbx (meshes Tyre, Rim, Disc, Caliper, and Tyre LOD1 and Rim LOD1 for the distance), Tyre Normal.png and Rim AO.png to --out, and optionally a render to --preview and the scene to --blend.
 
 Everything is laid out in Unity's frame for a right-hand wheel, hub at the origin:
 x along the axle and outward, y up, z forward. U() converts to Blender's frame once, at
@@ -306,9 +306,9 @@ def tyre_letters():
     return make_object("Tyre Letters", verts, faces, triangulate=False)
 
 
-def game_tyre():
-    verts, faces, uvs = lathe(tyre_profile(0.016), 96)
-    return make_object("Tyre", verts, faces, uvs, smooth_angle=60)
+def game_tyre(name="Tyre", spacing=0.016, segments=96):
+    verts, faces, uvs = lathe(tyre_profile(spacing), segments)
+    return make_object(name, verts, faces, uvs, smooth_angle=60)
 
 
 # ---- rim ---------------------------------------------------------------------
@@ -316,29 +316,28 @@ def game_tyre():
 SPOKE_PAIRS = 5
 
 
-def rim_barrel():
+def rim_barrel(segments=96):
     profile = [(0.100, 0.247), (0.118, 0.249), (0.125, 0.245), (0.129, 0.237), (0.128, 0.229),
                (0.122, 0.222), (0.110, 0.217), (0.090, 0.2155), (0.0, 0.215), (-0.100, 0.215),
                (-0.116, 0.218), (-0.125, 0.226), (-0.128, 0.236)]
-    verts, faces, _ = lathe(profile, 96, seam=False)
+    verts, faces, _ = lathe(profile, segments, seam=False)
     return verts, faces
 
 
-def rim_hub():
+def rim_hub(segments=64):
     h = HUB_X
     profile = [(h - 0.035, 0.084), (h - 0.004, 0.088), (h + 0.001, 0.086), (h + 0.004, 0.078),
                (h + 0.006, 0.040), (h + 0.009, 0.033), (h + 0.011, 0.031), (h + 0.018, 0.028),
                (h + 0.024, 0.019), (h + 0.027, 0.008), (h + 0.028, 0.0005)]
-    verts, faces, _ = lathe(profile, 64, seam=False)
+    verts, faces, _ = lathe(profile, segments, seam=False)
     return verts, faces
 
 
-def rim_spokes():
+def rim_spokes(steps=16, corner_steps=3):
     """Five pairs of spokes, each pair a V from the hub to the lip, dished: the hub sits
     deep and the spokes rise to the lip, as on a concave wheel."""
     r0, r1 = 0.072, 0.226
     x_hub, x_lip = HUB_X + 0.004, 0.118
-    steps = 16
     parts = []
     for pair in range(SPOKE_PAIRS):
         centre = 2 * math.pi * pair / SPOKE_PAIRS
@@ -359,7 +358,7 @@ def rim_spokes():
                 tangent = Vector((0, -math.sin(a), math.cos(a)))
                 centre_pt = Vector((x - depth * 0.5, 0, 0)) + radial * r
                 ring = []
-                for ta, tb in rounded_rect(half_w, depth * 0.5, 0.004, 3):
+                for ta, tb in rounded_rect(half_w, depth * 0.5, 0.004, corner_steps):
                     p = centre_pt + tangent * ta + Vector((tb, 0, 0))
                     ring.append((p.x, p.y, p.z))
                 return ring
@@ -389,6 +388,14 @@ def game_rim():
     obj = make_object("Rim", verts, faces, smooth_angle=50)
     smart_uv(obj)
     return obj
+
+
+def rim_far():
+    """The rim for a wheel in the distance, about a tenth of the triangles: a coarser barrel
+    and hub, straight spokes of eight-sided section in few steps, no wheel nuts. No texture
+    coordinates: its material has no ambient occlusion map."""
+    verts, faces = merge([rim_barrel(32), rim_hub(16), rim_spokes(3, 1)])
+    return make_object("Rim LOD1", verts, faces, smooth_angle=50)
 
 
 def smart_uv(obj):
@@ -613,7 +620,14 @@ def main():
     caliper.data.materials.append(principled("Caliper", (0.7, 0.03, 0.02), 0.0, 0.3))
 
     bpy.ops.object.select_all(action="DESELECT")
-    for obj in (tyre, rim, disc, caliper):
+    # Far versions for cars in the distance (CarModel puts them in a LOD group): the tyre on
+    # the same texture coordinates, so its normal map still fits, and a plain rim.
+    tyre_far = game_tyre("Tyre LOD1", spacing=0.05, segments=32)
+    tyre_far.data.materials.append(tyre.data.materials[0])
+    rim_far_obj = rim_far()
+    rim_far_obj.data.materials.append(rim.data.materials[0])
+    print("WHEEL far triangles", {o.name: sum(len(p.vertices) - 2 for p in o.data.polygons) for o in (tyre_far, rim_far_obj)})
+    for obj in (tyre, rim, disc, caliper, tyre_far, rim_far_obj):
         obj.select_set(True)
     bpy.ops.export_scene.fbx(
         filepath=os.path.join(args.out, "Wheel.fbx"), use_selection=True,
@@ -622,6 +636,7 @@ def main():
         mesh_smooth_type="FACE", use_tspace=False, use_mesh_modifiers=True,
         path_mode="STRIP", embed_textures=False, add_leaf_bones=False, bake_anim=False)
     print("WHEEL exported", os.path.join(args.out, "Wheel.fbx"))
+    tyre_far.hide_render = rim_far_obj.hide_render = True        # not in the preview, over the near ones
 
     if args.preview:
         bpy.data.objects.remove(dense)

@@ -245,6 +245,9 @@ namespace CarRace.UnityGame
         /// <summary>A client whose host has gone can finish driving, but nobody keeps the race.</summary>
         void OnGUI()
         {
+            // Display only: draw on the repaint and skip the layout and input events Unity
+            // also sends, which cost as much and draw nothing.
+            if (Event.current.type != EventType.Repaint) return;
             if (!_hostGone || Hud.Hidden) return;
             _banner ??= new GUIStyle(GUI.skin.box) { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, normal = { textColor = Color.white } };
             _banner.fontSize = Hud.Font(20);

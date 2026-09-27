@@ -291,7 +291,55 @@ namespace CarRace.UnityGame.EditorTools
             var go = new GameObject(mesh.name);
             go.transform.SetParent(parent.transform, false);
             go.AddComponent<MeshFilter>().sharedMesh = mesh;
-            go.AddComponent<MeshRenderer>().sharedMaterials = materials.ToArray();
+            var renderer = go.AddComponent<MeshRenderer>();
+            renderer.sharedMaterials = materials.ToArray();
+            // Thin rails and posts: their shadows barely show on the grass, and a lap of them
+            // was drawn into every shadow cascade.
+            renderer.shadowCastingMode = ShadowCastingMode.Off;
+            UnityEditor.GameObjectUtility.SetStaticEditorFlags(go, UnityEditor.StaticEditorFlags.BatchingStatic);
+        }
+
+        /// <summary>
+        /// Many placed copies of prefabs as one object: a mesh with a submesh per material,
+        /// whichever prefab each part came from. Hundreds of tyre modules and fence posts as
+        /// objects of their own were 1,600 draw calls a frame at Royal Park, more than all the
+        /// rest of the scene, and the main thread's time goes on draw calls.
+        /// </summary>
+        static void Merged(GameObject parent, string name, List<(GameObject prefab, Matrix4x4 at)> items, ShadowCastingMode shadows)
+        {
+            if (items.Count == 0) return;
+            var byMaterial = new Dictionary<Material, List<CombineInstance>>();
+            var order = new List<Material>();
+            foreach (var (prefab, at) in items)
+            {
+                Mesh mesh = prefab.GetComponent<MeshFilter>().sharedMesh;
+                Material[] materials = prefab.GetComponent<MeshRenderer>().sharedMaterials;
+                for (int s = 0; s < mesh.subMeshCount; s++)
+                {
+                    if (!byMaterial.TryGetValue(materials[s], out var list))
+                    {
+                        byMaterial[materials[s]] = list = new List<CombineInstance>();
+                        order.Add(materials[s]);
+                    }
+                    list.Add(new CombineInstance { mesh = mesh, subMeshIndex = s, transform = at });
+                }
+            }
+            var parts = new CombineInstance[order.Count];
+            for (int m = 0; m < order.Count; m++)
+            {
+                var part = new Mesh { indexFormat = IndexFormat.UInt32 };
+                part.CombineMeshes(byMaterial[order[m]].ToArray(), true, true);
+                parts[m] = new CombineInstance { mesh = part, transform = Matrix4x4.identity };
+            }
+            var merged = new Mesh { name = name, indexFormat = IndexFormat.UInt32 };
+            merged.CombineMeshes(parts, false, false);
+            merged.RecalculateBounds();
+            var go = new GameObject(name);
+            go.transform.SetParent(parent.transform, false);
+            go.AddComponent<MeshFilter>().sharedMesh = merged;
+            var renderer = go.AddComponent<MeshRenderer>();
+            renderer.sharedMaterials = order.ToArray();
+            renderer.shadowCastingMode = shadows;
             UnityEditor.GameObjectUtility.SetStaticEditorFlags(go, UnityEditor.StaticEditorFlags.BatchingStatic);
         }
 
@@ -301,6 +349,7 @@ namespace CarRace.UnityGame.EditorTools
         static int TyreWall(GameObject parent, Circuit circuit, int side, int start, int end, bool[] tyre, GameObject[] modules)
         {
             int placed = 0;
+            var items = new List<(GameObject, Matrix4x4)>();
             float next = 0f;        // distance along this run of tyres to the next module's middle
             for (int k = start; k < end; k++)
             {
@@ -312,14 +361,12 @@ namespace CarRace.UnityGame.EditorTools
                 {
                     float t = next / length;
                     Vector3 back = Vector3.Lerp(circuit.Right[k], circuit.Right[k1], t).normalized * side;
-                    var go = (GameObject)UnityEditor.PrefabUtility.InstantiatePrefab(modules[placed % 2], parent.transform);
-                    go.transform.SetPositionAndRotation(Vector3.Lerp(a, b, t), Quaternion.LookRotation(back));
-                    go.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;   // hundreds, and low
-                    UnityEditor.GameObjectUtility.SetStaticEditorFlags(go, UnityEditor.StaticEditorFlags.BatchingStatic);
+                    items.Add((modules[placed % 2], Matrix4x4.TRS(Vector3.Lerp(a, b, t), Quaternion.LookRotation(back), Vector3.one)));
                     placed++;
                 }
                 next -= length;
             }
+            Merged(parent, $"Tyres {side} {start}", items, ShadowCastingMode.Off);   // hundreds, and low
             return placed;
         }
 
@@ -331,6 +378,7 @@ namespace CarRace.UnityGame.EditorTools
             var uvs = new List<Vector2>();
             var triangles = new List<int>();
             int posts = 0;
+            var items = new List<(GameObject, Matrix4x4)>();
             float carried = FenceEveryM, along = 0f;
             for (int k = start; k < end; k++)
             {
@@ -344,10 +392,7 @@ namespace CarRace.UnityGame.EditorTools
                     if (carried >= FenceEveryM)
                     {
                         carried = 0f;
-                        var go = (GameObject)UnityEditor.PrefabUtility.InstantiatePrefab(post, parent.transform);
-                        go.transform.SetPositionAndRotation(foot, Quaternion.LookRotation(back));
-                        go.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
-                        UnityEditor.GameObjectUtility.SetStaticEditorFlags(go, UnityEditor.StaticEditorFlags.BatchingStatic);
+                        items.Add((post, Matrix4x4.TRS(foot, Quaternion.LookRotation(back), Vector3.one)));
                         posts++;
                     }
                 }
@@ -369,6 +414,7 @@ namespace CarRace.UnityGame.EditorTools
                 }
                 along += step;
             }
+            Merged(parent, $"Fence Posts {side} {start}", items, ShadowCastingMode.Off);
             if (triangles.Count > 0)
             {
                 var mesh = new Mesh { name = $"Fence {side} {start}", indexFormat = IndexFormat.UInt32 };
