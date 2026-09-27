@@ -16,6 +16,10 @@ namespace CarRace.UnityGame
     {
         public enum View { Chase, Hood, Cockpit }
 
+        /// <summary>The car's child marking the driver's eye, placed by the car's design, which
+        /// the cockpit view follows.</summary>
+        public const string CockpitName = "Cockpit";
+
         [SerializeField] Transform target;
         [SerializeField] Rigidbody targetBody;
         [SerializeField] View view = View.Chase;
@@ -46,6 +50,7 @@ namespace CarRace.UnityGame
         [SerializeField] float shakeHz = 11f;
 
         Camera _camera;
+        Transform _cockpit;   // the car's driver's eye, when its design has a cabin
         Vector3 _rigPosition;
         float _yaw;   // smoothed heading, radians about the vertical axis
 
@@ -59,6 +64,12 @@ namespace CarRace.UnityGame
                 return;
             }
             if (targetBody == null) targetBody = target.GetComponent<Rigidbody>();
+            _cockpit = target.Find(CockpitName);
+
+            // -cameraView Cockpit (or Hood, Chase) starts in that view, for screenshots.
+            string[] args = Environment.GetCommandLineArgs();
+            int i = Array.IndexOf(args, "-cameraView");
+            if (i >= 0 && i + 1 < args.Length && Enum.TryParse(args[i + 1], true, out View chosen)) view = chosen;
 
             _rigPosition = target.TransformPoint(chaseOffset);
             _yaw = YawOf(target.forward);
@@ -147,10 +158,13 @@ namespace CarRace.UnityGame
             return radians;
         }
 
+        /// <summary>The hood view at its offset; the cockpit view at the driver's eye of the
+        /// car's design, inside its cabin, or at cockpitOffset on a car without one.</summary>
         void MountRigidly()
         {
-            Vector3 offset = view == View.Hood ? hoodOffset : cockpitOffset;
-            transform.SetPositionAndRotation(target.TransformPoint(offset), target.rotation);
+            Vector3 position = view == View.Cockpit && _cockpit != null ? _cockpit.position
+                             : target.TransformPoint(view == View.Hood ? hoodOffset : cockpitOffset);
+            transform.SetPositionAndRotation(position, target.rotation);
         }
     }
 }

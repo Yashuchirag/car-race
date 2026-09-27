@@ -1,4 +1,4 @@
-"""A car body, built in Blender: the GT, a rear-engined coupe in the manner of a 911 GT3.
+"""The cars' bodies, built in Blender: the four designs the lobby offers (DESIGNS).
 
 Run headless from WSL (Blender takes Windows paths):
 
@@ -6,9 +6,10 @@ Run headless from WSL (Blender takes Windows paths):
         -P "$(wslpath -w Tools/blender/car.py)" -- \
         --out 'D:\\Dev\\CarRace\\Assets\\Art\\Cars' --preview "$(wslpath -w Tools/out/car)"
 
-Writes GT.fbx to --out with two meshes: "Body", the painted panels, one material; and
-"Details", in six materials in this order: glass, trim, headlight, taillight, interior,
-metal. --preview renders the car from three sides to <prefix>-front.png, -rear.png, -side.png.
+Writes <design>.fbx to --out for each design (or only --design), with two meshes: "Body",
+the painted panels, one material; and "Details", in six materials in this order: glass,
+trim, headlight, taillight, interior, metal. --preview renders each from three sides, to
+<prefix>-<design>-front.png, -rear.png and -side.png.
 
 How the shape is made. A cage of cross-sections ("stations"), each the same thirteen points
 round the half body from under the sill to the roof's centre line, mirrored, is smoothed
@@ -57,9 +58,9 @@ def to_road(b):
     return Vector((-b.x, b.z + CG, -b.y))
 
 
-# ---- the design ---------------------------------------------------------------
+# ---- the designs ---------------------------------------------------------------
 #
-# Key stations, rear to front. Per station:
+# Each design's shape is its key stations, rear to front. Per station:
 #   z     along the car
 #   yb    bottom edge (sill) height          wb   half width at the widest line
 #   yl    height of the widest line          yf   shoulder (top of the flank) height
@@ -67,39 +68,201 @@ def to_road(b):
 #   wr,yr the roof rail                       yc   height on the centre line
 #   gh    0 a deck (bonnet, engine cover), 1 the full cabin; between, a windscreen
 #         or rear window rising from the deck to the roof
+#
+# cells: which cage cells are glass, lights, grilles or black pillars, as (part, z range,
+# columns); the first that matches wins, and the rest are paint. A cell spans profile
+# columns c and c + 1: 1 to 5 the flank, 6 to 8 the side window with its seals, 9 the roof
+# rail, 10 and 11 the windscreen or rear window, or the middle of a bonnet or deck.
+# nose, tail: the end rings (depth, width and height the opening inside keeps, the parts of
+# the ring's cells that are not paint by column, and the opening's height or None for the
+# section's middle).
+# doors: front and rear shut lines as (z, y) on the flank; handles as (z0, z1, y).
+# bonnet: (from z, to z, front edge z), its sides along the deck's edge. lid: the engine
+# cover or boot as (x, z) seen from above. wing: which kind, and its numbers. exhausts:
+# (x positions, height, radius, z of the tips). cabin: the driver's eye, the windscreen's
+# foot (cowl), and what stands behind the front seats.
 
-KEYS = [
-    #  z      yb    wb     yl    yf    wg    yg    wr    yr    yc    gh
-    (-2.25, 0.34, 0.84, 0.50, 0.78, 0.60, 0.84, 0.46, 0.85, 0.86, 0.0),
-    (-2.19, 0.24, 0.92, 0.52, 0.88, 0.70, 0.91, 0.54, 0.92, 0.93, 0.0),
-    (-2.02, 0.20, 0.945, 0.54, 0.91, 0.73, 0.94, 0.56, 0.95, 0.955, 0.0),
-    (-1.75, 0.17, 0.965, 0.55, 0.93, 0.74, 0.96, 0.57, 0.975, 0.98, 0.0),
-    (-1.50, 0.15, 0.975, 0.55, 0.94, 0.75, 0.975, 0.58, 1.01, 1.02, 0.25),
-    (-1.20, 0.13, 0.975, 0.55, 0.93, 0.77, 0.97, 0.60, 1.10, 1.12, 0.7),
-    (-0.85, 0.12, 0.955, 0.55, 0.90, 0.79, 0.955, 0.61, 1.195, 1.215, 1.0),
-    (-0.40, 0.12, 0.93, 0.55, 0.86, 0.80, 0.94, 0.62, 1.255, 1.275, 1.0),
-    (0.00, 0.12, 0.92, 0.55, 0.85, 0.80, 0.93, 0.62, 1.255, 1.28, 1.0),
-    (0.22, 0.12, 0.92, 0.55, 0.85, 0.79, 0.925, 0.62, 1.20, 1.23, 0.85),
-    (0.62, 0.12, 0.93, 0.55, 0.85, 0.72, 0.905, 0.63, 0.93, 0.915, 0.0),
-    (1.00, 0.12, 0.945, 0.54, 0.84, 0.66, 0.79, 0.60, 0.77, 0.745, 0.0),
-    (1.40, 0.12, 0.955, 0.53, 0.83, 0.63, 0.745, 0.57, 0.72, 0.69, 0.0),
-    (1.80, 0.13, 0.945, 0.51, 0.79, 0.61, 0.70, 0.55, 0.68, 0.655, 0.0),
-    (2.08, 0.14, 0.90, 0.47, 0.70, 0.57, 0.64, 0.50, 0.63, 0.615, 0.0),
-    (2.24, 0.16, 0.80, 0.42, 0.58, 0.49, 0.56, 0.42, 0.57, 0.565, 0.0),
-    (2.31, 0.20, 0.64, 0.38, 0.49, 0.38, 0.50, 0.30, 0.51, 0.51, 0.0),
-]
+SIDE = {"GLASS": (7,), "SEAL": (6, 8)}
 
-# Where the cells become glass, lights and intakes, by station z and profile column.
-WINDSCREEN = (0.14, 0.62)
-REAR_WINDOW = (-1.40, -0.70)
-SIDE_WINDOW = (-1.02, 0.62)
-HEADLIGHT_Z = (1.90, 2.24)
-TAILLIGHT_Z = (-2.25, -2.19)
-ENGINE_GRILLE_Z = (-2.02, -1.60)
-# The end sections close with a painted ring (the bumper's face) round a smaller opening,
-# the front intake and the diffuser: (depth of the ring, width and height it keeps).
-NOSE_INSET = (0.018, 0.66, 0.42)
-TAIL_INSET = (0.02, 0.70, 0.40)
+
+def glass(windscreen, rear, side, pillars=()):
+    """The cells of a design's windows: black pillars first, then glass and its seals. The
+    side glass must end where the roof is still at full height (gh 1): run on into the rear
+    window's slope, its band twists up out of the body as a fin."""
+    cells = [(TRIM, z, (6, 7, 8)) for z in pillars]
+    cells += [(GLASS, windscreen, (10, 11)), (GLASS, rear, (10, 11)),
+              (GLASS, side, SIDE["GLASS"]), (TRIM, side, SIDE["SEAL"])]
+    return cells
+
+
+DESIGNS = {
+    # A rear-engined coupe in the manner of a 911 GT3: low bonnet between raised wings,
+    # fastback, light bar, swan-neck wing.
+    "GT": dict(
+        keys=[
+            #  z      yb    wb     yl    yf    wg    yg    wr    yr    yc    gh
+            (-2.25, 0.34, 0.84, 0.50, 0.78, 0.60, 0.84, 0.46, 0.85, 0.86, 0.0),
+            (-2.19, 0.24, 0.92, 0.52, 0.88, 0.70, 0.91, 0.54, 0.92, 0.93, 0.0),
+            (-2.02, 0.20, 0.945, 0.54, 0.91, 0.73, 0.94, 0.56, 0.95, 0.955, 0.0),
+            (-1.75, 0.17, 0.965, 0.55, 0.93, 0.74, 0.96, 0.57, 0.975, 0.98, 0.0),
+            (-1.50, 0.15, 0.975, 0.55, 0.94, 0.75, 0.975, 0.58, 1.01, 1.02, 0.25),
+            (-1.20, 0.13, 0.975, 0.55, 0.93, 0.77, 0.97, 0.60, 1.10, 1.12, 0.7),
+            (-0.85, 0.12, 0.955, 0.55, 0.90, 0.79, 0.955, 0.61, 1.195, 1.215, 1.0),
+            (-0.40, 0.12, 0.93, 0.55, 0.86, 0.80, 0.94, 0.62, 1.255, 1.275, 1.0),
+            (0.00, 0.12, 0.92, 0.55, 0.85, 0.80, 0.93, 0.62, 1.255, 1.28, 1.0),
+            (0.22, 0.12, 0.92, 0.55, 0.85, 0.79, 0.925, 0.62, 1.20, 1.23, 0.85),
+            (0.62, 0.12, 0.93, 0.55, 0.85, 0.72, 0.905, 0.63, 0.93, 0.915, 0.0),
+            (1.00, 0.12, 0.945, 0.54, 0.84, 0.66, 0.79, 0.60, 0.77, 0.745, 0.0),
+            (1.40, 0.12, 0.955, 0.53, 0.83, 0.63, 0.745, 0.57, 0.72, 0.69, 0.0),
+            (1.80, 0.13, 0.945, 0.51, 0.79, 0.61, 0.70, 0.55, 0.68, 0.655, 0.0),
+            (2.08, 0.14, 0.90, 0.47, 0.70, 0.57, 0.64, 0.50, 0.63, 0.615, 0.0),
+            (2.24, 0.16, 0.80, 0.42, 0.58, 0.49, 0.56, 0.42, 0.57, 0.565, 0.0),
+            (2.31, 0.20, 0.64, 0.38, 0.49, 0.38, 0.50, 0.30, 0.51, 0.51, 0.0),
+        ],
+        cells=glass((0.14, 0.62), (-1.40, -0.70), (-0.74, 0.62)) + [
+            (HEADLIGHT, (1.90, 2.24), (3, 4, 5)),
+            (TAILLIGHT, (-2.25, -2.19), (5, 6, 7, 8, 9, 10, 11)),     # a light bar across the tail
+            (TRIM, (-2.02, -1.60), (11,)),                            # engine grille
+        ],
+        nose=(0.018, 0.66, 0.42, {1: TRIM, 2: TRIM, 3: TRIM}, None), tail=(0.02, 0.70, 0.40, {1: TRIM, 2: TRIM}, None),
+        doors=[[(0.90, 0.23), (0.89, 0.45), (0.84, 0.70), (0.70, 0.93)],
+               [(-0.58, 0.23), (-0.58, 0.50), (-0.52, 0.80), (-0.44, 0.97)]],
+        handles=[(-0.37, -0.23, 0.80)],
+        bonnet=(0.70, 2.05, 2.17),
+        lid=[(0.0, -1.56), (0.40, -1.57), (0.52, -1.66), (0.52, -2.02), (0.40, -2.12), (0.0, -2.14)],
+        mirror=(0.97, 0.99, 0.47),
+        wing=("swan", dict(zc=-2.02, yc=1.235, chord=0.33, span=0.84, aoa=7.0, mount_x=0.28,
+                           neck=[(-1.85, 0.90), (-1.89, 1.08), (-1.94, 1.24), (-2.00, 1.30), (-2.06, 1.285)])),
+        exhausts=((-0.11, 0.11), 0.34, 0.046, -2.33),
+        cabin=dict(eye=(-0.37, 1.02, -0.38), cowl=0.62, bulkhead=-1.02, rear_seat=None, parcel=None,
+                   lining=(-1.5, 0.95)),
+    ),
+    # Front-engined, in the manner of a Mustang: long flat bonnet, a blunt shark nose with
+    # lamps either side of a wide grille, a fastback to a short deck with a ducktail, three
+    # bar tail lamps, four tailpipes, and a back seat.
+    "Muscle": dict(
+        keys=[
+            (-2.34, 0.36, 0.86, 0.60, 0.88, 0.62, 0.96, 0.50, 0.97, 1.00, 0.0),
+            (-2.28, 0.26, 0.92, 0.58, 0.92, 0.70, 0.98, 0.55, 0.99, 0.995, 0.0),
+            (-2.05, 0.20, 0.95, 0.56, 0.93, 0.74, 0.97, 0.58, 0.98, 0.975, 0.0),
+            (-1.75, 0.17, 0.965, 0.55, 0.94, 0.75, 0.97, 0.58, 0.99, 0.98, 0.0),
+            (-1.50, 0.15, 0.97, 0.55, 0.95, 0.77, 0.99, 0.60, 1.08, 1.09, 0.4),
+            (-1.20, 0.14, 0.97, 0.55, 0.95, 0.79, 1.00, 0.62, 1.18, 1.20, 0.8),
+            (-0.85, 0.13, 0.955, 0.55, 0.94, 0.80, 1.00, 0.63, 1.29, 1.31, 1.0),
+            (-0.40, 0.13, 0.94, 0.55, 0.93, 0.80, 1.00, 0.64, 1.315, 1.335, 1.0),
+            (-0.20, 0.13, 0.94, 0.55, 0.93, 0.80, 1.00, 0.64, 1.30, 1.325, 1.0),
+            (0.05, 0.13, 0.94, 0.55, 0.93, 0.80, 0.99, 0.65, 1.20, 1.23, 0.75),
+            (0.35, 0.13, 0.945, 0.55, 0.93, 0.78, 0.97, 0.66, 1.00, 1.00, 0.0),
+            (0.80, 0.13, 0.955, 0.55, 0.92, 0.74, 0.95, 0.64, 0.97, 0.965, 0.0),
+            (1.30, 0.13, 0.96, 0.55, 0.92, 0.72, 0.94, 0.62, 0.95, 0.945, 0.0),
+            (1.80, 0.14, 0.955, 0.54, 0.91, 0.70, 0.93, 0.60, 0.94, 0.93, 0.0),
+            (2.20, 0.16, 0.93, 0.52, 0.89, 0.66, 0.905, 0.56, 0.915, 0.91, 0.0),
+            (2.30, 0.18, 0.90, 0.50, 0.87, 0.62, 0.885, 0.52, 0.895, 0.89, 0.0),
+            (2.37, 0.22, 0.80, 0.46, 0.70, 0.52, 0.72, 0.44, 0.73, 0.72, 0.0),
+        ],
+        cells=glass((-0.20, 0.35), (-1.75, -0.85), (-0.86, 0.35)) + [
+            (HEADLIGHT, (2.30, 2.37), (4, 5, 6)),
+            (TRIM, (2.30, 2.37), (8, 9, 10, 11)),                     # the grille between the lamps
+        ],
+        # Three bar tail lamps each side on the rear panel, a small diffuser low down.
+        nose=(0.02, 0.62, 0.40, {1: TRIM, 2: TRIM}, None),
+        tail=(0.02, 0.60, 0.28, {1: TRIM, 2: TRIM, 5: TAILLIGHT, 6: TRIM, 7: TAILLIGHT, 8: TRIM, 9: TAILLIGHT}, 0.42),
+        doors=[[(0.92, 0.23), (0.92, 0.60), (0.88, 0.90), (0.80, 0.98)],
+               [(-0.75, 0.23), (-0.75, 0.60), (-0.72, 0.90), (-0.70, 1.00)]],
+        handles=[(-0.55, -0.42, 0.86)],
+        bonnet=(0.40, 2.20, 2.28),
+        lid=[(0.0, -1.78), (0.55, -1.79), (0.62, -1.90), (0.62, -2.20), (0.50, -2.27), (0.0, -2.28)],
+        mirror=(0.99, 1.07, 0.15),
+        wing=None,                                               # the ducktail is in the shape
+        exhausts=((-0.62, -0.50, 0.50, 0.62), 0.27, 0.042, -2.40),
+        cabin=dict(eye=(-0.37, 1.05, -0.62), cowl=0.35, bulkhead=-1.45, rear_seat=-1.12, parcel=None,
+                   lining=(-1.75, 0.70)),
+    ),
+    # Mid-engined, in the manner of a Huracan: a wedge, low and wide, cabin forward under a
+    # long raked windscreen, intakes ahead of the rear wheels, a louvred engine cover and a
+    # low wing on posts.
+    "Supercar": dict(
+        keys=[
+            (-2.22, 0.36, 0.88, 0.55, 0.86, 0.66, 0.91, 0.50, 0.92, 0.93, 0.0),
+            (-2.16, 0.26, 0.95, 0.55, 0.92, 0.72, 0.95, 0.55, 0.96, 0.96, 0.0),
+            (-1.95, 0.20, 0.975, 0.55, 0.96, 0.74, 0.99, 0.56, 1.00, 1.00, 0.0),
+            (-1.60, 0.16, 0.985, 0.52, 0.96, 0.75, 1.00, 0.57, 1.01, 1.02, 0.0),
+            (-1.20, 0.14, 0.98, 0.50, 0.95, 0.76, 1.00, 0.58, 1.03, 1.04, 0.0),
+            (-0.85, 0.13, 0.96, 0.48, 0.93, 0.76, 0.99, 0.58, 1.06, 1.07, 0.35),
+            (-0.55, 0.12, 0.945, 0.47, 0.90, 0.77, 0.97, 0.59, 1.12, 1.135, 0.9),
+            (-0.30, 0.12, 0.94, 0.46, 0.88, 0.77, 0.95, 0.59, 1.14, 1.155, 1.0),
+            (0.05, 0.12, 0.94, 0.46, 0.86, 0.77, 0.93, 0.60, 1.135, 1.15, 1.0),
+            (0.25, 0.12, 0.945, 0.46, 0.85, 0.76, 0.91, 0.61, 1.10, 1.11, 0.85),
+            (0.60, 0.12, 0.95, 0.46, 0.83, 0.74, 0.86, 0.62, 0.97, 0.97, 0.45),
+            (0.95, 0.12, 0.955, 0.46, 0.81, 0.70, 0.80, 0.60, 0.81, 0.80, 0.0),
+            (1.35, 0.12, 0.96, 0.45, 0.79, 0.66, 0.74, 0.58, 0.74, 0.72, 0.0),
+            (1.75, 0.12, 0.95, 0.43, 0.75, 0.62, 0.68, 0.54, 0.68, 0.655, 0.0),
+            (2.05, 0.12, 0.90, 0.40, 0.66, 0.56, 0.60, 0.48, 0.60, 0.58, 0.0),
+            (2.22, 0.13, 0.80, 0.36, 0.55, 0.48, 0.50, 0.40, 0.50, 0.49, 0.0),
+            (2.30, 0.15, 0.62, 0.30, 0.40, 0.38, 0.38, 0.30, 0.38, 0.38, 0.0),
+        ],
+        cells=glass((0.05, 0.95), (-0.85, -0.30), (-0.50, 0.95)) + [
+            (TRIM, (-0.86, -0.55), (3, 4)),                           # intake ahead of the rear wheel
+            (HEADLIGHT, (2.00, 2.22), (4, 5)),
+            (TRIM, (2.22, 2.30), (2, 3)),                             # side intakes in the nose
+            (TAILLIGHT, (-2.22, -2.16), (5, 6, 7, 8)),
+            (TRIM, (-2.22, -2.16), (9, 10, 11)),                      # the engine's vent between them
+            (TRIM, (-1.55, -0.95), (11,)),                            # louvres on the engine cover
+        ],
+        nose=(0.018, 0.66, 0.44, {1: TRIM, 2: TRIM, 3: TRIM}, None),
+        tail=(0.02, 0.66, 0.30, {1: TRIM, 2: TRIM}, 0.44),
+        doors=[[(0.96, 0.23), (0.94, 0.50), (0.85, 0.78)],
+               [(-0.42, 0.30), (-0.45, 0.60), (-0.55, 0.90)]],
+        handles=[],
+        bonnet=(1.00, 2.00, 2.15),
+        lid=[(0.0, -0.95), (0.45, -0.95), (0.50, -1.10), (0.50, -1.90), (0.40, -2.05), (0.0, -2.06)],
+        mirror=(0.99, 0.92, 0.70),
+        wing=("posts", dict(zc=-2.02, yc=1.06, chord=0.24, span=0.80, aoa=8.0, mount_x=0.45)),
+        exhausts=((-0.12, 0.12), 0.46, 0.05, -2.27),
+        cabin=dict(eye=(-0.37, 0.98, -0.30), cowl=0.95, bulkhead=-0.72, rear_seat=None, parcel=None,
+                   lining=(-1.0, 1.3)),
+    ),
+    # A hot hatch in the manner of a Golf GTI or Civic Type R: tall, short, an upright
+    # tailgate under a roof spoiler, black B pillars, lamps either side of a grille, twin
+    # tailpipes, and a back seat under a parcel shelf.
+    "Hot Hatch": dict(
+        keys=[
+            (-1.99, 0.36, 0.84, 0.58, 0.90, 0.62, 0.96, 0.55, 1.00, 1.02, 0.0),
+            (-1.95, 0.26, 0.93, 0.60, 0.95, 0.70, 1.00, 0.60, 1.05, 1.06, 0.0),
+            (-1.88, 0.22, 0.95, 0.60, 0.97, 0.74, 1.02, 0.62, 1.18, 1.20, 0.45),
+            (-1.72, 0.19, 0.955, 0.60, 0.98, 0.76, 1.03, 0.64, 1.39, 1.41, 1.0),
+            (-1.40, 0.17, 0.96, 0.60, 0.98, 0.78, 1.03, 0.65, 1.41, 1.435, 1.0),
+            (-0.60, 0.15, 0.94, 0.58, 0.96, 0.79, 1.02, 0.66, 1.43, 1.455, 1.0),
+            (0.10, 0.15, 0.935, 0.58, 0.95, 0.79, 1.01, 0.66, 1.39, 1.415, 1.0),
+            (0.45, 0.15, 0.94, 0.57, 0.94, 0.77, 1.00, 0.67, 1.22, 1.24, 0.7),
+            (0.85, 0.15, 0.945, 0.56, 0.93, 0.74, 0.98, 0.66, 1.00, 0.99, 0.0),
+            (1.30, 0.15, 0.955, 0.55, 0.92, 0.70, 0.95, 0.62, 0.95, 0.95, 0.0),
+            (1.75, 0.15, 0.95, 0.54, 0.90, 0.66, 0.92, 0.58, 0.92, 0.915, 0.0),
+            (2.08, 0.16, 0.92, 0.52, 0.86, 0.62, 0.87, 0.54, 0.87, 0.87, 0.0),
+            (2.18, 0.18, 0.88, 0.50, 0.82, 0.58, 0.83, 0.50, 0.83, 0.83, 0.0),
+            (2.25, 0.22, 0.78, 0.46, 0.72, 0.52, 0.74, 0.44, 0.74, 0.74, 0.0),
+        ],
+        cells=glass((0.10, 0.85), (-1.95, -1.72), (-1.40, 0.85), pillars=[(-0.50, -0.40)]) + [
+            (HEADLIGHT, (2.18, 2.25), (4, 5, 6)),
+            (TRIM, (2.18, 2.25), (8, 9, 10, 11)),                     # the grille
+            (TAILLIGHT, (-1.99, -1.88), (4, 5, 6)),                   # lamps wrapping the corners
+        ],
+        nose=(0.02, 0.60, 0.36, {1: TRIM, 2: TRIM, 3: TRIM}, None),
+        tail=(0.02, 0.64, 0.30, {1: TRIM, 2: TRIM}, 0.40),
+        doors=[[(0.94, 0.23), (0.93, 0.55), (0.86, 0.90), (0.78, 1.02)],
+               [(-0.84, 0.23), (-0.84, 0.60), (-0.80, 1.02)]],
+        handles=[(-0.70, -0.58, 0.88)],
+        bonnet=(0.88, 2.00, 2.17),
+        lid=None,
+        mirror=(0.99, 1.08, 0.60),
+        wing=("roof", dict(zc=-1.79, yc=1.415, chord=0.26, span=0.62, aoa=4.0)),
+        exhausts=((-0.42, 0.42), 0.30, 0.045, -2.05),
+        cabin=dict(eye=(-0.37, 1.18, -0.25), cowl=0.85, bulkhead=None, rear_seat=-1.00, parcel=(-1.85, -1.30, 0.99),
+                   lining=(-2.1, 1.2)),
+    ),
+}
+
+D = DESIGNS["GT"]           # the design being built; main() sets it
 
 
 def pchip(xs, ys, x):
@@ -124,8 +287,9 @@ def pchip(xs, ys, x):
 
 
 def station_params(z):
-    zs = [k[0] for k in KEYS]
-    return [pchip(zs, [k[j] for k in KEYS], z) for j in range(1, 11)]
+    keys = D["keys"]
+    zs = [k[0] for k in keys]
+    return [pchip(zs, [k[j] for k in keys], z) for j in range(1, 11)]
 
 
 def arch_edge(z):
@@ -168,7 +332,8 @@ def profile(z):
 def station_zs():
     """Cage stations: evenly along the car, plus a fan round each arch."""
     zs = set()
-    z0, z1 = KEYS[0][0], KEYS[-1][0]
+    keys = D["keys"]
+    z0, z1 = keys[0][0], keys[-1][0]
     n = 24
     for i in range(n + 1):
         zs.add(round(z0 + (z1 - z0) * i / n, 4))
@@ -177,8 +342,7 @@ def station_zs():
             zs.add(round(axle - ARCH_R * math.cos(math.radians(a)), 4))
         zs.add(round(axle - ARCH_R - 0.03, 4))
         zs.add(round(axle + ARCH_R + 0.03, 4))
-    for z in (*WINDSCREEN, *REAR_WINDOW, *SIDE_WINDOW, *HEADLIGHT_Z, *TAILLIGHT_Z, *ENGINE_GRILLE_Z,
-              KEYS[-2][0], KEYS[1][0]):
+    for z in [b for _, r, _ in D["cells"] for b in r] + [keys[-2][0], keys[1][0]]:
         zs.add(round(z, 4))
     # Drop near-duplicates, which subdivide into slivers.
     out = []
@@ -197,20 +361,9 @@ def part_of(z0, z1, c):
         return TRIM                              # under the sill and the arch lips
     if c == 1 and REAR_AXLE + ARCH_R < zm < FRONT_AXLE - ARCH_R:
         return TRIM                              # the side skirt
-    if inside(WINDSCREEN) and c >= 10:
-        return GLASS
-    if inside(REAR_WINDOW) and c >= 10:
-        return GLASS
-    if inside(SIDE_WINDOW) and c in (7,):
-        return GLASS
-    if inside(SIDE_WINDOW) and c in (6, 8):
-        return TRIM                              # the window's seal
-    if inside(HEADLIGHT_Z) and c in (3, 4, 5):
-        return HEADLIGHT
-    if inside(TAILLIGHT_Z) and 5 <= c <= 11:
-        return TAILLIGHT                         # a light bar across the tail
-    if inside(ENGINE_GRILLE_Z) and c >= 11:
-        return TRIM
+    for part, zr, cols in D["cells"]:
+        if c in cols and inside(zr):
+            return part
     return PAINT
 
 
@@ -241,16 +394,17 @@ def build_cage():
     # Nose and tail: a painted ring set in from each end section, the bumper's face, whose
     # lower corners are intakes (in front) or the diffuser's sides (behind). The opening
     # left inside it is filled after subdivision (fill_ends).
-    for end, (depth, sx, sy), step, dark in ((len(rows) - 1, NOSE_INSET, 1, (1, 2, 3)), (0, TAIL_INSET, -1, (1, 2))):
+    for end, (depth, sx, sy, ring, centre), step in ((len(rows) - 1, D["nose"], 1), (0, D["tail"], -1)):
         row = rows[end]
         cy = sum(v[1] for v in row) / len(row)
+        middle = cy if centre is None else centre
         base = len(verts)
-        verts.extend((x * sx, cy + (y - cy) * sy, z + depth * step) for x, y, z in row)
+        verts.extend((x * sx, middle + (y - cy) * sy, z + depth * step) for x, y, z in row)
         for c in range(cols):
             c1 = (c + 1) % cols
             half_col = c if c < 12 else 23 - c
             faces.append((end * cols + c, end * cols + c1, base + c1, base + c))
-            parts.append(TRIM if c == cols - 1 or half_col in dark else PAINT)
+            parts.append(TRIM if c == cols - 1 else ring.get(half_col, PAINT))
     return verts, faces, parts, zs, cols
 
 
@@ -605,26 +759,27 @@ def surface_lines(parts, shell_obj):
 
     side_ray = (-1.0, 0.0, 0.0)
     down = (0.0, -1.0, 0.0)
-    # Door: front and rear shut lines, from the skirt to the window seal.
-    ribbon([(1.3, 0.23, 0.90), (1.3, 0.45, 0.89), (1.3, 0.70, 0.84), (1.3, 0.93, 0.70)], side_ray)
-    ribbon([(1.3, 0.23, -0.58), (1.3, 0.50, -0.58), (1.3, 0.80, -0.52), (1.3, 0.97, -0.44)], side_ray)
-    # Door handle, flush, towards the back of the door.
-    ribbon([(1.3, 0.80, -0.37), (1.3, 0.80, -0.23)], side_ray, width=0.024, lift=0.002)
-    # Bonnet: its sides along the wings, its front edge above the lights.
+    # Doors: shut lines from the skirt to the window seal; handles, flush.
+    for line in D["doors"]:
+        ribbon([(1.3, y, z) for z, y in line], side_ray)
+    for z0, z1, y in D["handles"]:
+        ribbon([(1.3, y, z0), (1.3, y, z1)], side_ray, width=0.024, lift=0.002)
+    # Bonnet: its sides along the deck's edge, its front edge above the lights.
+    z0, z1, front = D["bonnet"]
     bonnet = []
-    for z in (0.70, 1.0, 1.4, 1.8, 2.05):
-        wg = station_params(z)[4]
-        bonnet.append((wg - 0.03, 2.0, z))
-    bonnet += [(0.40, 2.0, 2.14), (0.0, 2.0, 2.17)]
+    for i in range(5):
+        z = z0 + (z1 - z0) * i / 4
+        bonnet.append((station_params(z)[4] - 0.03, 2.0, z))
+    bonnet += [(0.40, 2.0, front - 0.03), (0.0, 2.0, front)]
     ribbon(bonnet, down)
-    # Engine cover.
-    lid = [(0.0, 2.0, -1.56), (0.40, 2.0, -1.57), (0.52, 2.0, -1.66), (0.52, 2.0, -2.02), (0.40, 2.0, -2.12), (0.0, 2.0, -2.14)]
-    ribbon(lid, down)
+    # Engine cover or boot lid.
+    if D["lid"]:
+        ribbon([(x, 2.0, z) for x, z in D["lid"]], down)
 
 
 def mirrors(parts):
     """Door mirrors: a painted housing, flat at the back where the glass is, on a stalk."""
-    c = Vector((0.97, 0.99, 0.47))
+    c = Vector(D["mirror"])
     rx, ry, rz = 0.085, 0.055, 0.11
     rings, segs = 10, 20
     verts = []
@@ -650,70 +805,84 @@ def mirrors(parts):
     parts.both_sides(verts, faces, PAINT, closed=True)
     gv, gf = disc((c.x, c.y, c.z - 0.0365), 0.07, 0.042, "xy")
     parts.both_sides(gv, gf, METAL, want=lambda p: (0, 0, -1))
-    sv, sf = prism((0.90, 0.965, 0.50), (0.12, 0.025, 0.05), 0.008, axis="x")
+    sv, sf = prism((c.x - 0.07, c.y - 0.025, c.z + 0.03), (0.12, 0.025, 0.05), 0.008, axis="x")
     parts.both_sides(sv, sf, TRIM, closed=True)
 
 
+def aerofoil(x, zc, yc, chord, aoa, thick=0.12):
+    """An inverted aerofoil's section at x, its trailing edge raised by aoa degrees."""
+    pts = []
+    n = 14
+    for i in range(n + 1):
+        t = (1 - math.cos(math.pi * i / n)) / 2
+        yt = 5 * thick * (0.2969 * math.sqrt(t) - 0.126 * t - 0.3516 * t * t + 0.2843 * t ** 3 - 0.1015 * t ** 4)
+        pts.append((t, -yt * 0.35))
+    for i in range(n - 1, 0, -1):
+        t = (1 - math.cos(math.pi * i / n)) / 2
+        yt = 5 * thick * (0.2969 * math.sqrt(t) - 0.126 * t - 0.3516 * t * t + 0.2843 * t ** 3 - 0.1015 * t ** 4)
+        pts.append((t, yt * 0.65))
+    a = math.radians(aoa)
+    out = []
+    for t, y in pts:
+        dz, dy = chord * (0.5 - t), y * chord
+        out.append((x, yc + dy * math.cos(a) - dz * math.sin(a), zc + dz * math.cos(a) + dy * math.sin(a)))
+    return out
+
+
 def rear_wing(parts):
-    """A swan-neck wing: an inverted aerofoil on two mounts hooked over it from above, with
-    end plates, its trailing edge raised for downforce."""
-    zc, yc, chord, thick, aoa = -2.02, 1.235, 0.33, 0.12, 7.0
-
-    def section(x):
-        pts = []
-        n = 14
-        for i in range(n + 1):
-            t = (1 - math.cos(math.pi * i / n)) / 2
-            yt = 5 * thick * (0.2969 * math.sqrt(t) - 0.126 * t - 0.3516 * t * t + 0.2843 * t ** 3 - 0.1015 * t ** 4)
-            pts.append((t, -yt * 0.35))
-        for i in range(n - 1, 0, -1):
-            t = (1 - math.cos(math.pi * i / n)) / 2
-            yt = 5 * thick * (0.2969 * math.sqrt(t) - 0.126 * t - 0.3516 * t * t + 0.2843 * t ** 3 - 0.1015 * t ** 4)
-            pts.append((t, yt * 0.65))
-        a = math.radians(aoa)
-        out = []
-        for t, y in pts:
-            dz, dy = chord * (0.5 - t), y * chord
-            out.append((x, yc + dy * math.cos(a) - dz * math.sin(a), zc + dz * math.cos(a) + dy * math.sin(a)))
-        return out
-
-    xs = [-0.84, -0.3, 0.3, 0.84]
-    v, f = swept(xs, lambda k: section(xs[k]))
+    """The design's wing: a swan-neck wing with end plates (mounts hooked over it from above),
+    a low wing on posts, or a spoiler off the back of the roof. None for a ducktail."""
+    if D["wing"] is None:
+        return
+    kind, w = D["wing"]
+    zc, yc, chord, span, aoa = w["zc"], w["yc"], w["chord"], w["span"], w["aoa"]
+    xs = [-span, -0.3, 0.3, span]
+    thick = 0.12 if kind != "roof" else 0.08
+    v, f = swept(xs, lambda k: aerofoil(xs[k], zc, yc, chord, aoa, thick))
     parts.add(v, f, TRIM, closed=True)
-    pv, pf = prism((0.848, yc + 0.005, zc - 0.01), (0.008, 0.17, 0.42), 0.02, axis="x")
+    if kind == "roof":
+        return
+    pv, pf = prism((span + 0.008, yc + 0.005, zc - 0.01), (0.008, 0.17, chord + 0.09), 0.02, axis="x")
     parts.both_sides(pv, pf, TRIM, closed=True)
-    path = [(-1.85, 0.90), (-1.89, 1.08), (-1.94, 1.24), (-2.00, 1.30), (-2.06, 1.285)]
+    if kind == "posts":
+        deck = station_params(zc)[8]
+        qv, qf = prism((w["mount_x"], (deck + yc) * 0.5 - 0.01, zc), (0.014, yc - deck + 0.02, chord * 0.6), 0.005, axis="x")
+        parts.both_sides(qv, qf, TRIM, closed=True)
+        return
+    path = w["neck"]
 
     def neck(k):
         z, y = path[k]
         a, b = path[max(k - 1, 0)], path[min(k + 1, len(path) - 1)]
         t = Vector((0, b[1] - a[1], b[0] - a[0])).normalized()
         nrm = Vector((0, -t.z, t.y))
-        w = 0.035 - 0.01 * k / (len(path) - 1)
-        p = Vector((0.28, y, z))
-        return [tuple(p + Vector((dx, 0, 0)) + nrm * dn) for dx, dn in ((0.007, w), (-0.007, w), (-0.007, -w), (0.007, -w))]
+        wd = 0.035 - 0.01 * k / (len(path) - 1)
+        p = Vector((w["mount_x"], y, z))
+        return [tuple(p + Vector((dx, 0, 0)) + nrm * dn) for dx, dn in ((0.007, wd), (-0.007, wd), (-0.007, -wd), (0.007, -wd))]
 
     nv, nf = swept(path, neck)
     parts.both_sides(nv, nf, TRIM, closed=True)
 
 
 def exhausts(parts):
-    """Twin tailpipes in the middle of the diffuser."""
-    for x in (-0.11, 0.11):
-        prof = [(0.002, -2.12), (0.046, -2.12), (0.046, -2.33), (0.039, -2.33), (0.039, -2.29), (0.002, -2.29)]
+    """The design's tailpipes, through the diffuser."""
+    xs, y0, r0, tip = D["exhausts"]
+    for x in xs:
+        ri = r0 - 0.007
+        prof = [(0.002, tip + 0.21), (r0, tip + 0.21), (r0, tip), (ri, tip), (ri, tip + 0.04), (0.002, tip + 0.04)]
         n = 20
         verts = []
         for r, z in prof:
             for j in range(n):
                 a = 2 * math.pi * j / n
-                verts.append((x + r * math.cos(a), 0.34 + r * math.sin(a), z))
+                verts.append((x + r * math.cos(a), y0 + r * math.sin(a), z))
         faces = []
         for i in range(len(prof) - 1):
             for j in range(n):
                 j1 = (j + 1) % n
                 faces.append((i * n + j, i * n + j1, (i + 1) * n + j1, (i + 1) * n + j))
         parts.add(verts, faces, METAL, closed=True)
-        dv, df = disc((x, 0.34, -2.2895), 0.038, 0.038, "xy")
+        dv, df = disc((x, y0, tip + 0.0405), ri - 0.001, ri - 0.001, "xy")
         parts.add(dv, df, TRIM, want=lambda p: (0, 0, -1))
 
 
@@ -737,24 +906,57 @@ def wheel_wells(parts):
 
 
 def interior(parts):
-    """What shows through the glass: floor, dashboard with a binnacle, steering wheel, two
-    bucket seats, the tunnel, a bulkhead behind the seats, and a lining inside the shell."""
-    add = lambda vf, closed=True: parts.add(vf[0], vf[1], INTERIOR, closed=closed)
-    add(prism((0.0, 0.19, -0.1), (1.60, 0.02, 1.9), 0.005))                        # floor
-    add(prism((0.0, 0.47, 0.66), (1.56, 0.56, 0.03), 0.005))                       # footwell wall
-    dash = [(0.62, 0.60), (0.63, 0.84), (0.52, 0.885), (0.38, 0.87), (0.30, 0.80), (0.32, 0.70), (0.44, 0.63)]
+    """What shows through the glass and from the cockpit camera: floor, dashboard with a
+    binnacle, steering wheel, two bucket seats, the tunnel, and behind them a bulkhead, a
+    back seat or a parcel shelf. Laid out from the driver's eye and the windscreen's foot,
+    the way a real cabin is packaged round its driver."""
+    cab = D["cabin"]
+    ex, ey, ez = cab["eye"]
+    cowl_z = cab["cowl"]
+    cowl_y = station_params(cowl_z)[8]
+    add = lambda vf: parts.add(vf[0], vf[1], INTERIOR, closed=True)
+
+    # The steering wheel 56 cm ahead of the eye and 22 below; the dash from just behind
+    # its rim to the windscreen's foot, kept under the glass.
+    centre = Vector((ex, ey - 0.22, ez + 0.56))
+    z_r, z_f = centre.z + 0.12, max(cowl_z + 0.01, centre.z + 0.30)
+    y_t = min(centre.y + 0.085, cowl_y - 0.03)
+    dash = [(z_f, y_t - 0.285), (z_f + 0.01, y_t - 0.045), (max(z_f - 0.11, z_r + 0.10), y_t), (z_r + 0.08, y_t - 0.015),
+            (z_r, y_t - 0.085), (z_r + 0.02, y_t - 0.185), (z_r + 0.14, y_t - 0.255)]
     xs = [-0.80, 0.80]
     add(swept(xs, lambda k: [(xs[k], y, z) for z, y in dash]))
-    add(prism((-0.37, 0.925, 0.43), (0.34, 0.09, 0.16), 0.03))                     # binnacle
-    add(prism((0.0, 0.31, 0.05), (0.22, 0.24, 1.0), 0.04))                         # tunnel
-    for x in (-0.37, 0.37):
-        add(prism((x, 0.30, -0.28), (0.50, 0.12, 0.52), 0.04))                     # cushion
-        add(prism((x, 0.68, -0.58), (0.52, 0.72, 0.12), 0.05, axis="z", rotate=-14))  # back
+    add(prism((ex, y_t + 0.04, z_r + 0.13), (0.34, 0.09, 0.16), 0.03))                  # binnacle
+    add(prism((0.0, (0.19 + y_t - 0.135) * 0.5, z_f + 0.03), (1.56, y_t - 0.325, 0.03), 0.005))   # footwell wall
+
+    seat_y, seat_z = ey - 0.72, ez + 0.10
+    back = min(z for z in (cab["bulkhead"], cab["rear_seat"], cab["parcel"] and cab["parcel"][0]) if z is not None)
+    add(prism((0.0, 0.19, (back + z_f + 0.2) * 0.5), (1.60, 0.02, z_f + 0.2 - back), 0.005))   # floor
+    add(prism((0.0, seat_y + 0.01, (seat_z - 0.2 + z_f - 0.05) * 0.5), (0.22, 0.24, z_f - 0.05 - seat_z + 0.2), 0.04))  # tunnel
+    for x in (ex, -ex):
+        add(prism((x, seat_y, seat_z), (0.50, 0.12, 0.52), 0.04))                                  # cushion
+        add(prism((x, seat_y + 0.38, seat_z - 0.30), (0.52, 0.72, 0.12), 0.05, rotate=-14))         # back
         for s in (-1, 1):
-            add(prism((x + s * 0.23, 0.55, -0.50), (0.07, 0.40, 0.22), 0.03, rotate=-14))  # bolsters
-    add(prism((0.0, 0.62, -1.02), (1.66, 0.86, 0.03), 0.005))                      # bulkhead
+            add(prism((x + s * 0.23, seat_y + 0.25, seat_z - 0.22), (0.07, 0.40, 0.22), 0.03, rotate=-14))  # bolsters
+    if cab["rear_seat"] is not None:
+        rz = cab["rear_seat"]
+        add(prism((0.0, seat_y + 0.02, rz), (1.30, 0.12, 0.45), 0.04))
+        add(prism((0.0, seat_y + 0.36, rz - 0.28), (1.30, 0.60, 0.12), 0.05, rotate=-12))
+    if cab["bulkhead"] is not None:
+        # The body's own section there, 3 cm in and cut at the floor: a flat panel poked out
+        # through the pillars where the body narrows towards the roof.
+        bz = cab["bulkhead"]
+        half = [(x * 0.95 - 0.02, max(y - 0.03, 0.19)) for x, y in profile(bz)]
+        outline = [(x, y) for x, y in half[:-1]] + [(-x, y) for x, y in reversed(half)]
+        verts = [(x, y, bz + dz) for dz in (-0.015, 0.015) for x, y in outline]
+        n = len(outline)
+        faces = [tuple(range(n)), tuple(range(n, 2 * n))] + [(i, (i + 1) % n, n + (i + 1) % n, n + i) for i in range(n)]
+        add((verts, faces))
+    if cab["parcel"] is not None:
+        z0, z1, py = cab["parcel"]
+        add(prism((0.0, py, (z0 + z1) * 0.5), (1.50, 0.02, z1 - z0), 0.005))
+
     # Steering wheel: rim, three spokes and hub, column to the dash, facing the driver.
-    centre, radius, tilt = Vector((-0.37, 0.80, 0.18)), 0.175, math.radians(22)
+    radius, tilt = 0.175, math.radians(22)
     axis = Vector((0, math.sin(tilt), -math.cos(tilt)))            # towards the driver
     u = Vector((1, 0, 0))
     w = axis.cross(u).normalized()
@@ -783,25 +985,33 @@ def interior(parts):
         corners = [mid + d * (length * 0.5) * e + s * f + t * g for e in (-1, 1) for f in (-1, 1) for g in (-1, 1)]
         box_faces = [(0, 1, 3, 2), (4, 6, 7, 5), (0, 4, 5, 1), (2, 3, 7, 6), (0, 2, 6, 4), (1, 5, 7, 3)]
         parts.add([tuple(c) for c in corners], box_faces, INTERIOR, closed=True)
-    col = [tuple(centre + Vector((0, 0.03, 0.04))), (-0.37, 0.84, 0.45)]
+    col = [tuple(centre + Vector((0, 0.03, 0.04))), (ex, y_t - 0.045, z_r + 0.15)]
     cv, cf = swept(col, lambda k: [(col[k][0] + 0.025 * math.cos(a), col[k][1] + 0.025 * math.sin(a), col[k][2])
                                    for a in (2 * math.pi * j / 10 for j in range(10))])
     add((cv, cf))
 
 
-def lining(parts):
-    """The shell once more, a coarser copy moved 15 mm in and turned inside out, where the
-    cabin can be seen: the insides of the doors, the pillars and the headlining."""
+def lining(parts, shell_obj):
+    """The shell once more, a coarser copy turned inside out, where the cabin can be seen:
+    the insides of the doors, the pillars and the headlining. Each of its points goes onto
+    the smooth shell and then 15 mm in: the coarse copy itself lies outside the smooth one
+    wherever the body is concave, and showed through it as black fins."""
+    smooth = shell_obj.data
+    bvh = BVHTree.FromPolygons([v.co for v in smooth.vertices], [p.vertices for p in smooth.polygons])
     obj = shell(1)
     mesh = obj.data
     mesh.update()
     keep = []
     for p in mesh.polygons:
         c = to_road(p.center)
-        if p.material_index in (GLASS, HEADLIGHT, TAILLIGHT) or not (-1.5 < c.z < 0.95) or c.y < 0.22:
+        z0, z1 = D["cabin"]["lining"]
+        if p.material_index in (GLASS, HEADLIGHT, TAILLIGHT) or not (z0 < c.z < z1) or c.y < 0.22:
             continue
         keep.append(p)
-    verts = [v.co - v.normal * 0.015 for v in mesh.vertices]
+    verts = []
+    for v in mesh.vertices:
+        loc, nrm, _, _ = bvh.find_nearest(v.co)
+        verts.append(loc - nrm * 0.015 if loc is not None else v.co - v.normal * 0.015)
     faces = [tuple(reversed(p.vertices)) for p in keep]
     parts.add(verts, faces, INTERIOR, road=False)
     bpy.data.objects.remove(obj)
@@ -898,18 +1108,14 @@ def render_views(prefix):
         print("CAR preview", scene.render.filepath)
 
 
-def main():
-    argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--out")
-    parser.add_argument("--preview")
-    parser.add_argument("--blend")
-    args = parser.parse_args(argv)
-
+def build(name, args):
+    """One design: its body and details, exported and rendered as asked."""
+    global D
+    D = DESIGNS[name]
     for obj in list(bpy.data.objects):
         bpy.data.objects.remove(obj)
-    wheel.setup_cycles()
+    for mesh in list(bpy.data.meshes):
+        bpy.data.meshes.remove(mesh)
 
     body_shell = shell(2)
     parts = Parts()
@@ -921,7 +1127,7 @@ def main():
     exhausts(parts)
     wheel_wells(parts)
     interior(parts)
-    lining(parts)
+    lining(parts, body_shell)
     bpy.data.objects.remove(body_shell)
 
     body = parts.build("Body", {PAINT}, [PAINT])
@@ -929,28 +1135,44 @@ def main():
     for obj in (body, details):
         counts = {}
         for p in obj.data.polygons:
-            name = obj.data.materials[p.material_index].name
-            counts[name] = counts.get(name, 0) + 1
-        print("CAR triangles", obj.name, sum(counts.values()), counts)
+            part = obj.data.materials[p.material_index].name
+            counts[part] = counts.get(part, 0) + 1
+        print("CAR", name, "triangles", obj.name, sum(counts.values()), counts)
 
     if args.out:
         os.makedirs(args.out, exist_ok=True)
         bpy.ops.object.select_all(action="DESELECT")
         for obj in (body, details):
             obj.select_set(True)
+        path = os.path.join(args.out, f"{name}.fbx")
         bpy.ops.export_scene.fbx(
-            filepath=os.path.join(args.out, "GT.fbx"), use_selection=True,
+            filepath=path, use_selection=True,
             object_types={"MESH"}, apply_scale_options="FBX_SCALE_UNITS",
             axis_forward="-Z", axis_up="Y", bake_space_transform=True,
             mesh_smooth_type="FACE", use_tspace=False, use_mesh_modifiers=True,
             path_mode="STRIP", embed_textures=False, add_leaf_bones=False, bake_anim=False)
-        print("CAR exported", os.path.join(args.out, "GT.fbx"))
+        print("CAR exported", path)
 
+    slug = name.lower().replace(" ", "-")
     if args.preview:
         place_wheels()
-        render_views(args.preview)
+        render_views(f"{args.preview}-{slug}")
     if args.blend:
-        bpy.ops.wm.save_as_mainfile(filepath=args.blend)
+        bpy.ops.wm.save_as_mainfile(filepath=args.blend.replace(".blend", f"-{slug}.blend"))
+
+
+def main():
+    argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--design", choices=list(DESIGNS), help="one design; all of them if left out")
+    parser.add_argument("--out")
+    parser.add_argument("--preview")
+    parser.add_argument("--blend")
+    args = parser.parse_args(argv)
+    wheel.setup_cycles()
+    for name in [args.design] if args.design else list(DESIGNS):
+        build(name, args)
 
 
 if __name__ == "__main__":

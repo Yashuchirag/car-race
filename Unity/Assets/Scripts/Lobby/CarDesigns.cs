@@ -21,6 +21,9 @@ namespace CarRace.UnityGame
             /// has more parts than a generated one, and clear glass with a cabin behind it
             /// where the generated ones have dark glass over nothing.</summary>
             public Material[] detailMaterials;
+            /// <summary>The driver's eye in the car's space, where the cockpit camera sits: the
+            /// designs' cabins differ in height and in where the seat is.</summary>
+            public Vector3 eye;
         }
 
         public List<Design> designs = new List<Design>();
@@ -47,6 +50,8 @@ namespace CarRace.UnityGame
             var renderer = details != null ? details.GetComponent<MeshRenderer>() : null;
             if (renderer != null && design.detailMaterials != null && design.detailMaterials.Length > 0)
                 renderer.sharedMaterials = design.detailMaterials;
+            Transform cockpit = car.Find(CarCamera.CockpitName);
+            if (cockpit != null) cockpit.localPosition = design.eye;
         }
 
         static void Set(Transform part, Mesh mesh)

@@ -125,18 +125,21 @@ Blender takes Windows paths, hence `wslpath -w`. Add `--blend <path>` to save th
 open it in Blender to look around or change things by hand. After a change, rebuild the
 scenes: the car in each is built with the wheel's meshes and materials.
 
-## The GT's body, in Blender
+## The cars' bodies, in Blender
 
-`blender/car.py` builds the GT design's body, glass, lights, wing, mirrors and interior and
-writes `GT.fbx` to the Unity project, which `CarModel` uses in place of a generated body:
+`blender/car.py` builds all four designs (GT, Muscle, Supercar, Hot Hatch): body, glass,
+lights, wing or spoiler, mirrors and interior, one FBX each in the Unity project, which
+`CarModel` uses:
 
 ```bash
 /mnt/d/Software/Blender/blender.exe -b --factory-startup -P "$(wslpath -w Tools/blender/car.py)" -- \
     --out 'D:\Dev\CarRace\Assets\Art\Cars' --preview "$(wslpath -w Tools/out/car)"
 ```
 
-`--preview` renders it from the front, rear and side with the wheels on, to
-`Tools/out/car-front.png` and so on, in about a minute. The shape is the `KEYS` table at the
-top of the script, one row per cross-section; the window, light and grille ranges sit just
-below it. The body is built round the default Car Definition (2.65 m wheelbase, 1.6 m track),
-and `CarModel` refuses to use it for a car that differs.
+Add `--design Muscle` to build one. `--preview` renders each from the front, rear and side
+with the wheels on, to `Tools/out/car-<design>-front.png` and so on, about a minute a car.
+Each design is an entry in `DESIGNS` near the top: `keys`, one row per cross-section, is the
+shape, and `cells` says which parts of it are glass, lamps and grilles. The bodies are built
+round the default Car Definition (2.65 m wheelbase, 1.6 m track), and `CarModel` refuses to
+use them for a car that differs. A design's `cabin` eye is where the cockpit camera sits; if
+you move it, change `CarModel.Eyes` to match.
