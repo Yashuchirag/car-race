@@ -6,7 +6,8 @@ namespace CarRace.UnityGame
     /// <summary>
     /// Esc pauses the game and opens the settings: graphics quality and frame rate, with the rate
     /// actually being reached shown beside it so the effect of a choice can be seen. Pausing
-    /// stops time, so the race clock, the countdown and the physics all wait. In a race it also
+    /// stops time, so the race clock, the countdown and the physics all wait, except in a LAN
+    /// race, which cannot wait for one player and has no Restart race. In a race it also
     /// offers Restart race and Main menu (the lobby); the results screen uses the same two.
     /// Added to every scene at startup, so no scene has to be rebuilt for it.
     /// </summary>
@@ -53,8 +54,11 @@ namespace CarRace.UnityGame
             _smoothedFrame = Mathf.Lerp(_smoothedFrame, Time.unscaledDeltaTime, 0.05f);
             if (!Input.GetKeyDown(KeyCode.Escape)) return;
             _open = !_open;
-            Time.timeScale = _open ? 0f : 1f;
-            GameAudio.SetPaused(_open);
+
+            // A LAN race cannot stop for one player: the menu opens and the race goes on.
+            bool stop = _open && !LanSession.Active;
+            Time.timeScale = stop ? 0f : 1f;
+            GameAudio.SetPaused(stop);
             if (_open) GameAudio.Select(); else GameAudio.Back();
         }
 
@@ -85,7 +89,7 @@ namespace CarRace.UnityGame
             GUI.Box(panel, GUIContent.none);   // twice: one box is too faint to read over
 
             float y = panel.y + Hud.Px(16f);
-            GUI.Label(new Rect(panel.x, y, width, Hud.Px(44f)), "PAUSED", _title);
+            GUI.Label(new Rect(panel.x, y, width, Hud.Px(44f)), LanSession.Active ? "MENU (THE RACE GOES ON)" : "PAUSED", _title);
             y += Hud.Px(58f);
             GUI.Label(new Rect(panel.x, y, width, Hud.Px(28f)), "Graphics quality", _text);
             y += Hud.Px(34f);
@@ -118,13 +122,17 @@ namespace CarRace.UnityGame
             float half = (width - Hud.Px(52f)) * 0.5f;
             var restart = new Rect(panel.x + Hud.Px(20f), y + Hud.Px(44f), half, Hud.Px(48f));
             var menu = new Rect(panel.x + Hud.Px(32f) + half, y + Hud.Px(44f), half, Hud.Px(48f));
-            _hover.Watch(restart);
-            _hover.Watch(menu);
-            if (GUI.Button(restart, "Restart race", _button))
+            // A LAN race is the host's to start, so there is no restarting it alone.
+            if (!LanSession.Active)
             {
-                GameAudio.Confirm();
-                RestartRace();
+                _hover.Watch(restart);
+                if (GUI.Button(restart, "Restart race", _button))
+                {
+                    GameAudio.Confirm();
+                    RestartRace();
+                }
             }
+            _hover.Watch(menu);
             if (GUI.Button(menu, "Main menu", _button))
             {
                 GameAudio.Back();

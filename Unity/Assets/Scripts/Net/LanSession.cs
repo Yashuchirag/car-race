@@ -17,12 +17,12 @@ namespace CarRace.UnityGame
     /// start as soon as three players are in, and -playerName sets the name for one
     /// session. LobbyMenu reads -lanHost and -lanJoin.
     /// </summary>
+    [DefaultExecutionOrder(-1000)]   // before anything that asks it the time this frame
     public sealed class LanSession : MonoBehaviour
     {
         public enum Mode { Off, Browsing, Hosting, Joined }
 
         const string NameKey = "CarRace.PlayerName";
-        const float CountdownSeconds = 5f;
 
         static LanSession _current;
         public static LanSession Current
@@ -55,7 +55,44 @@ namespace CarRace.UnityGame
         public RaceStart Race => Host != null ? Host.Race : Client?.Race;
         public byte MyId => Client != null ? Client.Id : (byte)0;
 
+        /// <summary>The network's clock on this machine: real time, read when asked.</summary>
         public static float Now => Time.realtimeSinceStartup;
+
+        // Game time to real time. Physics runs in game time, a step at a time, and a car's
+        // state belongs to the moment its step ends; the network stamps in real time. The two
+        // run at the same rate in a LAN race (nothing pauses it), apart by a constant that a
+        // hitch longer than Unity's maximum step can grow. Each frame's real time less its
+        // game time is at least that constant, by however late in the frame it was read, so
+        // the least of the last two seconds of frames is the constant.
+        static readonly double[] _gameToReal = new double[120];
+        static int _gameToRealAt, _gameToRealCount;
+        static double _gameToRealOffset = double.NaN;
+
+        /// <summary>The real time, on Now's clock, that a game time corresponds to.</summary>
+        public static float RealTimeOf(double gameTime)
+        {
+            if (double.IsNaN(_gameToRealOffset)) SampleGameToReal();
+            return (float)(gameTime + _gameToRealOffset);
+        }
+
+        static void SampleGameToReal()
+        {
+            _gameToReal[_gameToRealAt] = Time.realtimeSinceStartupAsDouble - Time.timeAsDouble;
+            _gameToRealAt = (_gameToRealAt + 1) % _gameToReal.Length;
+            if (_gameToRealCount < _gameToReal.Length) _gameToRealCount++;
+            double least = double.MaxValue;
+            for (int i = 0; i < _gameToRealCount; i++) least = System.Math.Min(least, _gameToReal[i]);
+            _gameToRealOffset = least;
+        }
+
+        void Awake() => SceneManager.sceneLoaded += OnSceneLoaded;
+        void OnDestroy() => SceneManager.sceneLoaded -= OnSceneLoaded;
+
+        /// <summary>The circuit of a LAN race has loaded: set it up for everyone on the grid.</summary>
+        void OnSceneLoaded(Scene scene, LoadSceneMode mode)
+        {
+            if (Race != null && (State == Mode.Hosting || State == Mode.Joined)) LanRace.SetUp(this);
+        }
 
         public static string PlayerName
         {
@@ -156,13 +193,14 @@ namespace CarRace.UnityGame
         public void StartRace()
         {
             if (Host == null || Host.Started || Host.Humans < 2) return;
-            RaceStart race = Host.Start(Now, CountdownSeconds);
+            RaceStart race = Host.Start(Now);
             Debug.Log($"LAN: hosting a race on {race.Track}, {race.Grid.Length} cars");
             SceneManager.LoadScene(race.Track);
         }
 
         void Update()
         {
+            SampleGameToReal();
             float now = Now;
             Browser?.Poll(now);
             Host?.Poll(now);

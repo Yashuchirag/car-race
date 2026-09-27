@@ -45,6 +45,10 @@ namespace CarRace.UnityGame
         float _scale;
         int _px;                   // the map's side in this screen's pixels
 
+        /// <summary>The cars to show, this player's first. A LAN race sets its own field
+        /// before the map starts.</summary>
+        public void SetCars(Transform[] set) => cars = set;
+
         void Start()
         {
             if (track == null || track.centre.Length < 3 || cars.Length == 0 || cars[0] == null) { enabled = false; return; }

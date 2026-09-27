@@ -30,7 +30,7 @@ namespace CarRace.Harness
     {
         const float Dt = 1f / Rig.SubstepHz;
         const float SendHz = 30f;
-        const float CountdownSeconds = 3f;
+        const float CountdownSeconds = LanHost.CountdownSeconds;
 
         sealed class Machine
         {
@@ -125,21 +125,33 @@ namespace CarRace.Harness
             PollUntil(ref now, () => false, 1f, host, machines);
 
             // The start.
-            RaceStart race = host.Start(now, CountdownSeconds);
+            RaceStart race = host.Start(now);
             bool started = PollUntil(ref now, () => machines.TrueForAll(m => m.Client == null || m.Client.Race != null),
                                      2f, host, machines);
-            float worstGo = 0f;
             bool sameGrid = started;
             foreach (Machine m in machines)
-            {
-                if (m.Client == null || m.Client.Race == null) continue;
-                // GO on this machine's clock, turned back into true time.
-                float go = m.Client.Race.GoAtHostSeconds - m.Client.OffsetSeconds - m.Skew;
-                worstGo = MathF.Max(worstGo, MathF.Abs(go - race.GoAtHostSeconds));
-                sameGrid &= string.Join(",", Array.ConvertAll(m.Client.Race.Grid, p => p.Id))
-                          == string.Join(",", Array.ConvertAll(race.Grid, p => p.Id));
-            }
+                if (m.Client?.Race != null)
+                    sameGrid &= string.Join(",", Array.ConvertAll(m.Client.Race.Grid, p => p.Id))
+                              == string.Join(",", Array.ConvertAll(race.Grid, p => p.Id));
             Check(started && sameGrid, $"every player has the start and the same {race.Grid.Length} car grid");
+
+            // GO waits for the last player to load.
+            host.SetReady();
+            for (int i = 1; i < machines.Count - 1; i++) machines[i].Client.SendReady();
+            PollUntil(ref now, () => false, 0.5f, host, machines);
+            bool held = players < 2 || float.IsNaN(host.GoAtHostSeconds);
+            if (players > 1) machines[machines.Count - 1].Client.SendReady();
+            bool went = PollUntil(ref now, () => machines.TrueForAll(m => m.Client == null || !float.IsNaN(m.Client.GoAtHostSeconds)),
+                                  2f, host, machines) && !float.IsNaN(host.GoAtHostSeconds);
+            Check(held && went, "GO waits until the last player is ready, then reaches everyone");
+            float goAt = host.GoAtHostSeconds, worstGo = 0f;
+            foreach (Machine m in machines)
+            {
+                if (m.Client == null || float.IsNaN(m.Client.GoAtHostSeconds)) continue;
+                // GO on this machine's clock, turned back into true time.
+                float go = m.Client.GoAtHostSeconds - m.Client.OffsetSeconds - m.Skew;
+                worstGo = MathF.Max(worstGo, MathF.Abs(go - goAt));
+            }
             Check(worstGo < 0.01f, $"GO falls within {worstGo * 1000f:0.0} ms of the host's on every clock");
 
             // The cars.
@@ -174,7 +186,7 @@ namespace CarRace.Harness
 
             while (now < end)
             {
-                bool go = now >= race.GoAtHostSeconds;
+                bool go = now >= goAt;
                 bool observe = now >= nextObserve;
                 if (observe) nextObserve += 10 * Dt;
 
@@ -188,15 +200,15 @@ namespace CarRace.Harness
                 {
                     if (m.Client == null || m.Quit || now < m.NextSend) continue;
                     m.NextSend += 1f / SendHz;
-                    m.Client.SendCar(State(m.Id, m.Rig, m.Driver), now + m.Skew);
+                    m.Client.SendCar(State(m.Id, m.Rig, m.Driver, 0f), now + m.Skew);
                     clientPackets++;
                 }
 
                 if (now >= nextSend)
                 {
                     nextSend += 1f / SendHz;
-                    var hostCars = new List<CarState> { State(0, truth[0].Rig, truth[0].Driver) };
-                    foreach (var car in aiCars) hostCars.Add(State(car.Id, car.Rig, car.Driver));
+                    var hostCars = new List<CarState> { State(0, truth[0].Rig, truth[0].Driver, now) };
+                    foreach (var car in aiCars) hostCars.Add(State(car.Id, car.Rig, car.Driver, now));
                     hostBytes += host.SendSnapshot(hostCars, now);
                     snapshotsSent++;
                 }
@@ -321,12 +333,12 @@ namespace CarRace.Harness
             rig.Step(go ? driver.Drive(rig.Body.State, Dt) : new VehicleInputs { Brake = 1f });
         }
 
-        static CarState State(byte id, Rig rig, RaceDriver driver)
+        static CarState State(byte id, Rig rig, RaceDriver driver, float time)
         {
             BodyState body = rig.Body.State;
             return new CarState
             {
-                Id = id, Position = body.Position, Orientation = body.Orientation,
+                Id = id, TimeSeconds = time, Position = body.Position, Orientation = body.Orientation,
                 Velocity = body.Velocity, AngularVelocity = body.AngularVelocity,
                 Steer = rig.Sim.SteerPosition, EngineRpm = rig.Sim.Drivetrain.EngineRpm,
                 Gear = (byte)Math.Max(rig.Sim.Drivetrain.Gear, 0),

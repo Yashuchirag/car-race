@@ -25,13 +25,12 @@ namespace CarRace.Net
         public List<PlayerInfo> Players = new List<PlayerInfo>();
     }
 
-    /// <summary>The host's word that the race is on. The grid is in slot order, pole first,
-    /// and GO falls at one instant on the host's clock, which every client has synced to.</summary>
+    /// <summary>The host's word that the race is on: load the circuit. The grid is in slot
+    /// order, pole first. GO comes separately, once every player has loaded (Control.Go).</summary>
     public sealed class RaceStart
     {
         public string Track = "";
         public byte Laps;
-        public float GoAtHostSeconds;
         public PlayerInfo[] Grid = Array.Empty<PlayerInfo>();
     }
 
@@ -47,7 +46,7 @@ namespace CarRace.Net
         /// <summary>Bumped whenever any message here or a datagram changes meaning.</summary>
         public const byte Version = 2;
 
-        public enum Type : byte { Hello = 1, Welcome, Reject, Lobby, Setup, Start }
+        public enum Type : byte { Hello = 1, Welcome, Reject, Lobby, Setup, Start, Ready, Go }
 
         public static byte[] Hello(PlayerInfo me) => Build(Type.Hello, w =>
         {
@@ -79,9 +78,20 @@ namespace CarRace.Net
         {
             WriteString(w, start.Track);
             w.Write(start.Laps);
-            w.Write(start.GoAtHostSeconds);
             WritePlayers(w, start.Grid);
         });
+
+        /// <summary>A player's word that the circuit has loaded and its car is on the grid.</summary>
+        public static byte[] Ready() => Build(Type.Ready, w => { });
+
+        /// <summary>The instant of GO, on the host's clock.</summary>
+        public static byte[] Go(float atHostSeconds) => Build(Type.Go, w => w.Write(atHostSeconds));
+
+        public static float ReadGo(byte[] message)
+        {
+            using BinaryReader r = Body(message);
+            return r.ReadSingle();
+        }
 
         public static Type TypeOf(byte[] message) => (Type)message[0];
 
@@ -111,8 +121,7 @@ namespace CarRace.Net
             using BinaryReader r = Body(message);
             return new RaceStart
             {
-                Track = ReadString(r), Laps = r.ReadByte(), GoAtHostSeconds = r.ReadSingle(),
-                Grid = ReadPlayers(r),
+                Track = ReadString(r), Laps = r.ReadByte(), Grid = ReadPlayers(r),
             };
         }
 

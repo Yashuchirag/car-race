@@ -33,6 +33,7 @@ namespace CarRace.UnityGame
 
         bool _player;
         CarController _car;
+        RemoteCar _remote;
         Rigidbody _body;
         SynthVoice _voice;
         AudioSource _knocks;
@@ -50,6 +51,7 @@ namespace CarRace.UnityGame
         {
             _car = GetComponent<CarController>();
             _body = GetComponent<Rigidbody>();
+            _remote = GetComponent<RemoteCar>();
             int rate = AudioSettings.outputSampleRate;
             uint seed = (uint)(GetInstanceID() & 0x7fffffff) | 1u;
 
@@ -99,6 +101,18 @@ namespace CarRace.UnityGame
             float dt = Time.deltaTime;
 
             EngineSynth engine = _voice.Engine;
+
+            // Another machine's car: its model is off, and its engine and speed come from what
+            // it sends. Its tyres are heard only as road noise.
+            if (_remote != null)
+            {
+                engine.Rpm = _remote.Rpm;
+                engine.Throttle = _remote.Throttle;
+                engine.Pitch = Doppler(dt);
+                _voice.Tyres.SpeedMs = _remote.Velocity.magnitude;
+                return;
+            }
+
             engine.Rpm = sim.Drivetrain.EngineRpm;
             engine.Throttle = sim.Drivetrain.ShiftInProgress ? 0f : _car.LastInputs.Throttle;
             if (!_player) engine.Pitch = Doppler(dt);

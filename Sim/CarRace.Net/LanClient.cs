@@ -43,6 +43,9 @@ namespace CarRace.Net
         public LobbyState Lobby { get; private set; }
         public RaceStart Race { get; private set; }
 
+        /// <summary>GO on the host's clock, NaN until the host has it.</summary>
+        public float GoAtHostSeconds { get; private set; } = float.NaN;
+
         /// <summary>Every other car, carried forward to the present.</summary>
         public readonly Extrapolator Cars = new Extrapolator();
 
@@ -112,12 +115,18 @@ namespace CarRace.Net
             if (Id != 0) _tcp.Send(Control.Setup(colour, design));
         }
 
-        /// <summary>Sends this player's car, as it is now on this machine's clock.</summary>
-        public void SendCar(CarState car, float now)
+        /// <summary>This player's car is on the grid.</summary>
+        public void SendReady()
+        {
+            if (State == Phase.Racing) _tcp.Send(Control.Ready());
+        }
+
+        /// <summary>Sends this player's car, as it was at stateTime on this machine's clock.</summary>
+        public void SendCar(CarState car, float stateTime)
         {
             if (State != Phase.Racing || !Synced) return;
             car.Id = Id;
-            car.TimeSeconds = HostNow(now);
+            car.TimeSeconds = HostNow(stateTime);
             var snapshot = new Snapshot { Tick = _sent++, TimeSeconds = car.TimeSeconds, Cars = new[] { car } };
             Send(Datagram.Pack(Datagram.Kind.Car, snapshot, _writer));
         }
@@ -163,6 +172,9 @@ namespace CarRace.Net
                     Race = Control.ReadStart(message);
                     State = Phase.Racing;
                     Changed = true;
+                    break;
+                case Control.Type.Go:
+                    GoAtHostSeconds = Control.ReadGo(message);
                     break;
             }
         }

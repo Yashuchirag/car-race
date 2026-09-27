@@ -14,6 +14,7 @@ namespace CarRace.Net
         public float TimeSeconds;        // host clock time this state was true, see SnapshotCodec
         public float Steer;        // -1..1, for turning the front wheels on the client
         public float EngineRpm;    // for engine audio, which is most of what speed feels like
+        public float Throttle;     // 0..1, for the engine's note, which changes with load
         public byte Gear;          // 0 neutral, 1..N forward, 15 for reverse
         public byte Lap;
     }
@@ -55,6 +56,7 @@ namespace CarRace.Net
         const int AgeBits = 8;                       // whole milliseconds
         const int SteerBits = 8;
         const int RpmBits = 12;
+        const int ThrottleBits = 4;
         const int GearBits = 4;
         const int LapBits = 8;
         const int IdBits = 6;                        // 64 cars is plenty
@@ -86,6 +88,7 @@ namespace CarRace.Net
                 writer.WriteFloat(snapshot.TimeSeconds - car.TimeSeconds, 0f, MaxAgeSeconds, AgeBits);
                 writer.WriteFloat(car.Steer, -1f, 1f, SteerBits);
                 writer.WriteFloat(car.EngineRpm, 0f, 16000f, RpmBits);
+                writer.WriteFloat(car.Throttle, 0f, 1f, ThrottleBits);
                 writer.WriteBits(car.Gear, GearBits);
                 writer.WriteBits(car.Lap, LapBits);
             }
@@ -125,6 +128,7 @@ namespace CarRace.Net
                     TimeSeconds = snapshot.TimeSeconds - reader.ReadFloat(0f, MaxAgeSeconds, AgeBits),
                     Steer = reader.ReadFloat(-1f, 1f, SteerBits),
                     EngineRpm = reader.ReadFloat(0f, 16000f, RpmBits),
+                    Throttle = reader.ReadFloat(0f, 1f, ThrottleBits),
                     Gear = (byte)reader.ReadBits(GearBits),
                     Lap = (byte)reader.ReadBits(LapBits),
                 };

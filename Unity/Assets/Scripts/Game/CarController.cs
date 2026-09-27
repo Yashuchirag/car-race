@@ -288,6 +288,18 @@ namespace CarRace.UnityGame
         /// <summary>Puts the car back where it started, at rest.</summary>
         public void Respawn() => PlaceAt(_spawnPosition, _spawnRotation);
 
+        /// <summary>Moves the car to a new start, which Respawn then returns to: a LAN race
+        /// puts each car on the slot the host gave it.</summary>
+        public void PlaceOnGrid(Vector3 position, Quaternion rotation)
+        {
+            _spawnPosition = position;
+            _spawnRotation = rotation;
+            PlaceAt(position, rotation);
+        }
+
+        /// <summary>The wheel meshes, for a RemoteCar to turn when this model is off.</summary>
+        public Transform[] WheelVisuals => wheelVisuals;
+
         /// <summary>
         /// Puts the car back on the track where it is, at rest and pointing the right way, or
         /// at the start when the scene has no track. After a spin the car used to be sent back

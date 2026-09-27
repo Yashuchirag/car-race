@@ -292,7 +292,10 @@ cd /mnt/d/Dev/CarRace/Builds
 
 `LanBots` is the harness published for Windows (`dotnet publish Sim/CarRace.Harness -c Release
 -r win-x64 --self-contained -p:PublishSingleFile=true -o /mnt/d/Dev/CarRace/Builds/LanBots`).
-`-lanStartWhen N` has a host start once N players are in. Windows asks once whether the
+`-lanStartWhen N` has a host start once N players are in, `-lanAi N` gives a `-lanHost`
+AI cars, `-lanAutopilot` lets the AI drive this copy's car, and `-lanScreenshotAt 14,30`
+saves race screenshots beside the exe and quits. Bots drive in the race when given the
+circuits: `--tracks 'D:\Dev\CarRace\Assets\Tracks'`. Windows asks once whether the
 game may use the network; allow private networks.
 
 Each AI car's pace (the share of grip it uses) is on `RaceDirector`, 0.85, 0.82 and 0.79

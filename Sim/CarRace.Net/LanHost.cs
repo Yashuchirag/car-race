@@ -26,6 +26,13 @@ namespace CarRace.Net
         /// connection never said so, as happens when a cable is pulled.</summary>
         public const float TimeoutSeconds = 5f;
 
+        /// <summary>From the ready signal to GO: long enough to see a 3, 2, 1.</summary>
+        public const float CountdownSeconds = 3f;
+
+        /// <summary>How long GO waits for a player still loading before going without them.
+        /// They join the race when they arrive.</summary>
+        public const float ReadyTimeoutSeconds = 20f;
+
         sealed class Client
         {
             public FrameSocket Tcp;
@@ -33,6 +40,7 @@ namespace CarRace.Net
             public IPEndPoint Udp;             // null until its first datagram
             public float LastHeard;
             public bool HasCar;
+            public bool Ready;
             public CarState Car;
         }
 
@@ -56,6 +64,11 @@ namespace CarRace.Net
 
         public RaceStart Race { get; private set; }
         public bool Started => Race != null;
+
+        /// <summary>GO on the host's clock, NaN until every player is ready.</summary>
+        public float GoAtHostSeconds { get; private set; } = float.NaN;
+        bool _hostReady;
+        float _startedAt;
 
         /// <summary>Set whenever someone joins, leaves or changes the lobby, for the menu to
         /// redraw from. The host clears it.</summary>
@@ -122,22 +135,34 @@ namespace CarRace.Net
                 client.Tcp.Flush();
                 if (client.Tcp.Closed || now - client.LastHeard > TimeoutSeconds) Drop(client);
             }
+
+            if (Started && float.IsNaN(GoAtHostSeconds) && _hostReady
+                && (_clients.TrueForAll(c => c.Player == null || c.Ready) || now - _startedAt > ReadyTimeoutSeconds))
+            {
+                GoAtHostSeconds = now + CountdownSeconds;
+                byte[] go = Control.Go(GoAtHostSeconds);
+                foreach (Client client in _clients)
+                    if (client.Player != null) client.Tcp.Send(go);
+            }
         }
+
+        /// <summary>The host's own car is on the grid. GO follows once everyone's is.</summary>
+        public void SetReady() => _hostReady = true;
 
         /// <summary>
         /// Closes the lobby and fixes the grid: people in the order they joined, then the AI.
-        /// GO falls countdownSeconds from now on the host's clock.
+        /// Everyone loads the circuit; GO is set once they all say they are ready.
         /// </summary>
-        public RaceStart Start(float now, float countdownSeconds)
+        public RaceStart Start(float now)
         {
+            _startedAt = now;
             var grid = new List<PlayerInfo>(Lobby.Players);
             for (int i = 0; i < Lobby.AiCars; i++)
                 grid.Add(new PlayerInfo { Id = (byte)(FirstAiId + i), Name = $"AI {i + 1}", Ai = true, Colour = 255 });
 
             Race = new RaceStart
             {
-                Track = Lobby.Track, Laps = Lobby.Laps,
-                GoAtHostSeconds = now + countdownSeconds, Grid = grid.ToArray(),
+                Track = Lobby.Track, Laps = Lobby.Laps, Grid = grid.ToArray(),
             };
             byte[] message = Control.Start(Race);
             foreach (Client client in _clients)
@@ -146,19 +171,14 @@ namespace CarRace.Net
         }
 
         /// <summary>
-        /// Sends every car to every client: the ones the host simulates, stamped now, and
-        /// each client's latest, with the time it was true, so that every machine can carry
-        /// them all forward to the same present.
+        /// Sends every car to every client: the ones the host simulates, stamped by the host
+        /// with the time their state was true, and each client's latest, with the time it
+        /// was true, so that every machine can carry them all forward to the same present.
         /// </summary>
         public int SendSnapshot(IReadOnlyList<CarState> hostCars, float now)
         {
             var cars = new List<CarState>(hostCars.Count + _clients.Count);
-            foreach (CarState car in hostCars)
-            {
-                CarState stamped = car;
-                stamped.TimeSeconds = now;
-                cars.Add(stamped);
-            }
+            cars.AddRange(hostCars);
             foreach (Client client in _clients)
                 if (client.HasCar) cars.Add(client.Car);
 
@@ -235,6 +255,9 @@ namespace CarRace.Net
                     SendLobby();
                     break;
                 }
+                case Control.Type.Ready when client.Player != null && Started:
+                    client.Ready = true;
+                    break;
                 case Control.Type.Setup when client.Player != null && !Started:
                 {
                     using var r = Control.Body(message);

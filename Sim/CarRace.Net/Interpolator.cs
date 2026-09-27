@@ -108,6 +108,7 @@ namespace CarRace.Net
             TimeSeconds = a.TimeSeconds + (b.TimeSeconds - a.TimeSeconds) * t,
             Steer = a.Steer + (b.Steer - a.Steer) * t,
             EngineRpm = a.EngineRpm + (b.EngineRpm - a.EngineRpm) * t,
+            Throttle = a.Throttle + (b.Throttle - a.Throttle) * t,
             Gear = t < 0.5f ? a.Gear : b.Gear,
             Lap = t < 0.5f ? a.Lap : b.Lap,
         };

@@ -76,6 +76,8 @@ namespace CarRace.UnityGame
         /// </summary>
         static void PaintPlayer()
         {
+            // A LAN race paints every car itself, the same way on every machine (LanRace).
+            if (LanSession.Active && LanSession.Current.Race != null) return;
             var cars = Object.FindObjectsByType<CarController>(FindObjectsSortMode.None);
             var taken = new System.Collections.Generic.List<Color> { Colour };
             foreach (var car in cars)

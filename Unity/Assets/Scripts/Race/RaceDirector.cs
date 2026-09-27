@@ -75,9 +75,34 @@ namespace CarRace.UnityGame
         CarController[] _cars;     // RaceControl's order: the AI in grid order, then the player
         GUIStyle _style, _bigStyle, _tableStyle, _hintStyle, _buttonStyle;
 
+        // A LAN race (LanRace): the other players' cars, and on a client the host's AI, all
+        // moved from the network; the start held until the host's GO. Positions and results
+        // across machines are not kept yet: each machine ranks the cars it drives.
+        System.Func<float> _secondsToGo;
+        System.Collections.Generic.List<RemoteCar> _remotes;
+        readonly System.Collections.Generic.Dictionary<RemoteCar, int> _remoteIndex = new System.Collections.Generic.Dictionary<RemoteCar, int>();
+        bool _waiting;
+
+        public CarController Player => player;
+        public CarController[] AiCars => aiCars;
+        public bool Lan => _secondsToGo != null;
+
+        /// <summary>
+        /// Set up as a LAN race, before Start: the AI this machine drives (none on a client),
+        /// the cars moved from the network, whom the AI see and avoid like the player, the
+        /// laps, and the seconds to GO, NaN while the host waits for everyone to load.
+        /// </summary>
+        public void UseLan(CarController[] ai, System.Collections.Generic.List<RemoteCar> remotes, int laps, System.Func<float> secondsToGo)
+        {
+            aiCars = ai;
+            _remotes = remotes;
+            raceLaps = Mathf.Max(1, laps);
+            _secondsToGo = secondsToGo;
+        }
+
         void Start()
         {
-            if (track == null || player == null || track.line.Length < 3 || aiCars.Length == 0)
+            if (track == null || player == null || track.line.Length < 3 || aiCars.Length == 0 && !Lan)
             {
                 enabled = false;
                 return;
@@ -85,6 +110,8 @@ namespace CarRace.UnityGame
 
             CarAudio.Attach(player, player: true);
             foreach (CarController car in aiCars) CarAudio.Attach(car, player: false);
+            if (_remotes != null)
+                foreach (RemoteCar remote in _remotes) CarAudio.Attach(remote.GetComponent<CarController>(), player: false);
 
             _track = track.ToTrackData();
             _drivers = new RaceDriver[aiCars.Length];
@@ -228,6 +255,14 @@ namespace CarRace.UnityGame
             TrackPlayer();
             if (!_started)
             {
+                if (Lan)
+                {
+                    float left = _secondsToGo();
+                    _waiting = float.IsNaN(left);
+                    if (_waiting) return;
+                    _countdown = left;
+                }
+
                 // A beep as each number shows, a higher one for GO.
                 int showing = Mathf.CeilToInt(_countdown);
                 if (showing < _beeped && showing >= 1) { GameAudio.Countdown(go: false); _beeped = showing; }
@@ -260,10 +295,19 @@ namespace CarRace.UnityGame
                 PathDriver path = _drivers[i].Path;
                 _field[i] = Seen(aiCars[i], path.Index, path.LateralFromLineM, path.Plan, path.Lane);
             }
+            int remotes = _remotes?.Count ?? 0;
+            if (_field.Length != aiCars.Length + 1 + remotes)
+            {
+                var resized = new RaceDriver.Seen[aiCars.Length + 1 + remotes];
+                System.Array.Copy(_field, resized, Mathf.Min(_field.Length, aiCars.Length));
+                _field = resized;
+            }
             Vec3 playerPosition = ToNumerics(player.transform.position);
             _field[aiCars.Length] = Seen(player, _playerIndex,
                                          _track.LateralOffset(_track.Line, _playerIndex, playerPosition),
                                          _playerPlan);
+            // The other players' cars, seen as the player is: the AI assume the same pace.
+            for (int r = 0; r < remotes; r++) _field[aiCars.Length + 1 + r] = Seen(_remotes[r]);
 
             _playerDriver?.Observe(_track, _field, aiCars.Length, elapsed);
             for (int i = 0; i < aiCars.Length; i++)
@@ -318,6 +362,25 @@ namespace CarRace.UnityGame
             };
         }
 
+        RaceDriver.Seen Seen(RemoteCar remote)
+        {
+            Transform t = remote.transform;
+            int n = _track.Count;
+            int index = _remoteIndex.TryGetValue(remote, out int hint) && (t.position - track.centre[hint]).sqrMagnitude < 40f * 40f
+                ? track.Nearest(t.position, hint)
+                : track.Nearest(t.position, 0, back: 0, ahead: n - 1);
+            _remoteIndex[remote] = index;
+            Vec3 position = ToNumerics(t.position);
+            return new RaceDriver.Seen
+            {
+                Index = index,
+                LateralM = _track.LateralOffset(_track.Line, index, position),
+                SpeedMs = Vector3.Dot(remote.Velocity, t.forward),
+                Plan = _playerPlan,
+                Position = position,
+            };
+        }
+
         /// <summary>The grip under a car, its wheels' average: 1 on asphalt, 0.45 on grass.</summary>
         static float Grip(CarController car)
         {
@@ -358,7 +421,7 @@ namespace CarRace.UnityGame
         void Update()
         {
             // Not while paused: the settings menu outlives the scene, and so would its pause.
-            if (_control != null && PlayerEntry.Finished && Time.timeScale > 0f && Input.GetKeyDown(KeyCode.Return))
+            if (_control != null && !Lan && PlayerEntry.Finished && Time.timeScale > 0f && Input.GetKeyDown(KeyCode.Return))
             {
                 GameAudio.Confirm();
                 SettingsMenu.RestartRace();
@@ -390,12 +453,17 @@ namespace CarRace.UnityGame
             int lap = Mathf.Clamp(me.LapsComplete + 1, 1, raceLaps);
             var box = new Rect(Screen.width * 0.5f - Hud.Px(160f), Hud.Px(10f), Hud.Px(320f), Hud.Px(56f));
             GUI.Box(box, GUIContent.none);
-            GUI.Label(box, $"P{me.Position} / {_cars.Length}    Lap {lap} / {raceLaps}", _style);
+            GUI.Label(box, Lan ? $"Lap {lap} / {raceLaps}" : $"P{me.Position} / {_cars.Length}    Lap {lap} / {raceLaps}", _style);
             _hintStyle ??= new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter, normal = { textColor = new Color(1f, 1f, 1f, 0.7f) } };
             _hintStyle.fontSize = Hud.Font(15);
-            GUI.Label(new Rect(box.x, box.yMax + Hud.Px(2f), box.width, Hud.Px(22f)), "Esc: pause, restart or main menu", _hintStyle);
+            GUI.Label(new Rect(box.x, box.yMax + Hud.Px(2f), box.width, Hud.Px(22f)),
+                      Lan ? "Esc: menu (the race goes on)" : "Esc: pause, restart or main menu", _hintStyle);
 
-            if (!_started)
+            if (_waiting)
+            {
+                GUI.Label(new Rect(0f, Screen.height * 0.3f, Screen.width, Hud.Px(60f)), "WAITING FOR EVERYONE TO LOAD", _style);
+            }
+            else if (!_started)
             {
                 _bigStyle.normal.textColor = new Color(1f, 0.2f, 0.15f);
                 GUI.Label(new Rect(0f, Screen.height * 0.3f, Screen.width, Hud.Px(160f)),
@@ -450,9 +518,9 @@ namespace CarRace.UnityGame
             _hover.Begin();
             var again = new Rect(panel.x + Hud.Px(20f), top, half, Hud.Px(46f));
             var menu = new Rect(panel.x + Hud.Px(32f) + half, top, half, Hud.Px(46f));
-            _hover.Watch(again);
+            if (!Lan) _hover.Watch(again);
             if (SettingsMenu.InRace) _hover.Watch(menu);
-            if (GUI.Button(again, "Race again (Enter)", _buttonStyle))
+            if (!Lan && GUI.Button(again, "Race again (Enter)", _buttonStyle))
             {
                 GameAudio.Confirm();
                 SettingsMenu.RestartRace();
