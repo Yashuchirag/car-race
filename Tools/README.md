@@ -143,3 +143,21 @@ shape, and `cells` says which parts of it are glass, lamps and grilles. The bodi
 round the default Car Definition (2.65 m wheelbase, 1.6 m track), and `CarModel` refuses to
 use them for a car that differs. A design's `cabin` eye is where the cockpit camera sits; if
 you move it, change `CarModel.Eyes` to match.
+
+## Scenery, in Blender
+
+`blender/scenery.py` builds the circuits' Blender scenery into `Assets/Art/Scenery`: the
+trackside pieces every circuit uses (guardrail posts, tyre-wall modules with red and white
+belts, catch-fence posts and the chain-link texture, marshal posts), the pit building and main
+grandstand bays, Royal Park's landmarks (a villa in the manner of Monza's Villa Reale and a
+length of old banked oval) and the Alps on its horizon with their texture.
+
+```bash
+/mnt/d/Software/Blender/blender.exe -b --factory-startup -P "$(wslpath -w Tools/blender/scenery.py)" -- \
+    --out 'D:\Dev\CarRace\Assets\Art\Scenery' --preview "$(wslpath -w Tools/out/scenery)"
+```
+
+`--only villa,banking` builds just those. Parts are named after the Unity materials
+(`StructureModels.Named`), and texture coordinates are metres over each material's repeat.
+`SceneryBuilder` (with `SceneryBuilder.Trackside.cs`) places them when a circuit is built;
+rebuild the circuit after a change.

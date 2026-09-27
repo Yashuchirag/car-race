@@ -196,6 +196,14 @@ pulsing as each finishes. A new best lap flashes a purple banner for 3 s.
 `-benchmarkSeconds` lengthens the benchmark, and `-screenshotAt 150,210` takes screenshots at
 several moments, for looking at the game later in a race.
 
+`-viewpoints <prefix>` (with `-benchmark`) tours the circuit instead: the camera leaves the car
+for fixed views worked out from the centreline (down the grid, the start from above, the
+outside of the three tightest corners, the air, the horizon), saving `<prefix>-<view>.png`
+for each, then quits. `-viewpointsOf villa,banking` adds a view of each named object from
+the nearest point of the track. `-hideObjects a,b` switches named objects off for a
+benchmark, to time the same build with and without them. `-cameraView Cockpit` starts in the
+cockpit view.
+
 Track scenes time laps: `TrackPath` on the circuit holds the centreline, start line at
 sample 0, and `LapTimer` on the car shows current, last and best lap, three sectors
 against your best sectors, and the headless reference driver's lap for that circuit. A

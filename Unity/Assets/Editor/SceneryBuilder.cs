@@ -34,7 +34,7 @@ namespace CarRace.UnityGame.EditorTools
     /// TreeModels' generated ones, each with a far version InstancedTrees draws past its LOD
     /// distance; cacti and boulders are still Kenney's.
     /// </summary>
-    public static class SceneryBuilder
+    public static partial class SceneryBuilder
     {
         const float CellM = 2.5f;
         const float ReachM = 700f;
@@ -128,6 +128,8 @@ namespace CarRace.UnityGame.EditorTools
             var structures = new GameObject("Structures");
             structures.transform.SetParent(parent.transform, false);
             int placed = Furniture(structures, land, circuit);
+            placed += Landmarks(structures, land, circuit, theme);
+            placed += Trackside(parent, land, circuit, StandCorners(circuit));
             var growth = new Growth(terrain);
             if (theme.City)
             {
@@ -153,8 +155,8 @@ namespace CarRace.UnityGame.EditorTools
         /// <summary>The racing circuit's own buildings, the same in every theme.</summary>
         static int Furniture(GameObject parent, Land land, Circuit circuit)
         {
-            GameObject garage = StructureModels.Load("garage");
-            GameObject covered = StructureModels.Load("stand_covered");
+            GameObject garage = StructureModels.BlenderModel("pit_bay");
+            GameObject covered = StructureModels.BlenderModel("stand_bay");
             GameObject stand = StructureModels.Load("stand_open");
             GameObject tent = StructureModels.Load("marquee");
             GameObject[] billboards = { StructureModels.Load("billboard_0"), StructureModels.Load("billboard_1"),
@@ -169,14 +171,8 @@ namespace CarRace.UnityGame.EditorTools
             placed += Row(parent, land, circuit, covered, 0, -1, -110f, 110f, 12f, StructureClearM + 1f);
 
             // The tightest corners, a stand on the outside of each and tents behind it.
-            List<int> corners = Corners(circuit, 110f, 300f);
-            corners.Sort((a, b) => circuit.Radius(a).CompareTo(circuit.Radius(b)));
-            var chosen = new List<int>();
-            foreach (int k in corners)
+            foreach (int k in StandCorners(circuit))
             {
-                if (chosen.Count == 4) break;
-                if (circuit.ArcM(k, 0) < 250f || chosen.Exists(c => circuit.ArcM(c, k) < 300f)) continue;
-                chosen.Add(k);
                 int outside = -circuit.Turn(k);
                 placed += Row(parent, land, circuit, stand, k, outside, -25f, 25f, 10f, StructureClearM + 2f);
                 float behind = StructureClearM + 2f + Scaled(stand, 10f).z + 6f;
@@ -274,6 +270,22 @@ namespace CarRace.UnityGame.EditorTools
             GameObjectUtility.SetStaticEditorFlags(go, StaticEditorFlags.BatchingStatic);
             land.Take(corners, 2f);
             return go;
+        }
+
+        /// <summary>The corners that get a stand: the four tightest, 250 m clear of the start and
+        /// 300 m of each other.</summary>
+        static List<int> StandCorners(Circuit circuit)
+        {
+            List<int> corners = Corners(circuit, 110f, 300f);
+            corners.Sort((a, b) => circuit.Radius(a).CompareTo(circuit.Radius(b)));
+            var chosen = new List<int>();
+            foreach (int k in corners)
+            {
+                if (chosen.Count == 4) break;
+                if (circuit.ArcM(k, 0) < 250f || chosen.Exists(c => circuit.ArcM(c, k) < 300f)) continue;
+                chosen.Add(k);
+            }
+            return chosen;
         }
 
         /// <summary>Corner apexes: samples tighter than maxRadiusM and tightest within

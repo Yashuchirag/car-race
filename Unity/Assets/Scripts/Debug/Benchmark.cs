@@ -106,6 +106,21 @@ namespace CarRace.UnityGame
             // Unless a -driveScript is driving it instead, to test the inputs.
             director.AiDrivesPlayer = !DriverInput.Scripted;
 
+            // -hideObjects a,b switches those objects off, for measuring what a part of the
+            // scenery costs by timing the same build with and without it.
+            string[] args = Environment.GetCommandLineArgs();
+            int hide = Array.IndexOf(args, "-hideObjects");
+            if (hide >= 0 && hide + 1 < args.Length)
+                foreach (string name in args[hide + 1].Split(','))
+                {
+                    GameObject found = GameObject.Find(name);
+                    while (found != null)
+                    {
+                        found.SetActive(false);
+                        found = GameObject.Find(name);
+                    }
+                }
+
             // A disabled component's Start never runs, so the recorder opens no file.
             if (Array.IndexOf(Environment.GetCommandLineArgs(), "-noTelemetry") >= 0)
                 foreach (var recorder in FindObjectsByType<TelemetryRecorder>(FindObjectsSortMode.None)) recorder.enabled = false;

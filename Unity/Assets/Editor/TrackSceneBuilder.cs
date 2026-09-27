@@ -161,8 +161,8 @@ namespace CarRace.UnityGame.EditorTools
             // sits on its own layer, which the wheel probes are told to ignore below: a wheel
             // brushing the wall would otherwise read it as ground and launch the car.
             var barrierMaterial = SkidpadSceneBuilder.EnsureMaterial(BarrierMaterialPath, new Color(0.85f, 0.85f, 0.85f), null, Vector2.one);
-            Wall("Barrier Left", root, leftOuter, right, +1f, barrierMaterial, barrierSurface, barrierLayer);
-            Wall("Barrier Right", root, rightOuter, right, -1f, barrierMaterial, barrierSurface, barrierLayer);
+            Wall("Barrier Left", root, leftOuter, right, +1f, barrierSurface, barrierLayer);
+            Wall("Barrier Right", root, rightOuter, right, -1f, barrierSurface, barrierLayer);
             Bridges(root, centre, right, track.centerline.width_left, track.centerline.width_right, barrierMaterial);
             var slots = new List<(int, float)>();
             for (int slot = 0; slot <= AiCars; slot++) slots.Add(GridPlace(slot, n, track.sample_spacing_m));
@@ -711,13 +711,13 @@ namespace CarRace.UnityGame.EditorTools
         }
 
         /// <summary>
-        /// A vertical wall along <paramref name="edge"/>, facing the track, which lies on the
-        /// side <paramref name="inward"/> times <paramref name="right"/>. Its foot is sunk
-        /// BarrierFootM below the edge so that no gap opens where the ground rises and falls
-        /// between samples, and it has a top so it reads as a wall rather than a sheet.
+        /// A vertical wall collider along <paramref name="edge"/>, facing the track, which lies
+        /// on the side <paramref name="inward"/> times <paramref name="right"/>. Its foot is
+        /// sunk BarrierFootM below the edge so that no gap opens where the ground rises and
+        /// falls between samples.
         /// </summary>
         static void Wall(string name, GameObject parent, Vector3[] edge, Vector3[] right, float inward,
-                         Material material, PhysicsMaterial surface, int layer)
+                         PhysicsMaterial surface, int layer)
         {
             int n = edge.Length;
             const float thickness = 0.4f;
@@ -756,7 +756,8 @@ namespace CarRace.UnityGame.EditorTools
             var go = new GameObject(name) { layer = layer };
             go.transform.SetParent(parent.transform, false);
             go.AddComponent<MeshFilter>().sharedMesh = mesh;
-            go.AddComponent<MeshRenderer>().sharedMaterial = material;
+            // No renderer: SceneryBuilder stands guardrail and tyre walls on its inner face, and
+            // they are what shows. The wall only stops the car.
             var collider = go.AddComponent<MeshCollider>();
             collider.sharedMesh = mesh;
             collider.sharedMaterial = surface;
