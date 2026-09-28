@@ -37,6 +37,7 @@ Back onto the track    R              View
 Restart the race       Backspace      Menu
 Change camera          C              Y
 Pause and settings     Esc
+Quit the game          QUIT button on the home screen (bottom left)
 
 Keyboard steering is smoothed for you, so short taps are fine.
 

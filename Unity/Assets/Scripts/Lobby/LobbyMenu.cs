@@ -165,6 +165,10 @@ namespace CarRace.UnityGame
 
             CircuitPanel(new Rect(margin, Hud.Px(180f), Hud.Px(400f), Hud.Px(560f)));
 
+            // Quit, bottom left, under the circuits: the one way out of the game besides Alt+F4.
+            if (Button(new Rect(margin, Screen.height - margin - Hud.Px(44f), Hud.Px(140f), Hud.Px(44f)), "QUIT", true, back: true))
+                Application.Quit();
+
             // Car, right: the body designs, colour swatches, the colour's name and PLAY.
             // A player who has said ready keeps the car they said it with, until they un-ready.
             bool locked = LanSession.Active && LanSession.Current.IsReadyToRace;
