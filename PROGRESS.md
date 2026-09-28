@@ -10,13 +10,13 @@ concrete action is. Everything below it is detail.
 
 ## 1. Resume here
 
-**Last updated:** 2026-09-27 (Unity repo trimmed for GitHub)
+**Last updated:** 2026-09-28 (GPU Resident Drawer measured and left out; camera zoom reduced)
 
-**Last completed:** The Unity repo's track scenes taken out of Git and listed in `D:\Dev\CarRace\GENERATED_SCENES.md`, with all pending Unity work committed (`2c5de50`, not pushed; section 3). Before that, the white shade along the barriers at the start and corners: it was the catch fence turning solid at a distance, now fixed (section 3). Before that, all six circuits' scenery in Blender, each with its own two landmarks and, where it has one, a horizon (section 3). Before that, Royal Park's first: guardrail, tyre walls, catch fences, marshal posts, new pit building and grandstand, a villa, old banking and the Alps (section 3). Before that, all four cars in Blender with interiors and the cockpit camera inside them; Blender wheels (section 3, beside the realistic pass): tyre with baked tread and sidewall lettering, alloy rim, disc and a caliper that steers but does not spin, all from `Tools/blender/wheel.py`. Before that, realistic pass, stages 2 and 3: generated grandstands,
+**Last completed:** The stutter report (section 8, nineteenth session). The GPU Resident Drawer was tried and measured on Ise Bay: no gain, about 1 ms more main thread, 90 minutes more per clean build, so it was taken back out (patch kept in `Builds\GRD`). The chase camera's speed zoom went from 22 to 8 degrees, so the picture no longer shrinks at speed; performance unchanged. Before that, the Unity repo's track scenes taken out of Git and listed in `D:\Dev\CarRace\GENERATED_SCENES.md`, with all pending Unity work committed (`2c5de50`, not pushed; section 3). Before that, the white shade along the barriers at the start and corners: it was the catch fence turning solid at a distance, now fixed (section 3). Before that, all six circuits' scenery in Blender, each with its own two landmarks and, where it has one, a horizon (section 3). Before that, Royal Park's first: guardrail, tyre walls, catch fences, marshal posts, new pit building and grandstand, a villa, old banking and the Alps (section 3). Before that, all four cars in Blender with interiors and the cockpit camera inside them; Blender wheels (section 3, beside the realistic pass): tyre with baked tread and sidewall lettering, alloy rim, disc and a caliper that steers but does not spin, all from `Tools/blender/wheel.py`. Before that, realistic pass, stages 2 and 3: generated grandstands,
 garages, marquees, billboards, braking boards and city buildings in photographed materials;
 smooth car bodies with clear-coat paint and real wheels. Before that, sound.
 
-**Next action:** Your decision on the Unity repo push: as is it uploads 963 MB of LFS, mostly old generated ground files; squashing the 36 unpushed commits cuts that to 151 MB (section 3, "Unity repo trimmed for GitHub"). A zip to share is at `D:\Dev\CarRace\Builds\CarRace-2026-09-27.zip` (section 3). You drove the six circuits and the four cars (2026-09-27: the cars feel good, the catch fence fixed) and raced a LAN game to the finish with several copies on this laptop, no problems reported. LAN stage 5 is a test on two real PCs when you have a second one. Performance: what is left is mostly High quality's own cost (18 to 31% against Medium) and this laptop's throttling; see section 3.
+**Next action:** Drive Ise Bay with the new build (`D:\Dev\CarRace\Builds\Windows`) and say whether the zoom of 8 feels right, and whether the stutter is still bad; the next performance step would be in the scripts or in sharing meshes and materials, not rendering settings. Also your decision on the Unity repo push: as is it uploads 963 MB of LFS, mostly old generated ground files; squashing the 36 unpushed commits cuts that to 151 MB (section 3, "Unity repo trimmed for GitHub"). A zip to share is at `D:\Dev\CarRace\Builds\CarRace-2026-09-27.zip` (section 3). You drove the six circuits and the four cars (2026-09-27: the cars feel good, the catch fence fixed) and raced a LAN game to the finish with several copies on this laptop, no problems reported. LAN stage 5 is a test on two real PCs when you have a second one. Performance: what is left is mostly High quality's own cost (18 to 31% against Medium) and this laptop's throttling; see section 3.
 
 ---
 
@@ -327,6 +327,13 @@ Unity/          the integration layer, written, never run    Phase 1, WIP
   fullscreen; cleared then. After windowed test runs, delete those values again. Alt+Enter also
   toggles fullscreen. The company name is still Unity's `DefaultCompany`; changing it would move
   saved settings and best laps to a new place, so it is left for your decision.
+- The dev benchmark CSV writes `Draw Calls Count` and `Batches Count` in raw units to three
+  decimals (0.001 means 1,000), so single frames read only as 1,000 or 2,000; the mean over a
+  run is still usable. Found 2026-09-28; not fixed, as it only affects reading the file.
+- The main thread's cost per frame did not move with the GPU Resident Drawer (2026-09-28), and
+  heat changes the frame rate more than any setting tried: the first 60 s run of every set is
+  near 100 fps at Ise Bay, the rest near 82 to 97. What is left to cut is in the scripts and in
+  the number of distinct meshes and materials, not in how draws are submitted.
 - The scenery pass costs about 7% of average frame rate at Royal Park, on top of the wheels
   (5%) and cars (3%). A far version for trackside pieces, wheels and cars, as the trees have,
   is the obvious next performance step if the frame rate matters. Noted 2026-09-27.
@@ -576,6 +583,49 @@ learned, so context is not lost between sessions.
 - Added this file, and a rule in `CLAUDE.md` section 5 to keep it current during
   work rather than at the end.
 
+### 2026-09-28, nineteenth session
+
+- WIP: GPU Resident Drawer. `GraphicsSetup.EnsureQualityLevels` now sets Instanced Drawing on
+  the High, Medium and Low URP assets and keeps all BatchRendererGroup shader variants
+  (`m_BrgStripping` 2; `EditorGraphicsSettings.batchRendererGroupShaderStrippingMode` is read
+  only in 6000.3, so it is set through the settings asset). Applied headless. Apply also flips
+  High's legacy `antiAliasing` in QualitySettings from 4 to 0, which URP ignores; reverted to
+  keep the change to the drawer alone. The old builds are kept as `Builds\Baseline` and
+  `Builds\BaselineDevelopment`. The release build took 92 minutes: keeping the BRG variants
+  compiles URP Lit's 3,840 variants at about 0.7 a second.
+- Screenshots, old build against new, Airfield at night and Royal Park by day: the same
+  picture (neon, lamps, city, trees, shadows). In `Builds\GRD\cmp-*.png`.
+- Ise Bay, release, 60 s, AI driving, 1080p fullscreen, four pairs in the order B N N B B N N B
+  (`Builds\GRD\rel-*`): baseline 106.1, 97.3, 96.2, 95.4 fps (mean 98.8, 96.3 without the cold
+  first run), 1% low mean 53.8, 0.1% low mean 43.1; drawer 95.7, 97.4, 93.8, 92.1 (mean 94.8),
+  1% low 54.8, 0.1% low 41.9. No gain; the average 2 to 4% lower.
+- Dev builds, two pairs (`Builds\GRD\dev-*`): the drawer is running (its markers,
+  `GPUResidentDrawer`, `InstanceOcclusionTest`, `ObjectDispatcherPostLateUpdate`, appear only
+  in the new build) but draw calls stay at about 1,300 a frame and batches rise 1,170 to 1,320;
+  main thread mean 8.0 and 10.0 ms before, 11.0 and 11.0 after. Tried once with static
+  batching off as well (temporary, reverted): draws fall to about 1,150, frame rate the same
+  within noise (`Builds\GRD\sb-*`). Every set's first run is near 100 fps and the rest near
+  82, so heat is still larger than any of these settings.
+- Decision: the drawer taken back out, not committed. It gains nothing measurable here, costs
+  about 1 ms of main thread, and adds 90 minutes to a clean build. The change is kept as
+  `Builds\GRD\gpu-resident-drawer.patch` (`git apply` in `D:\Dev\CarRace`) if it is wanted
+  again, for instance after the scenery is changed to share meshes. Baseline and
+  BaselineDevelopment are the builds it was measured against.
+- Camera zoom: `CarCamera.fovGainAtTopSpeed` 22 to 8 (62 to 70 degrees instead of 62 to 84),
+  in both repos, and the serialized value in the skidpad and the six track scenes edited to
+  match (the scenes are generated and out of Git; a rebuild would write 8 now anyway).
+  Release build without the drawer. Ise Bay, four pairs B N N B B N N B (`Builds\GRD\fov-*`):
+  baseline 110.6, 96.6, 95.0, 93.1 fps, new 98.8, 97.3, 95.4, 92.1; pair by pair after the
+  cold first run the same within 1 fps; 1% lows 52.4 and 52.1. A change to how it looks, not
+  to cost. Screenshots at 44 and 145 km/h (`Builds\GRD\cmp-fov-*.png`): the same at 44; at 145
+  the car and road no longer shrink back. Only you can judge whether 8 is the right amount.
+- Committed `-playerDrives` in `Benchmark` with the camera change in both repos; not pushed.
+- Noted for the camera zoom: the track scenes and the skidpad serialize
+  `fovGainAtTopSpeed: 22`, so changing the default in `CarCamera` alone does nothing until
+  the scenes are rebuilt or edited.
+- Static batching is on in Player settings and the scenery is marked `BatchingStatic`; worth
+  knowing if the drawer picks up less than expected.
+
 ### 2026-09-27, eighteenth session
 
 - GitHub limits and your usage: 41 repos holding about 1.8 GB, 1.34 GB of it badminton-analysis.
@@ -590,6 +640,23 @@ learned, so context is not lost between sessions.
 - Arrow keys: they already drive the car, since the Input Manager's Horizontal and Vertical
   axes bind the arrows with WASD as the alternates. No code change; both readmes now list them.
   The zip's own `README.txt` still has the old table until the zip is remade.
+- Your report: stutter and the picture "shrinking" at Ise Bay above 150 km/h and in curves. The
+  shrinking is the chase camera's speed zoom (62 to 84 degrees, `CarCamera.fovGainAtTopSpeed` 22).
+  Added `-playerDrives` to `Benchmark` (code repo and Unity, not committed, dev build rebuilt) so
+  you could drive a recorded 90 s. Your drive: 81.5 fps average, 0.1% low 23.9, worst 65.6 ms.
+  Speed is not the cause: frames over 25 ms are 0.1 to 0.3% in every speed band. Two separate
+  things: (1) isolated hitches of 27 to 66 ms where the main thread did only 8 to 18 ms, so the
+  frame waited on something else, suspected first-sight shader/pipeline creation on D3D12,
+  unconfirmed (test: two laps, see if the same spots are smooth the second time); (2) a sustained
+  drop to 62 to 68 fps from about 2.2 to 2.8 km (T6 to T9), where draw calls double to 2000 and
+  the main thread rises to 13 to 14 ms. Data in `D:\Dev\CarRace\Builds\Windows\IseBay`.
+- You said it happens on every circuit. Airfield, AI driving, 3 laps, dev build: hitches over
+  25 ms per lap 36, 50, 32, spread round the lap, so the first-sight shader theory is wrong. The
+  frame rate fell every lap, 81, 69, 65 fps: the CPU slowing as the laptop heats. The game is
+  main-thread bound everywhere (GPU 4 to 9 ms). Default frame setting is VSync, so on the 144 Hz
+  panel frames of 11 to 16 ms land unevenly on refreshes, a likely part of what feels like
+  buffering. GPU Resident Drawer is off in every URP asset (`m_GPUResidentDrawerMode: 0`), a
+  candidate for cutting the main thread's draw call cost; not yet checked whether tried before.
 
 ### 2026-09-27, seventeenth session
 

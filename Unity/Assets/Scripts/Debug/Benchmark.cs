@@ -105,12 +105,13 @@ namespace CarRace.UnityGame
         {
             var director = FindAnyObjectByType<RaceDirector>();
             if (director == null) return;
-            // Unless a -driveScript is driving it instead, to test the inputs.
-            director.AiDrivesPlayer = !DriverInput.Scripted;
+            // Unless a -driveScript is driving it instead, to test the inputs, or -playerDrives
+            // leaves it to the person at the keyboard, to measure a stretch driven their way.
+            string[] args = Environment.GetCommandLineArgs();
+            director.AiDrivesPlayer = !DriverInput.Scripted && Array.IndexOf(args, "-playerDrives") < 0;
 
             // -hideObjects a,b switches those objects off, or scripts of that type (LapTimer,
             // Dashboard), for measuring what a part costs by timing the same build without it.
-            string[] args = Environment.GetCommandLineArgs();
             int hide = Array.IndexOf(args, "-hideObjects");
             if (hide >= 0 && hide + 1 < args.Length)
                 foreach (string name in args[hide + 1].Split(','))

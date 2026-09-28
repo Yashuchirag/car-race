@@ -40,7 +40,7 @@ namespace CarRace.UnityGame
         [SerializeField] float baseFov = 62f;
         [Tooltip("Degrees added at 300 km/h, scaled linearly with speed. Sells speed without " +
                  "the pumping a nonlinear curve gives on corner exit.")]
-        [SerializeField] float fovGainAtTopSpeed = 22f;
+        [SerializeField] float fovGainAtTopSpeed = 8f;
 
         [Header("Speed feel")]
         [Tooltip("Road shake starts at this speed, m/s, and grows to shakeAtTopSpeed at 300 km/h.")]
