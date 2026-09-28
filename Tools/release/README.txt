@@ -26,16 +26,16 @@ If the game runs slowly, press Esc during a race and set Quality to Medium or Lo
 CONTROLS
 --------
 
-                       Keyboard       Xbox-style controller
-Steer                  A / D          Left stick
-Throttle               W              Right trigger
-Brake                  S              Left trigger
-Reverse                hold S at a standstill
-Handbrake              Space          A
-Shift up / down        E / Q          RB / LB   (manual gearbox only)
-Back onto the track    R              View
-Restart the race       Backspace      Menu
-Change camera          C              Y
+                       Keyboard                          Xbox-style controller
+Steer                  A / D  or  Left / Right arrows    Left stick
+Throttle               W  or  Up arrow                   Right trigger
+Brake                  S  or  Down arrow                 Left trigger
+Reverse                hold S or Down at a standstill
+Handbrake              Space                             A
+Shift up / down        E / Q                             RB / LB   (manual gearbox only)
+Back onto the track    R                                 View
+Restart the race       Backspace                         Menu
+Change camera          C                                 Y
 Pause and settings     Esc
 Quit the game          QUIT button on the home screen (bottom left)
 

@@ -587,6 +587,9 @@ learned, so context is not lost between sessions.
   GitHub's S3, a dropped connection rather than a rejection. Rerunning resumes where it stopped.
 - Unity repo `README.md` added (`9fdc6f1`, not pushed): the game, controls, cloning with LFS,
   rebuilding the track scenes, building a player, the layout and credits.
+- Arrow keys: they already drive the car, since the Input Manager's Horizontal and Vertical
+  axes bind the arrows with WASD as the alternates. No code change; both readmes now list them.
+  The zip's own `README.txt` still has the old table until the zip is remade.
 
 ### 2026-09-27, seventeenth session
 
