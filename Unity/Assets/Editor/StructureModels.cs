@@ -492,11 +492,14 @@ namespace CarRace.UnityGame.EditorTools
             string path = $"{SceneryArt}/Chainlink.png";
             var importer = AssetImporter.GetAtPath(path) as TextureImporter
                 ?? throw new FileNotFoundException($"{path} is missing: run Tools/blender/scenery.py.");
-            if (!importer.alphaIsTransparency || !importer.mipMapsPreserveCoverage)
+            // The wire is 3% of the texture. Preserving that coverage in the small mips, where
+            // wire and gaps have averaged out, made every texel pass the alpha test: past 30 m
+            // or so the fence became a solid sheet, white with the sky's reflection. Blended
+            // instead, the mips' true average draws a distant fence as the faint veil it is.
+            if (!importer.alphaIsTransparency || importer.mipMapsPreserveCoverage)
             {
                 importer.alphaIsTransparency = true;
-                importer.mipMapsPreserveCoverage = true;      // or the wire thins away with distance
-                importer.alphaTestReferenceValue = 0.4f;
+                importer.mipMapsPreserveCoverage = false;
                 importer.anisoLevel = 4;
                 importer.SaveAndReimport();
             }
@@ -505,11 +508,23 @@ namespace CarRace.UnityGame.EditorTools
             m.SetColor("_BaseColor", Color.white);
             m.SetFloat("_Smoothness", 0.35f);
             m.SetFloat("_Metallic", 0.6f);
-            m.SetFloat("_AlphaClip", 1f);
-            m.SetFloat("_Cutoff", 0.4f);
-            m.EnableKeyword("_ALPHATEST_ON");
+            m.SetFloat("_AlphaClip", 0f);
+            m.SetFloat("_AlphaToMask", 0f);
+            m.DisableKeyword("_ALPHATEST_ON");
+            m.SetFloat("_Surface", 1f);
+            m.SetFloat("_Blend", 0f);
+            // Reflections fade with the wire, or the sky's reflection lights up the gaps.
+            m.SetFloat("_BlendModePreserveSpecular", 0f);
+            m.SetFloat("_SrcBlend", (float)BlendMode.SrcAlpha);
+            m.SetFloat("_DstBlend", (float)BlendMode.OneMinusSrcAlpha);
+            m.SetFloat("_SrcBlendAlpha", (float)BlendMode.One);
+            m.SetFloat("_DstBlendAlpha", (float)BlendMode.OneMinusSrcAlpha);
+            m.SetFloat("_ZWrite", 0f);
+            m.SetOverrideTag("RenderType", "Transparent");
+            m.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            m.DisableKeyword("_ALPHAPREMULTIPLY_ON");
             m.SetFloat("_Cull", 0f);
-            m.renderQueue = (int)RenderQueue.AlphaTest;
+            m.renderQueue = (int)RenderQueue.Transparent;
             return m;
         }
 
