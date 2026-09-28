@@ -319,6 +319,12 @@ Unity/          the integration layer, written, never run    Phase 1, WIP
 
 ## 6. Open issues and deferred decisions
 
+- Test runs with `-screen-fullscreen 0` or `-screen-width`/`-screen-height` are remembered by the
+  game (registry, `HKCU\Software\DefaultCompany\CarRace`, `Screenmanager ...` values), so your next
+  normal launch opens windowed at the test size. Found 2026-09-27 when the game stopped opening
+  fullscreen; cleared then. After windowed test runs, delete those values again. Alt+Enter also
+  toggles fullscreen. The company name is still Unity's `DefaultCompany`; changing it would move
+  saved settings and best laps to a new place, so it is left for your decision.
 - The scenery pass costs about 7% of average frame rate at Royal Park, on top of the wheels
   (5%) and cars (3%). A far version for trackside pieces, wheels and cars, as the trees have,
   is the obvious next performance step if the frame rate matters. Noted 2026-09-27.
