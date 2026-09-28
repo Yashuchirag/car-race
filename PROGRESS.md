@@ -16,7 +16,7 @@ concrete action is. Everything below it is detail.
 garages, marquees, billboards, braking boards and city buildings in photographed materials;
 smooth car bodies with clear-coat paint and real wheels. Before that, sound.
 
-**Next action:** Nothing is waiting on code. You drove the six circuits and the four cars (2026-09-27: the cars feel good, the catch fence fixed) and connected several players to one LAN game. Still unconfirmed from the LAN race: how the other cars look, sound and feel to touch, and whether positions and results agree on every screen. LAN stage 5 is a test on two real PCs when you have a second one. Performance: what is left is mostly High quality's own cost (18 to 31% against Medium) and this laptop's throttling; see section 3.
+**Next action:** Nothing is waiting on code. You drove the six circuits and the four cars (2026-09-27: the cars feel good, the catch fence fixed) and raced a LAN game to the finish with several copies on this laptop, no problems reported. LAN stage 5 is a test on two real PCs when you have a second one. Performance: what is left is mostly High quality's own cost (18 to 31% against Medium) and this laptop's throttling; see section 3.
 
 ---
 
@@ -573,7 +573,8 @@ learned, so context is not lost between sessions.
   showed nothing until you said where to look: the start and the corners. It was the catch
   fence, not the rail: a 3% coverage texture cannot keep its coverage in small mips, so
   preserving it made the fence solid. Blended now; you confirmed it. The lesson: ask where on screen first.
-- You confirmed the cars feel good and that several players joined one LAN game.
+- You confirmed the cars feel good, and raced a LAN game to the finish with several copies
+  on this laptop. Stage 5, two real PCs, is still open.
 
 ### 2026-09-27, sixteenth session
 
