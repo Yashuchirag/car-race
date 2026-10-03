@@ -62,12 +62,31 @@ namespace CarRace.UnityGame.EditorTools
                 foreach (int k in standCorners) if (-circuit.Turn(k) == side) Mark(fence, k, 50f);
                 Mark(fence, 0, 120f);
 
+                // On the right, nothing in front of the garages, where the barrier is left out, and
+                // no catch fence along the pit stretch, where it stands on the pit wall instead.
+                // The guardrail skips the gap as it skips tyre walls.
+                var rails = (bool[])tyre.Clone();
+                if (side > 0 && GarageGap.From >= 0)
+                {
+                    for (int k = GarageGap.From; ; k = circuit.Wrap(k + 1))
+                    {
+                        rails[k] = true;
+                        tyre[k] = false;
+                        if (k == GarageGap.To) break;
+                    }
+                    for (int k = PitStretch.From; ; k = circuit.Wrap(k + 1))
+                    {
+                        fence[k] = false;
+                        if (k == PitStretch.To) break;
+                    }
+                }
+
                 var group = new GameObject(side > 0 ? "Right" : "Left");
                 group.transform.SetParent(root.transform, false);
                 for (int start = 0; start < circuit.N; start += StretchSamples)
                 {
                     int end = Mathf.Min(start + StretchSamples, circuit.N);
-                    Stretch(group, circuit, side, start, end, tyre, post, postMaterials, steel);
+                    Stretch(group, circuit, side, start, end, rails, post, postMaterials, steel);
                     placed += TyreWall(group, circuit, side, start, end, tyre, tyres);
                     placed += Fence(group, circuit, side, start, end, fence, fencePost, chainlink);
                 }

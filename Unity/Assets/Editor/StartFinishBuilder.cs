@@ -26,8 +26,11 @@ namespace CarRace.UnityGame.EditorTools
         const float GridBoxSideM = 1.6f;       // how far the bracket's sides run back
         const float LineM = 0.2f;
 
+        /// <summary>The gantry's right leg stands rightLegOutsideM past the road's edge: beyond the
+        /// pit lane, where there is one, rather than in it.</summary>
         public static void Build(GameObject root, Vector3[] centre, Vector3[] leftEdge, Vector3[] rightEdge,
-                                 IEnumerable<(int index, float lateral)> gridSlots, int barrierLayer, PhysicsMaterial barrier)
+                                 IEnumerable<(int index, float lateral)> gridSlots, int barrierLayer, PhysicsMaterial barrier,
+                                 float rightLegOutsideM = LegOutsideM)
         {
             var parent = new GameObject("Start and Timing");
             parent.transform.SetParent(root.transform, false);
@@ -53,7 +56,7 @@ namespace CarRace.UnityGame.EditorTools
             // The gantry: a leg beyond each edge, a beam across, the chequer under it.
             Vector3 flatAlong = Flat(along);
             Vector3 side = Flat(across).normalized;
-            Vector3 legLeft = leftEdge[0] - side * LegOutsideM, legRight = rightEdge[0] + side * LegOutsideM;
+            Vector3 legLeft = leftEdge[0] - side * LegOutsideM, legRight = rightEdge[0] + side * rightLegOutsideM;
             float top = Mathf.Max(leftEdge[0].y, rightEdge[0].y) + GantryClearM;
             Quaternion facing = Quaternion.LookRotation(flatAlong, Vector3.up);
             foreach (Vector3 leg in new[] { legLeft, legRight })
@@ -111,12 +114,12 @@ namespace CarRace.UnityGame.EditorTools
             }
         }
 
-        static Vector3 Flat(Vector3 v) { v.y = 0f; return v; }
+        internal static Vector3 Flat(Vector3 v) { v.y = 0f; return v; }
 
-        static Vector3[] Quad(Vector3 corner, Vector3 u, Vector3 v) => new[] { corner, corner + u, corner + v, corner + u + v };
+        internal static Vector3[] Quad(Vector3 corner, Vector3 u, Vector3 v) => new[] { corner, corner + u, corner + v, corner + u + v };
 
         /// <summary>Flat paint from quads given as four corners, facing up.</summary>
-        static void Paint(string name, GameObject parent, Material material, Vector3[][] quads)
+        internal static void Paint(string name, GameObject parent, Material material, Vector3[][] quads)
         {
             var vertices = new List<Vector3>();
             var triangles = new List<int>();
@@ -162,7 +165,7 @@ namespace CarRace.UnityGame.EditorTools
             Renderer(name, parent, mesh, white).sharedMaterials = new[] { white, black };
         }
 
-        static MeshRenderer Renderer(string name, GameObject parent, Mesh mesh, Material material)
+        internal static MeshRenderer Renderer(string name, GameObject parent, Mesh mesh, Material material)
         {
             var go = new GameObject(name);
             go.transform.SetParent(parent.transform, false);
@@ -174,7 +177,7 @@ namespace CarRace.UnityGame.EditorTools
         }
 
         /// <summary>A box, solid on the given layer when layer is not -1.</summary>
-        static void Box(string name, GameObject parent, Vector3 position, Quaternion rotation, Vector3 size,
+        internal static void Box(string name, GameObject parent, Vector3 position, Quaternion rotation, Vector3 size,
                         Material material, int layer, PhysicsMaterial surface)
         {
             var box = GameObject.CreatePrimitive(PrimitiveType.Cube);
@@ -207,12 +210,14 @@ namespace CarRace.UnityGame.EditorTools
             ['2'] = new[] { ".###.", "#...#", "....#", "...#.", "..#..", ".#...", "#####" },
             ['3'] = new[] { "####.", "....#", "....#", ".###.", "....#", "....#", "####." },
             ['|'] = new[] { "..#..", "..#..", "..#..", "..#..", "..#..", "..#..", "..#.." },
+            ['0'] = new[] { ".###.", "#...#", "#..##", "#.#.#", "##..#", "#...#", ".###." },
+            ['6'] = new[] { "..##.", ".#...", "#....", "####.", "#...#", "#...#", ".###." },
             [' '] = new[] { ".....", ".....", ".....", ".....", ".....", ".....", "....." },
         };
 
         /// <summary>Text heightM tall centred on position, facing the one looking along
         /// rotation's forward: a flat square for each lit pixel.</summary>
-        static void Sign(GameObject parent, string text, Vector3 position, Quaternion rotation, float heightM, Material material)
+        internal static void Sign(GameObject parent, string text, Vector3 position, Quaternion rotation, float heightM, Material material)
         {
             float pixel = heightM / 7f;
             float width = (text.Length * 6 - 1) * pixel;
@@ -240,7 +245,7 @@ namespace CarRace.UnityGame.EditorTools
             Renderer(mesh.name, parent, mesh, material);
         }
 
-        static Material Unlit(string path, Color colour)
+        internal static Material Unlit(string path, Color colour)
         {
             var material = AssetDatabase.LoadAssetAtPath<Material>(path);
             if (material == null)
@@ -253,7 +258,7 @@ namespace CarRace.UnityGame.EditorTools
             return material;
         }
 
-        static Material Lit(string path, Color colour) =>
+        internal static Material Lit(string path, Color colour) =>
             SkidpadSceneBuilder.EnsureMaterial(path, colour, null, Vector2.one);
     }
 }

@@ -333,6 +333,13 @@ namespace CarRace.UnityGame
                 GUI.Label(new Rect(x + Hud.Px(2f), y, width, Hud.Px(60f)),
                           "PLAY races the AI on your own. Host or join to race people on your network.", _small);
                 y += Hud.Px(48f);
+
+                // The solo race: its laps and how fast the tyres wear (RaceSettings).
+                SettingRow(x, ref y, width, "LAPS", RaceSettings.Laps.ToString(),
+                           RaceSettings.Laps > 1, RaceSettings.Laps < RaceSettings.MaxLaps, step => RaceSettings.Laps += step);
+                SettingRow(x, ref y, width, "TYRE WEAR", RaceSettings.WearLabel(RaceSettings.WearChoice),
+                           RaceSettings.WearChoice > 0, RaceSettings.WearChoice < RaceSettings.WearRates.Length - 1,
+                           step => RaceSettings.WearChoice += step);
             }
             else if (mode == LanSession.Mode.Browsing)
             {
@@ -474,6 +481,21 @@ namespace CarRace.UnityGame
                 GUI.Label(new Rect(x + Hud.Px(2f), y, width, Hud.Px(44f)), message, _small);
                 _small.normal.textColor = Muted;
             }
+        }
+
+        /// <summary>A row with a value and minus and plus, as the LAN host's AI CARS and LAPS.</summary>
+        void SettingRow(float x, ref float y, float width, string label, string value, bool down, bool up, Action<int> change)
+        {
+            var row = new Rect(x, y, width, Hud.Px(40f));
+            Hud.Rounded(row, Row);
+            GUI.Label(new Rect(row.x + Hud.Px(12f), row.y, row.width, row.height), label, _text);
+            _text.alignment = TextAnchor.MiddleCenter;
+            var shown = new Rect(row.xMax - Hud.Px(110f), row.y, Hud.Px(60f), row.height);
+            GUI.Label(shown, value, _text);
+            _text.alignment = TextAnchor.MiddleLeft;
+            if (Button(new Rect(shown.x - Hud.Px(36f), row.y + Hud.Px(5f), Hud.Px(30f), Hud.Px(30f)), "−", down)) change(-1);
+            if (Button(new Rect(shown.xMax + Hud.Px(6f), row.y + Hud.Px(5f), Hud.Px(30f), Hud.Px(30f)), "+", up)) change(+1);
+            y = row.yMax + Hud.Px(6f);
         }
 
         /// <summary>A rounded button with a label; false and greyed when not enabled.</summary>

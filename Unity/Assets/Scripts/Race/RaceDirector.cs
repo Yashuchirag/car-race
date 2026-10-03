@@ -101,6 +101,16 @@ namespace CarRace.UnityGame
         /// <summary>The flags, kept where the standings are (solo and a LAN host); null on a client.</summary>
         public RaceFlags Flags => _keepsStandings ? _flags : null;
 
+        /// <summary>Your car is in the pit lane on the autopilot, and the driver doing it.</summary>
+        public bool PlayerPitting => _pitting;
+        public RaceDriver PitDriver => _pitDriver;
+        public float TyreWearRate { get; private set; }
+
+        // Your stop: a driver for your car that takes over at the pit entry line, in the pit lane
+        // beyond the pit wall, and hands back at the exit line.
+        RaceDriver _pitDriver;
+        bool _pitting;
+
         // Flags: per race entry, where the car is, how far it has gone, whether it is in trouble
         // or still racing, its place in the field the AI see, and whether it has got going yet.
         RaceFlags _flags;
@@ -148,6 +158,8 @@ namespace CarRace.UnityGame
                 return;
             }
 
+            // A solo race runs to the lobby's settings; a LAN race to the host's (UseLan).
+            if (!Lan) raceLaps = RaceSettings.Laps;
             CarAudio.Attach(player, player: true);
             foreach (CarController car in aiCars) CarAudio.Attach(car, player: false);
             if (_remotes != null)
@@ -248,11 +260,38 @@ namespace CarRace.UnityGame
             for (int i = 0; i < aiCars.Length; i++) _cars[i] = aiCars[i];
             _cars[aiCars.Length] = player;
 
-            // Tyre wear, for every car this machine drives. Until the lobby has a setting for it
-            // (stage 5), -tyreWear N on the command line, a multiple of real wear; off without it.
-            float wear = float.TryParse(LanSession.Flag("-tyreWear"), System.Globalization.NumberStyles.Float,
-                                        System.Globalization.CultureInfo.InvariantCulture, out float rate) ? rate : 0f;
-            foreach (CarController car in _cars) car.Sim.TyreWearRate = wear;
+            // Tyre wear for every car this machine drives, from the lobby (RaceSettings) in a solo
+            // race; a LAN race has none yet. With wear on, the AI stop for tyres at their own
+            // wear, each in a box of its own.
+            TyreWearRate = Lan ? 0f : RaceSettings.TyreWearRate;
+            foreach (CarController car in _cars) car.Sim.TyreWearRate = TyreWearRate;
+            for (int i = 0; i < aiCars.Length && TyreWearRate > 0f && _track.HasPitLane; i++)
+            {
+                int k = i, entry = _aiEntry[i];
+                _drivers[i].Box = _track.PitBoxIndex[entry % TrackData.PitBoxes];
+                _drivers[i].PitWear = 0.65f + 0.1f * i / Mathf.Max(1, aiCars.Length - 1);
+                _drivers[i].TyresFitted = () =>
+                {
+                    aiCars[k].Sim.FitNewTyres();
+                    _control.Entries[entry].PitStops++;
+                    if (AiLogAsked) Debug.Log($"PIT t {Time.timeSinceLevelLoad:0.00} {aiCars[k].name} new tyres, lap {_control.Entries[entry].LapsComplete + 1}");
+                };
+            }
+
+            _pitDriver = new RaceDriver("Pit", _track, playerConfig, PlanningLimits(playerConfig), 0.85f);
+            if (_track.HasPitLane)
+            {
+                _pitDriver.Box = _track.PitBoxIndex[_playerEntry % TrackData.PitBoxes];
+                _pitDriver.TyresFitted = () =>
+                {
+                    player.Sim.FitNewTyres();
+                    if (_keepsStandings) _control.Entries[_playerEntry].PitStops++;
+                };
+                MiniMap pitMap = FindAnyObjectByType<MiniMap>();
+                if (pitMap != null)
+                    pitMap.SetPitLane(System.Array.ConvertAll(_track.LanePoints[TrackData.PitLaneIndex], p => new Vector3(p.X, p.Y, p.Z)),
+                                      _track.PitFrom, _track.PitTo, (TrackData.PitFastLaneM + TrackData.PitWorkingLaneM) * 0.5f);
+            }
             for (int i = 0; i < _cars.Length; i++)
             {
                 int entry = i < aiCars.Length ? _aiEntry[i] : _playerEntry;
@@ -365,12 +404,9 @@ namespace CarRace.UnityGame
                 if (_countdown > 0f) return;
                 _started = true;
                 GameAudio.Countdown(go: true);
-                player.Autopilot = _playerDriver != null ? (body, t) =>
-                {
-                    _playerDriver.Path.TyreGrip = player.Sim.TyreGrip;
-                    return Logged(aiCars.Length, _playerDriver.Drive(body, t));
-                } : null;
+                HandBack();
             }
+            Pits();
 
             // Every step rather than every reaction interval, so lap times are to 5 ms.
             _raceTime += dt;
@@ -408,11 +444,21 @@ namespace CarRace.UnityGame
             _field[aiCars.Length] = Seen(player, _player.Index,
                                          _track.LateralOffset(_track.Line, _player.Index, playerPosition),
                                          _playerPlan);
+            _field[aiCars.Length].Pitting = _pitting;
+            for (int i = 0; i < aiCars.Length; i++) _field[i].Pitting = _drivers[i].Path.Pitting;
+            for (int i = 0; i < aiCars.Length; i++)
+            {
+                if (TyreWearRate <= 0f) break;
+                Wheel[] w = aiCars[i].Sim.Wheels;
+                _drivers[i].Wear = Mathf.Max(w[0].Wear + w[1].Wear, w[2].Wear + w[3].Wear) * 0.5f;
+                _drivers[i].LapsLeft = raceLaps - _control.Entries[_aiEntry[i]].LapsComplete - 1;
+            }
             // The other players' cars, seen as the player is: the AI assume the same pace.
             for (int r = 0; r < remotes; r++) _field[aiCars.Length + 1 + r] = Seen(_remotes[r]);
             if (_keepsStandings) UpdateFlags(remotes);
 
             _playerDriver?.Observe(_track, _field, aiCars.Length, elapsed);
+            if (_pitting) _pitDriver.Observe(_track, _field, aiCars.Length, elapsed);
             for (int i = 0; i < aiCars.Length; i++)
             {
                 _drivers[i].Observe(_track, _field, i, elapsed);
@@ -421,7 +467,7 @@ namespace CarRace.UnityGame
                 bool stopped = speed < 1f && speed > -1f;
                 bool lost = Grip(aiCars[i]) < _drivers[i].Path.OffRoadGrip
                             || Mathf.Abs(_drivers[i].Path.HeadingErrorDeg) > WrongWayDegrees;
-                bool stuck = stopped || (lost && speed < CrawlingMs && speed > -CrawlingMs);
+                bool stuck = (stopped || (lost && speed < CrawlingMs && speed > -CrawlingMs)) && !_drivers[i].InPits;
                 _stuckFor[i] = stuck ? _stuckFor[i] + elapsed : 0f;
                 if (_stuckFor[i] < (lost ? OffRoadStuckSeconds : StuckSeconds)) continue;
                 if (AiLogAsked) Debug.Log($"RECOVER t {Time.timeSinceLevelLoad:0.00} {aiCars[i].name} {(lost ? "off road or wrong way" : "stopped")}");
@@ -518,13 +564,13 @@ namespace CarRace.UnityGame
             for (int e = 0; e < _fieldOf.Length; e++) { _fieldOf[e] = -1; _racing[e] = false; _trouble[e] = false; }
             for (int k = 0; k < aiCars.Length; k++)
                 Mark(_aiEntry[k], k, aiCars[k].transform, aiCars[k].GetComponent<Rigidbody>().linearVelocity,
-                     _drivers[k].Path.Index, _drivers[k].Path.ProgressM);
+                     _drivers[k].Path.Index, _drivers[k].Path.ProgressM, _drivers[k].InPits);
             Mark(_playerEntry, aiCars.Length, player.transform, player.GetComponent<Rigidbody>().linearVelocity,
-                 _player.Index, _player.ProgressM(_track));
+                 _player.Index, _player.ProgressM(_track), _pitting);
             for (int r = 0; r < remotes; r++)
                 if (_remotes[r] != null && _remoteEntry.TryGetValue(_remotes[r], out var remote))
                     Mark(remote.Entry, aiCars.Length + 1 + r, _remotes[r].transform, _remotes[r].Velocity,
-                         _field[aiCars.Length + 1 + r].Index, remote.Progress.ProgressM(_track));
+                         _field[aiCars.Length + 1 + r].Index, remote.Progress.ProgressM(_track), false);
 
             foreach (var (car, passed) in _flags.Update(_track, _flagIndex, _flagProgress, _trouble, _racing, _raceTime))
                 _control.YellowPass(car, passed, _raceTime);
@@ -539,7 +585,7 @@ namespace CarRace.UnityGame
             }
         }
 
-        void Mark(int entry, int field, Transform car, Vector3 velocity, int index, float progressM)
+        void Mark(int entry, int field, Transform car, Vector3 velocity, int index, float progressM, bool inPits)
         {
             float forward = Vector3.Dot(velocity, car.forward);
             if (forward > 10f) _moving[entry] = true;
@@ -550,7 +596,7 @@ namespace CarRace.UnityGame
             _flagIndex[entry] = index;
             _flagProgress[entry] = progressM;
             _racing[entry] = !e.Finished && !e.Disqualified && !HasLeft(entry);
-            _trouble[entry] = _moving[entry] && (Mathf.Abs(forward) < 3f || backwards);
+            _trouble[entry] = _moving[entry] && (Mathf.Abs(forward) < 3f || backwards) && !inPits;
         }
 
         void Tell(RaceDriver driver, int entry)
@@ -561,6 +607,49 @@ namespace CarRace.UnityGame
         }
 
         int FieldOf(int entry) => entry >= 0 ? _fieldOf[entry] : -1;
+
+        /// <summary>
+        /// Your stop, every physics step. Past the pit entry line and out beyond the pit wall, the
+        /// pit driver takes the car: along the lane at the limit, into your box, four tyres, and
+        /// out; at the exit line it hands the car back to you, or to the AI driving it under
+        /// -benchmark. Missing the pit lane is no stop: you stay on the track.
+        /// </summary>
+        void Pits()
+        {
+            if (!_track.HasPitLane || _pitDriver == null || _player.Index < 0) return;
+            int i = _player.Index;
+            int into = _track.IntoPit(i), entry = _track.IntoPit(_track.PitEntryLine);
+            if (!_pitting)
+            {
+                if (into < entry || into > entry + 3) return;
+                float fromCentre = _track.LateralOffset(_track.Centre, i, ToNumerics(player.transform.position));
+                if (fromCentre < _track.WidthRight[i] + TrackData.PitWallGapM) return;
+                _pitDriver.EnterPitLane(i, _player.Laps);
+                _pitting = true;
+                player.Autopilot = (body, t) =>
+                {
+                    _pitDriver.Path.TyreGrip = player.Sim.TyreGrip;
+                    return _pitDriver.Drive(body, t);
+                };
+                return;
+            }
+            bool out_ = _pitDriver.Pit == RaceDriver.PitState.Racing
+                     || _pitDriver.Pit == RaceDriver.PitState.Leaving && into >= _track.IntoPit(_track.PitExitLine);
+            if (!out_) return;
+            _pitDriver.EndPit();
+            _pitting = false;
+            HandBack();
+        }
+
+        /// <summary>The car back to its driver: you, or under -benchmark the AI that drives it.</summary>
+        void HandBack()
+        {
+            player.Autopilot = _playerDriver != null ? (body, t) =>
+            {
+                _playerDriver.Path.TyreGrip = player.Sim.TyreGrip;
+                return Logged(aiCars.Length, _playerDriver.Drive(body, t));
+            } : null;
+        }
 
         /// <summary>The grip under a car, its wheels' average: 1 on asphalt, 0.45 on grass.</summary>
         static float Grip(CarController car)
@@ -683,8 +772,9 @@ namespace CarRace.UnityGame
             // only for the cars this machine drives, so that column is left out.
             var text = new System.Text.StringBuilder();
             int nameWidth = Lan ? 12 : 8;
-            text.AppendLine($"{"Pos",-4}{"Driver".PadRight(nameWidth)}{"Grid",5}{"+/-",5}{"Best lap",11}{"Race time",11}{"Gap",10}{"Pen",6}{(Lan ? "" : $"{"Hits",6}")}");
-            text.AppendLine(new string('-', Lan ? 64 : 66));
+            bool pits = TyreWearRate > 0f;
+            text.AppendLine($"{"Pos",-4}{"Driver".PadRight(nameWidth)}{"Grid",5}{"+/-",5}{"Best lap",11}{"Race time",11}{"Gap",10}{"Pen",6}{(pits ? $"{"Pits",5}" : "")}{(Lan ? "" : $"{"Hits",6}")}");
+            text.AppendLine(new string('-', (Lan ? 64 : 66) + (pits ? 5 : 0)));
             foreach (RaceControl.Entry e in order)
             {
                 int gained = e.Grid - e.Position;
@@ -696,13 +786,13 @@ namespace CarRace.UnityGame
                 string gap = e.Disqualified ? "-" : !e.Finished ? (left ? "-" : "running") : e.Position == 1 ? "-" : $"+{e.ResultS - winner:0.000}";
                 string pen = e.PenaltyS > 0f ? $"+{e.PenaltyS:0}s" : "-";
                 string position = e.Disqualified ? "DSQ" : e.Position.ToString();
-                text.AppendLine($"{position,-4}{name.PadRight(nameWidth)}{e.Grid,5}{(gained == 0 || e.Disqualified ? "0" : gained.ToString("+0;-0")),5}{best,11}{time,11}{gap,10}{pen,6}{(Lan ? "" : $"{e.Contacts,6}")}");
+                text.AppendLine($"{position,-4}{name.PadRight(nameWidth)}{e.Grid,5}{(gained == 0 || e.Disqualified ? "0" : gained.ToString("+0;-0")),5}{best,11}{time,11}{gap,10}{pen,6}{(pits ? $"{e.PitStops,5}" : "")}{(Lan ? "" : $"{e.Contacts,6}")}");
             }
             text.AppendLine();
             text.Append("* fastest lap. Penalties are in the race time.");
 
             float buttons = Hud.Px(64f);
-            float width = Hud.Px(700f), height = Hud.Px(30f + 26f * (order.Length + 5)) + buttons;
+            float width = Hud.Px(750f), height = Hud.Px(30f + 26f * (order.Length + 5)) + buttons;
             var panel = new Rect(Screen.width * 0.5f - width * 0.5f, Screen.height * 0.5f - height * 0.5f, width, height);
             GUI.Box(panel, GUIContent.none);
             GUI.Box(panel, GUIContent.none);   // twice: one box is too faint to read a table over

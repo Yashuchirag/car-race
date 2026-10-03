@@ -51,6 +51,20 @@ namespace CarRace.UnityGame
 
         /// <summary>Whether a sample lies in a yellow zone, drawn yellow; set by RaceDirector.</summary>
         public System.Func<int, bool> YellowAt;
+
+        /// <summary>The pit lane, set by RaceDirector: its middle at each sample from from to to,
+        /// and its half width. Drawn under the road, darker, so the entry and exit read.</summary>
+        public void SetPitLane(Vector3[] points, int from, int to, float halfWidthM)
+        {
+            _pit = points;
+            _pitFrom = from;
+            _pitTo = to;
+            _pitHalfM = halfWidthM;
+        }
+        Vector3[] _pit;
+        int _pitFrom, _pitTo;
+        float _pitHalfM;
+        static readonly Color32 PitLane = new Color32(150, 150, 160, 170);
         static readonly Color32 YellowZone = new Color32(255, 220, 30, 230);
 
         void Start()
@@ -123,6 +137,16 @@ namespace CarRace.UnityGame
 
             int back = Mathf.CeilToInt((behindMetres + 20f) / track.sampleSpacing);
             int ahead = Mathf.CeilToInt((aheadMetres + 20f) / track.sampleSpacing);
+            if (_pit != null)
+            {
+                int span = ((_pitTo - _pitFrom) % n + n) % n;
+                for (int k = -back; k <= ahead; k++)
+                {
+                    int i = ((_index + k) % n + n) % n;
+                    if (((i - _pitFrom) % n + n) % n > span) continue;
+                    Disc(ToMap(_pit[i]), Mathf.Max(_pitHalfM * _scale, 1f), PitLane);
+                }
+            }
             for (int k = -back; k <= ahead; k++)
             {
                 int i = ((_index + k) % n + n) % n;

@@ -217,6 +217,16 @@ namespace CarRace.Track
             _speedIntegral = 0f;
         }
 
+        /// <summary>Puts the driver straight into a lane, -1 or +1, fully, with no move across: for
+        /// taking over a car that is already there, as the autopilot does a player's in the pit lane.</summary>
+        public void JumpToLane(int side)
+        {
+            Lane = side;
+            _laneSide = side > 0 ? 1 : -1;
+            _laneBlend = 1f;
+            LineOffsetM = 0f;
+        }
+
         float _dt;
 
         public VehicleInputs Drive(in BodyState body, float dt)

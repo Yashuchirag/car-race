@@ -76,6 +76,19 @@ namespace CarRace.UnityGame
                 ("start", At(0) + Right(0) * 30f + Vector3.up * 12f, At(Ahead(10))),
             };
 
+            // The pit lane, from the TrackData the AI drive: down it from the entry line at a
+            // driver's height, and over the boxes from above the track.
+            CarRace.Track.TrackData pit = path.ToTrackData();
+            pit.EnsureLanes(CarRace.Track.RaceDriver.DefaultHalfWidthM);
+            pit.EnsurePitLane();
+            if (pit.HasPitLane)
+            {
+                Vector3 Lane(int i, float extra = 0f) => At(i) + Right(i) * (pit.PitOffsetM[((i % n) + n) % n] + extra);
+                int entry = pit.PitEntryLine;
+                views.Add(("pitlane", Lane(entry - Ahead(15)) + Vector3.up * 1.3f, Lane(entry + Ahead(80)) + Vector3.up * 1f));
+                views.Add(("pitboxes", At(-Ahead(30)) - Right(0) * 4f + Vector3.up * 9f, Lane(0, pit.PitBoxShiftM)));
+            }
+
             // The three tightest corners, at least 150 m apart, seen from their outside.
             var turns = new List<(float bend, int i)>();
             int span = Ahead(20);

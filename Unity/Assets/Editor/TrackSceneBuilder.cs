@@ -4,6 +4,7 @@ using System.IO;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using CarRace.Track;
 
 namespace CarRace.UnityGame.EditorTools
 {
@@ -53,6 +54,10 @@ namespace CarRace.UnityGame.EditorTools
         const float BarrierHeightM = 1.2f;
         const float BarrierFootM = 0.5f;
         const float VergeWidthM = 15f;
+        // The garages stand 100 m either side of the line (SceneryBuilder.Furniture); the barrier
+        // is left out a little wider, and an apron runs from where it was to their fronts.
+        const float GarageGapHalfM = 104f;
+        const float ApronM = 3.5f;
 
         // The grid, laid out as the harness does (RaceRun.PlaceOnGrid) but around the road centre: two abreast, rows 10 m
         // apart, the front row 10 m behind the line. The AI fill the front slots, fastest on
@@ -152,21 +157,56 @@ namespace CarRace.UnityGame.EditorTools
                 rightOuter[i] = rightEdge[i] + right[i] * VergeWidthM;
             }
 
+            // The circuit as the game holds it, with the pit lane the AI drive (TrackData.EnsurePitLane),
+            // so the asphalt and the paint below are where the cars go.
+            var path = root.AddComponent<TrackPath>();
+            path.trackName = track.name;
+            path.centre = centre;
+            path.line = line;
+            path.widthLeft = track.centerline.width_left;
+            path.widthRight = track.centerline.width_right;
+            path.sampleSpacing = track.sample_spacing_m;
+            path.lengthM = track.length_m;
+            TrackData pit = path.ToTrackData();
+            pit.EnsureLanes(RaceDriver.DefaultHalfWidthM);
+            pit.EnsurePitLane();
+
             var road = Strip("Road", root, leftEdge, rightEdge, roadMaterial, asphalt);
             RoadMarkings(root, centre, right, leftEdge, rightEdge, asphalt);
             Strip("Verge Left", root, leftOuter, leftEdge, grassMaterial, grass);
-            Strip("Verge Right", root, rightEdge, rightOuter, grassMaterial, grass);
+
+            // The right verge, grass round the lap but asphalt through the pit stretch, where it
+            // is the pit lane's ramps, lanes and boxes. One sample of overlap at each join.
+            Strip("Verge Right", root, Span(rightEdge, pit.PitTo, pit.PitFrom), Span(rightOuter, pit.PitTo, pit.PitFrom),
+                  grassMaterial, grass, closed: false);
+            Strip("Pit Lane", root, Span(rightEdge, pit.PitFrom, pit.PitTo), Span(rightOuter, pit.PitFrom, pit.PitTo),
+                  roadMaterial, asphalt, closed: false);
+
+            // No barrier in front of the garages (SceneryBuilder stands them GarageHalfM either
+            // side of the line), and an apron from where it was to their fronts. The stretch is
+            // inside the pit limit, where the car is on the autopilot, so nothing needs stopping.
+            int gap = Mathf.RoundToInt(GarageGapHalfM / track.sample_spacing_m);
+            int gapFrom = (n - gap) % n, gapTo = gap % n;
+            var apronOuter = Array.ConvertAll(Span(rightOuter, gapFrom, gapTo), p => p);
+            var apronRight = Span(right, gapFrom, gapTo);
+            for (int k = 0; k < apronOuter.Length; k++) apronOuter[k] += apronRight[k] * ApronM;
+            Strip("Pit Apron", root, Span(rightOuter, gapFrom, gapTo), apronOuter, roadMaterial, asphalt, closed: false);
+            SceneryBuilder.GarageGap = (gapFrom, gapTo);
+            SceneryBuilder.PitStretch = (pit.PitFrom, pit.PitTo);
 
             // A wall along the outside of each verge, so the car cannot leave the circuit. It
             // sits on its own layer, which the wheel probes are told to ignore below: a wheel
             // brushing the wall would otherwise read it as ground and launch the car.
             var barrierMaterial = SkidpadSceneBuilder.EnsureMaterial(BarrierMaterialPath, new Color(0.85f, 0.85f, 0.85f), null, Vector2.one);
             Wall("Barrier Left", root, leftOuter, right, +1f, barrierSurface, barrierLayer);
-            Wall("Barrier Right", root, rightOuter, right, -1f, barrierSurface, barrierLayer);
+            Wall("Barrier Right", root, Span(rightOuter, gapTo, gapFrom), Span(right, gapTo, gapFrom), -1f,
+                 barrierSurface, barrierLayer, closed: false);
             Bridges(root, centre, right, track.centerline.width_left, track.centerline.width_right, barrierMaterial);
             var slots = new List<(int, float)>();
             for (int slot = 0; slot <= AiCars; slot++) slots.Add(GridPlace(slot, n, track.sample_spacing_m));
-            StartFinishBuilder.Build(root, centre, leftEdge, rightEdge, slots, barrierLayer, barrierSurface);
+            StartFinishBuilder.Build(root, centre, leftEdge, rightEdge, slots, barrierLayer, barrierSurface,
+                                     rightLegOutsideM: PitLaneBuilder.OuterFromEdgeM + 1.5f);
+            PitLaneBuilder.Build(root, pit, centre, right, rightEdge, track.centerline.width_right, barrierLayer, barrierSurface);
 
             // Ground out to the horizon, held under the road and verges.
             Terrain terrain = GroundBuilder.Build(root, centre, track.centerline.width_left, track.centerline.width_right,
@@ -191,14 +231,6 @@ namespace CarRace.UnityGame.EditorTools
             var (start, facing) = GridSlot(AiCars, centre, right, track.sample_spacing_m, definition.cgHeight);
             GameObject car = SkidpadSceneBuilder.PlaceCar(carLayer, definition, start, facing);
             // Lap timing: the centreline as the timer's measure of progress, start line at 0.
-            var path = root.AddComponent<TrackPath>();
-            path.trackName = track.name;
-            path.centre = centre;
-            path.line = line;
-            path.widthLeft = track.centerline.width_left;
-            path.widthRight = track.centerline.width_right;
-            path.sampleSpacing = track.sample_spacing_m;
-            path.lengthM = track.length_m;
             path.referenceLapSeconds = ReferenceLaps.TryGetValue(circuit, out float reference) ? reference : 0f;
             var timer = car.AddComponent<LapTimer>();
             var timerSettings = new SerializedObject(timer);
@@ -466,6 +498,16 @@ namespace CarRace.UnityGame.EditorTools
             return (position, Quaternion.LookRotation(heading.normalized, Vector3.up));
         }
 
+        /// <summary>Samples <paramref name="from"/> to <paramref name="to"/> of a closed loop, both
+        /// included, wrapping past the end.</summary>
+        static T[] Span<T>(T[] loop, int from, int to)
+        {
+            int n = loop.Length, count = ((to - from) % n + n) % n + 1;
+            var span = new T[count];
+            for (int k = 0; k < count; k++) span[k] = loop[(from + k) % n];
+            return span;
+        }
+
         /// <summary>A flat colour that ignores light and shade, for the guide's bars.</summary>
         static Material EnsureUnlit(string path, Color colour)
         {
@@ -518,7 +560,7 @@ namespace CarRace.UnityGame.EditorTools
         /// <summary>A closed strip between two edges, left then right in the direction of
         /// travel, with its faces turned upwards and a collider if it is driven on.</summary>
         static GameObject Strip(string name, GameObject parent, Vector3[] left, Vector3[] right,
-                                Material material, PhysicsMaterial surface)
+                                Material material, PhysicsMaterial surface, bool closed = true)
         {
             int n = left.Length;
             var vertices = new Vector3[n * 2];
@@ -536,7 +578,7 @@ namespace CarRace.UnityGame.EditorTools
             }
 
             var triangles = new List<int>(n * 6);
-            for (int i = 0; i < n; i++)
+            for (int i = 0; i < (closed ? n : n - 1); i++)
             {
                 int a = 2 * i, b = 2 * i + 1, c = 2 * ((i + 1) % n), d = 2 * ((i + 1) % n) + 1;
                 triangles.AddRange(new[] { a, c, b, b, c, d });
@@ -717,7 +759,7 @@ namespace CarRace.UnityGame.EditorTools
         /// falls between samples.
         /// </summary>
         static void Wall(string name, GameObject parent, Vector3[] edge, Vector3[] right, float inward,
-                         PhysicsMaterial surface, int layer)
+                         PhysicsMaterial surface, int layer, bool closed = true)
         {
             int n = edge.Length;
             const float thickness = 0.4f;
@@ -733,7 +775,7 @@ namespace CarRace.UnityGame.EditorTools
             }
 
             var triangles = new List<int>(n * 18);
-            for (int i = 0; i < n; i++)
+            for (int i = 0; i < (closed ? n : n - 1); i++)
             {
                 int a = 4 * i, b = 4 * ((i + 1) % n);
                 for (int f = 0; f < 3; f++)   // inner face, top, outer face

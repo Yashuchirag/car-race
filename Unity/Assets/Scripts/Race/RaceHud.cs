@@ -1,5 +1,6 @@
 using UnityEngine;
 using CarRace.Track;
+using CarRace.Vehicle;
 
 namespace CarRace.UnityGame
 {
@@ -62,6 +63,35 @@ namespace CarRace.UnityGame
                 string standing = me.Disqualified ? "DISQUALIFIED"
                                 : $"PENALTIES +{me.PenaltyS:0} s   ·   TRACK LIMITS WARNINGS {Mathf.Min(me.Warnings, RaceControl.Warnings)} OF {RaceControl.Warnings}";
                 GUI.Label(new Rect(0f, Hud.Px(92f), Screen.width, Hud.Px(24f)), standing, _status);
+            }
+
+            // Your stop, on the autopilot: the limiter, the tyre change counting down, the release.
+            if (_director.PlayerPitting && _director.PitDriver != null)
+            {
+                RaceDriver pit = _director.PitDriver;
+                switch (pit.Pit)
+                {
+                    case RaceDriver.PitState.Stopped:
+                        DrawBanner(false, true, $"TYRES  ·  {pit.ServiceLeft:0.0} s", "Four new tyres. The crew will release you when the lane is clear.");
+                        break;
+                    case RaceDriver.PitState.Leaving:
+                        DrawBanner(false, true, "RELEASED  ·  LIMITER 60 KM/H", "You take the car back at the pit exit line.");
+                        break;
+                    default:
+                        DrawBanner(false, true, "PIT LANE  ·  LIMITER 60 KM/H", "The car drives itself to your box.");
+                        break;
+                }
+                return;
+            }
+
+            // Worn tyres, with wear on: where the stop is.
+            if (_director.TyreWearRate > 0f && !me.Finished)
+            {
+                float worst = 0f;
+                foreach (Wheel w in _director.Player.Sim.Wheels) worst = Mathf.Max(worst, w.Wear);
+                if (worst >= 0.7f)
+                    GUI.Label(new Rect(0f, Hud.Px(116f), Screen.width, Hud.Px(24f)),
+                              "TYRES WORN  ·  PIT ENTRY ON THE RIGHT BEFORE THE START LINE", _status);
             }
 
             // Places gained off the track: who to let by, and how long is left. Shown as long as

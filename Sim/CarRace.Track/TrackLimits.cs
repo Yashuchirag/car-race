@@ -122,7 +122,12 @@ namespace CarRace.Track
         public static bool Beyond(TrackData track, int index, Vector3 point)
         {
             float lateral = track.LateralOffset(track.Centre, index, point);
-            return lateral > track.WidthRight[index] + WheelMarginM
+            float right = track.WidthRight[index];
+            // Through the pit stretch the pit lane is track as well, out to its far side: every
+            // stop would otherwise be four wheels off, and void the lap it was made on.
+            if (track.InPitStretch(index))
+                right = MathF.Max(right, track.PitOffsetM[index] + TrackData.PitFastLaneM * 0.5f + TrackData.PitWorkingLaneM);
+            return lateral > right + WheelMarginM
                 || -lateral > track.WidthLeft[index] + WheelMarginM;
         }
 

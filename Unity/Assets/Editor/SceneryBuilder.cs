@@ -36,6 +36,13 @@ namespace CarRace.UnityGame.EditorTools
     /// </summary>
     public static partial class SceneryBuilder
     {
+        /// <summary>
+        /// Set by TrackSceneBuilder before Build: the samples where the right barrier is left out
+        /// in front of the garages, and the pit stretch, where the right side's catch fence stands
+        /// on the pit wall (PitLaneBuilder) instead of the barrier. -1 when there is no pit lane.
+        /// </summary>
+        internal static (int From, int To) GarageGap = (-1, -1), PitStretch = (-1, -1);
+
         const float CellM = 2.5f;
         const float ReachM = 700f;
         const float ThinFromM = 350f;

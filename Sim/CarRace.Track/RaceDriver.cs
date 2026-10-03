@@ -154,8 +154,10 @@ namespace CarRace.Track
         public float PathsLookM = 40f;
         public float CapReleaseMs2 = 8f;
 
-        /// <summary>Half the car's width plus what it wants between itself and the grass.</summary>
-        public float HalfWidthM = 1.25f;
+        /// <summary>Half the car's width plus what it wants between itself and the grass. The
+        /// lanes, and so the pit lane, are built from the default: the scene builder uses it too.</summary>
+        public const float DefaultHalfWidthM = 1.25f;
+        public float HalfWidthM = DefaultHalfWidthM;
 
         /// <summary>
         /// How far ahead it looks to decide whether a pass can work, in seconds of the other
@@ -336,6 +338,36 @@ namespace CarRace.Track
         public float PitApproachM = 400f;
         public float BoxStopMs2 = 3.5f;
         float _serviceLeft;
+
+        /// <summary>Seconds of the tyre change left while Stopped, for a HUD.</summary>
+        public float ServiceLeft => Pit == PitState.Stopped ? MathF.Max(_serviceLeft, 0f) : 0f;
+
+        /// <summary>
+        /// Takes over a car already in the pit lane, past the entry line: a player's car, handed to
+        /// this driver as an autopilot. Starts it at <paramref name="index"/> on lap
+        /// <paramref name="laps"/>, in the pit lane, heading for its box.
+        /// </summary>
+        public void EnterPitLane(int index, int laps)
+        {
+            Path.StartAt(index, laps);
+            Path.JumpToLane(1);
+            Path.Pitting = true;
+            Path.PlanForPit = true;
+            Path.PitShiftM = 0f;
+            PitRequested = true;
+            Pit = PitState.InLane;
+        }
+
+        /// <summary>Back to racing, wherever the stop had got to: the autopilot handing a player's
+        /// car back at the exit line.</summary>
+        public void EndPit()
+        {
+            Path.Pitting = false;
+            Path.PlanForPit = false;
+            Path.PitShiftM = 0f;
+            PitRequested = false;
+            Pit = PitState.Racing;
+        }
 
         static float[] PitCeiling(TrackData track)
         {
