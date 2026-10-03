@@ -52,7 +52,16 @@ namespace CarRace.UnityGame
         {
             // Unscaled, so it keeps measuring while paused.
             _smoothedFrame = Mathf.Lerp(_smoothedFrame, Time.unscaledDeltaTime, 0.05f);
-            if (!Input.GetKeyDown(KeyCode.Escape)) return;
+            if (Input.GetKeyDown(KeyCode.Escape)) Toggle();
+        }
+
+        static SettingsMenu _instance;
+
+        /// <summary>Opens the settings, or closes them: Esc, or the lobby's SETTINGS button.</summary>
+        public static void Open() { if (_instance != null && !_instance._open) _instance.Toggle(); }
+
+        void Toggle()
+        {
             _open = !_open;
 
             // A LAN race cannot stop for one player: the menu opens and the race goes on.
@@ -71,7 +80,11 @@ namespace CarRace.UnityGame
         readonly GameAudio.HoverTracker _hover = new GameAudio.HoverTracker();
 
         // No GUILayout here: skip the layout pass Unity would otherwise run before each event.
-        void Awake() => useGUILayout = false;
+        void Awake()
+        {
+            useGUILayout = false;
+            _instance = this;
+        }
 
         void OnGUI()
         {

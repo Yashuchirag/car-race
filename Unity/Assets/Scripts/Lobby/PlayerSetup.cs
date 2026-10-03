@@ -45,11 +45,53 @@ namespace CarRace.UnityGame
             set
             {
                 PlayerPrefs.SetInt(ColourKey, Mathf.Clamp(value, 0, Colours.Length - 1));
+                PlayerPrefs.DeleteKey(CustomKey);
                 PlayerPrefs.Save();
             }
         }
 
-        public static Color Colour => Colours[ColourIndex].colour;
+        const string CustomKey = "CarRace.CarCustomColour";
+
+        /// <summary>
+        /// The colour the car is painted: a colour of the player's own from the lobby's sliders
+        /// (Custom), or else the chosen one of Colours. A LAN game still sends the palette index,
+        /// the one nearest the custom colour, since the protocol carries no more.
+        /// </summary>
+        public static Color Colour => Custom ?? Colours[ColourIndex].colour;
+
+        /// <summary>The player's own colour, or null when a palette colour is chosen; never under
+        /// -carColour. Setting a colour also chooses the nearest palette colour, for LAN games;
+        /// choosing a palette colour (ColourIndex) clears it.</summary>
+        public static Color? Custom
+        {
+            get
+            {
+                if (CommandLineColour >= 0) return null;
+                string saved = PlayerPrefs.GetString(CustomKey, "");
+                return ColorUtility.TryParseHtmlString("#" + saved, out Color c) && saved.Length > 0 ? c : (Color?)null;
+            }
+            set
+            {
+                if (value is Color c)
+                {
+                    int nearest = 0;
+                    float best = float.MaxValue;
+                    for (int i = 0; i < Colours.Length; i++)
+                    {
+                        Color p = Colours[i].colour;
+                        float d = (p.r - c.r) * (p.r - c.r) + (p.g - c.g) * (p.g - c.g) + (p.b - c.b) * (p.b - c.b);
+                        if (d < best) { best = d; nearest = i; }
+                    }
+                    PlayerPrefs.SetInt(ColourKey, nearest);
+                    PlayerPrefs.SetString(CustomKey, ColorUtility.ToHtmlStringRGB(c));
+                }
+                else PlayerPrefs.DeleteKey(CustomKey);
+                PlayerPrefs.Save();
+            }
+        }
+
+        /// <summary>The colour's name, for the lobby: the palette's, or CUSTOM.</summary>
+        public static string ColourName => Custom.HasValue ? "Custom" : Colours[ColourIndex].name;
 
         /// <summary>The saved body design, or `-carDesign 2` for one session.</summary>
         public static int DesignIndex

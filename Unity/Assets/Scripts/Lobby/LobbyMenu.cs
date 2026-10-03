@@ -29,7 +29,6 @@ namespace CarRace.UnityGame
         [SerializeField] TrackCatalog catalog;
         [Tooltip("The car as built, which the setup screen's settings are changes to.")]
         [SerializeField] CarDefinition car;
-        [SerializeField] float turnDegreesPerSecond = 18f;
         [Tooltip("The glass panels' material (Shaders/GlassPanel.shader); without it the panels are flat.")]
         [SerializeField] Material glass;
 
@@ -85,6 +84,9 @@ namespace CarRace.UnityGame
         void OnDestroy()
         {
             foreach (var texture in _outlines.Values) Destroy(texture);
+            foreach (var texture in _previews.Values) Destroy(texture);
+            foreach (var texture in _icons.Values) Destroy(texture);
+            foreach (var texture in new[] { _hueBar, _saturationBar, _brightnessBar }) if (texture != null) Destroy(texture);
         }
 
         void Start()
@@ -93,6 +95,7 @@ namespace CarRace.UnityGame
             if (Array.IndexOf(args, "-benchmark") >= 0) { Play(); return; }
             if (glass != null && Camera.main != null) _backdrop = Camera.main.gameObject.AddComponent<GlassBackdrop>();
             CarDesigns.Apply(displayCar, PlayerSetup.DesignIndex);
+            StartLayout(args);
             PlayerSetup.Paint(displayCar != null ? displayCar.Find("Body") : null, PlayerSetup.Colour);
 
             // Back from a LAN race: that game is over.
@@ -124,8 +127,12 @@ namespace CarRace.UnityGame
 
         void Update()
         {
-            if (displayCar != null) displayCar.Rotate(0f, turnDegreesPerSecond * Time.deltaTime, 0f, Space.World);
             if (_setupOpen) return;
+            if (Input.GetKeyDown(KeyCode.H) && GUIUtility.keyboardControl == 0)
+            {
+                _menuHidden = !_menuHidden;
+                GameAudio.Select();
+            }
             if (Input.GetKeyDown(KeyCode.Return) && GUIUtility.keyboardControl == 0) Play();
         }
 
@@ -170,157 +177,18 @@ namespace CarRace.UnityGame
 
         readonly GameAudio.HoverTracker _hover = new GameAudio.HoverTracker();
 
-        void OnGUI()
-        {
-            Styles();
-            _hover.Begin();
-            if (_setupOpen) { SetupScreen(); return; }
-
-            // Title, top left, over a soft shadow so it reads against the garage's white walls.
-            float margin = Hud.Px(40f);
-            Color titleColour = _title.normal.textColor;
-            _title.normal.textColor = new Color(0f, 0f, 0f, 0.45f);
-            GUI.Label(new Rect(margin + Hud.Px(3f), Hud.Px(31f), Hud.Px(700f), Hud.Px(80f)), "CAR RACE", _title);
-            _title.normal.textColor = titleColour;
-            GUI.Label(new Rect(margin, Hud.Px(28f), Hud.Px(700f), Hud.Px(80f)), "CAR RACE", _title);
-            Hud.Fill(new Rect(margin, Hud.Px(104f), Hud.Px(120f), Hud.Px(5f)), Accent);
-            Hud.Fill(new Rect(margin + Hud.Px(120f), Hud.Px(104f), Hud.Px(60f), Hud.Px(5f)), AccentLight);
-            GUI.Label(new Rect(margin, Hud.Px(114f), Hud.Px(700f), Hud.Px(30f)), "LOBBY", _subtitle);
-
-            CircuitPanel(new Rect(margin, Hud.Px(180f), Hud.Px(400f), Hud.Px(560f)));
-
-            // Quit, bottom left, under the circuits: the one way out of the game besides Alt+F4.
-            if (Button(new Rect(margin, Screen.height - margin - Hud.Px(44f), Hud.Px(140f), Hud.Px(44f)), "QUIT", true, back: true))
-                Application.Quit();
-
-            // Car, right: the body designs, colour swatches, the colour's name and PLAY.
-            // A player who has said ready keeps the car they said it with, until they un-ready.
-            bool locked = LanSession.Active && LanSession.Current.IsReadyToRace;
-            int designs = CarDesigns.Count;
-            float designRow = designs > 0 ? Hud.Px(62f) : 0f;
-            float width = Hud.Px(460f), height = Hud.Px(380f) + designRow;
-            var car = new Rect(Screen.width - margin - width, Screen.height - margin - height, width, height);
-
-            // Players, top right, above the car.
-            PlayersPanel(new Rect(car.x, margin, width, car.y - margin - Hud.Px(20f)));
-
-            PanelWithHeader(car, "YOUR CAR");
-            // The setup for the chosen circuit, in the header's corner; locked with the car.
-            if (Button(new Rect(car.xMax - Hud.Px(128f), car.y + Hud.Px(5f), Hud.Px(118f), Hud.Px(28f)), "SETUP",
-                       !locked && this.car != null && SetupScene.Length > 0, back: true))
-                OpenSetup();
-            float size = Hud.Px(80f), gap = Hud.Px(20f);
-            float left = car.x + (width - (4f * size + 3f * gap)) * 0.5f, top = car.y + Hud.Px(56f);
-            if (designs > 0)
-            {
-                float buttonWidth = (4f * size + 3f * gap - (designs - 1) * Hud.Px(8f)) / designs;
-                for (int i = 0; i < designs; i++)
-                {
-                    var button = new Rect(left + i * (buttonWidth + Hud.Px(8f)), top, buttonWidth, Hud.Px(44f));
-                    bool chosen = i == PlayerSetup.DesignIndex;
-                    bool hover = !locked && button.Contains(Event.current.mousePosition);
-                    Hud.Rounded(button, chosen ? Accent : hover ? new Color(1f, 1f, 1f, 0.16f) : Row);
-                    _cardName.normal.textColor = chosen ? Color.white : new Color(1f, 1f, 1f, 0.8f);
-                    GUI.Label(button, CarDesigns.NameOf(i).ToUpperInvariant(), _cardName);
-                    if (locked) continue;
-                    _hover.Watch(button);
-                    if (GUI.Button(button, GUIContent.none, GUIStyle.none))
-                    {
-                        GameAudio.Select();
-                        PlayerSetup.DesignIndex = i;
-                        CarDesigns.Apply(displayCar, i);
-                        if (LanSession.Active) LanSession.Current.SendSetup();
-                    }
-                }
-                top += designRow;
-            }
-            for (int i = 0; i < PlayerSetup.Colours.Length; i++)
-            {
-                var swatch = new Rect(left + (i % 4) * (size + gap), top + (i / 4) * (size + gap), size, size);
-                bool chosen = i == PlayerSetup.ColourIndex;
-                bool hover = !locked && swatch.Contains(Event.current.mousePosition);
-                if (chosen || hover)
-                {
-                    float ring = Hud.Px(chosen ? 4f : 2f);
-                    Hud.Rounded(new Rect(swatch.x - ring, swatch.y - ring, swatch.width + 2f * ring, swatch.height + 2f * ring),
-                                chosen ? Color.white : new Color(1f, 1f, 1f, 0.45f));
-                }
-                else
-                {
-                    // A faint outline, so the darkest colours still read against the panel.
-                    float line = Hud.Px(1.5f);
-                    Hud.Rounded(new Rect(swatch.x - line, swatch.y - line, swatch.width + 2f * line, swatch.height + 2f * line),
-                                new Color(1f, 1f, 1f, 0.18f));
-                }
-                Hud.Rounded(swatch, PlayerSetup.Colours[i].colour);
-                if (locked) continue;
-                _hover.Watch(swatch);
-                if (GUI.Button(swatch, GUIContent.none, GUIStyle.none))
-                {
-                    GameAudio.Select();
-                    PlayerSetup.ColourIndex = i;
-                    PlayerSetup.Paint(displayCar != null ? displayCar.Find("Body") : null, PlayerSetup.Colour);
-                    if (LanSession.Active) LanSession.Current.SendSetup();
-                }
-            }
-            _text.alignment = TextAnchor.MiddleCenter;
-            GUI.Label(new Rect(car.x, top + 2f * size + gap + Hud.Px(8f), width, Hud.Px(30f)),
-                      PlayerSetup.Colours[PlayerSetup.ColourIndex].name.ToUpperInvariant() + (locked ? "  ·  LOCKED WHILE READY" : ""), _text);
-            _text.alignment = TextAnchor.MiddleLeft;
-
-            var play = new Rect(car.x + Hud.Px(20f), car.yMax - Hud.Px(84f), width - Hud.Px(40f), Hud.Px(64f));
-            // Joined: READY, and pressed again to change the car. Hosting: START RACE once
-            // someone has joined and everyone is ready.
-            string label = "PLAY  ▶", hint = "Enter: play";
-            bool ready = true, waiting = false;
-            if (LanSession.Active)
-            {
-                LanSession session = LanSession.Current;
-                LobbyState lobby = session.Lobby;
-                if (session.State == LanSession.Mode.Joined)
-                {
-                    ready = session.Client.Id != 0;
-                    waiting = session.IsReadyToRace;
-                    label = waiting ? "READY  ✓  WAITING FOR HOST" : "READY";
-                    hint = waiting ? "Enter: not ready, to change your car" : "Enter: ready";
-                }
-                else if (session.Host.Humans < 2) { label = "WAITING FOR PLAYERS"; ready = false; }
-                else if (!session.Host.AllReady)
-                {
-                    int count = lobby.Players.FindAll(p => p.Ready).Count;
-                    label = $"WAITING: {count} OF {lobby.Players.Count} READY";
-                    ready = false;
-                }
-                else { label = "START RACE  ▶"; hint = "Enter: start the race"; }
-            }
-            bool over = ready && play.Contains(Event.current.mousePosition);
-            Hud.Rounded(play, !ready ? Row : waiting ? (over ? ReadyLight : ReadyColour) : over ? AccentLight : Accent);
-            _play.fontSize = Hud.Font(ready && !waiting ? 30 : 22);
-            GUI.Label(play, label, _play);
-            if (ready)
-            {
-                _hover.Watch(play);
-                if (GUI.Button(play, GUIContent.none, GUIStyle.none)) Play();
-            }
-
-            _small.alignment = TextAnchor.MiddleRight;
-            GUI.Label(new Rect(car.x, car.yMax + Hud.Px(6f), width, Hud.Px(24f)), ready ? hint : "", _small);
-            _small.alignment = TextAnchor.UpperLeft;
-        }
-
         /// <summary>
         /// Who is racing. Off a LAN game: your name, and Host or Join. Joining: the games
         /// found on the network and a box for an address. In a game: everyone in it, the AI
         /// cars (the host sets them), and Leave.
         /// </summary>
-        void PlayersPanel(Rect panel)
+        void PlayersContent(Rect area)
         {
             LanSession session = LanSession.Active || LanSession.Browsing ? LanSession.Current : null;
             LanSession.Mode mode = session != null ? session.State : LanSession.Mode.Off;
-            PanelWithHeader(panel, mode == LanSession.Mode.Browsing ? "JOIN A LAN GAME" : "PLAYERS");
-
-            float pad = Hud.Px(14f), rowHeight = Hud.Px(36f), gap = Hud.Px(6f);
-            float x = panel.x + pad, width = panel.width - 2f * pad, y = panel.y + Hud.Px(52f);
+            float rowHeight = Hud.Px(40f), gap = Hud.Px(6f);
+            float x = area.x, width = area.width, y = area.y;
+            Section(area, ref y, mode == LanSession.Mode.Browsing ? "JOIN A LAN GAME" : mode == LanSession.Mode.Off ? "LAN RACING" : "PLAYERS");
             string message = LanSession.Message;
 
             if (mode == LanSession.Mode.Off)
@@ -343,18 +211,9 @@ namespace CarRace.UnityGame
                 y += Hud.Px(62f);
 
                 GUI.Label(new Rect(x + Hud.Px(2f), y, width, Hud.Px(60f)),
-                          "PLAY races the AI on your own. Host or join to race people on your network.", _small);
-                y += Hud.Px(48f);
-
-                // The solo race: its laps, how fast the tyres wear, and the safety car (RaceSettings).
-                SettingRow(x, ref y, width, "LAPS", RaceSettings.Laps.ToString(),
-                           RaceSettings.Laps > 1, RaceSettings.Laps < RaceSettings.MaxLaps, step => RaceSettings.Laps += step);
-                SettingRow(x, ref y, width, "TYRE WEAR", RaceSettings.WearLabel(RaceSettings.WearChoice),
-                           RaceSettings.WearChoice > 0, RaceSettings.WearChoice < RaceSettings.WearRates.Length - 1,
-                           step => RaceSettings.WearChoice += step);
-                SettingRow(x, ref y, width, "SAFETY CAR", RaceSettings.SafetyCarChoice ? "ON" : "OFF",
-                           RaceSettings.SafetyCarChoice, !RaceSettings.SafetyCarChoice,
-                           step => RaceSettings.SafetyCarChoice = step > 0);
+                          "PLAY races the AI on your own. Host a game for people on your network to join, " +
+                          "or join one: the host picks the circuit, the laps and the AI cars.", _small);
+                y += Hud.Px(60f);
             }
             else if (mode == LanSession.Mode.Browsing)
             {
@@ -513,11 +372,14 @@ namespace CarRace.UnityGame
             y = row.yMax + Hud.Px(6f);
         }
 
-        /// <summary>A rounded button with a label; false and greyed when not enabled.</summary>
+        /// <summary>A rounded button with a label, lighting up as the mouse comes over it; false and
+        /// greyed when not enabled. A back button is a pane of glass, the others the accent.</summary>
         bool Button(Rect rect, string label, bool enabled, bool back = false)
         {
             bool hover = enabled && rect.Contains(Event.current.mousePosition);
-            Hud.Rounded(rect, !enabled ? new Color(1f, 1f, 1f, 0.06f) : hover ? AccentLight : back ? Row : Accent);
+            float glow = Glow(label, rect, hover);
+            Hud.Rounded(rect, !enabled ? new Color(1f, 1f, 1f, 0.06f)
+                            : back ? Color.Lerp(Row, new Color(1f, 1f, 1f, 0.22f), glow) : Color.Lerp(Accent, AccentLight, glow));
             _button.normal.textColor = enabled ? Color.white : new Color(1f, 1f, 1f, 0.3f);
             GUI.Label(rect, label, _button);
             if (!enabled) return false;
@@ -566,66 +428,6 @@ namespace CarRace.UnityGame
                 catch (SocketException) { }
             }
             return _localAddresses = found.Count > 0 ? string.Join(", ", found) : "unknown";
-        }
-
-        /// <summary>A card per circuit, two across: its outline, name, length and surroundings.</summary>
-        void CircuitPanel(Rect panel)
-        {
-            PanelWithHeader(panel, "CIRCUIT");
-            if (_circuits.Count == 0)
-            {
-                GUI.Label(new Rect(panel.x + Hud.Px(16f), panel.y + Hud.Px(52f), panel.width - Hud.Px(32f), Hud.Px(60f)),
-                          "No circuits in this build. Build one with CarRace, Build Track Scene.", _small);
-                return;
-            }
-
-            float pad = Hud.Px(14f), gap = Hud.Px(12f);
-            float cardWidth = (panel.width - 2f * pad - gap) / 2f, cardHeight = Hud.Px(152f);
-            int outlinePixels = Mathf.RoundToInt(Hud.Px(96f));
-            if (outlinePixels != _outlinePixels)
-            {
-                foreach (var texture in _outlines.Values) Destroy(texture);
-                _outlines.Clear();
-                _outlinePixels = outlinePixels;
-            }
-
-            // In a LAN game the lobby's circuit is the one that counts, and only the host changes it.
-            bool lan = LanSession.Active;
-            bool mayChoose = !lan || LanSession.Current.State == LanSession.Mode.Hosting;
-            string chosen = lan && LanSession.Current.Lobby != null ? LanSession.Current.Lobby.Track : ChosenScene;
-            for (int i = 0; i < _circuits.Count; i++)
-            {
-                var entry = _circuits[i];
-                var card = new Rect(panel.x + pad + (i % 2) * (cardWidth + gap),
-                                    panel.y + Hud.Px(52f) + (i / 2) * (cardHeight + gap), cardWidth, cardHeight);
-                bool selected = entry.scene == chosen;
-                bool hover = mayChoose && card.Contains(Event.current.mousePosition);
-                // Chosen: the pane tinted with the accent and an accent bar down its left edge, since
-                // a solid ring behind a see-through card shows through it as a solid card.
-                Hud.Rounded(card, selected ? new Color(Accent.r, Accent.g, Accent.b, 0.3f) : hover ? new Color(1f, 1f, 1f, 0.14f) : Row);
-                if (selected)
-                    Hud.Rounded(new Rect(card.x + Hud.Px(5f), card.y + Hud.Px(14f), Hud.Px(4f), card.height - Hud.Px(28f)), Accent);
-
-                if (!_outlines.TryGetValue(entry.scene, out Texture2D outline))
-                    _outlines[entry.scene] = outline = OutlineTexture(entry.outline, outlinePixels);
-                GUI.DrawTexture(new Rect(card.center.x - outlinePixels * 0.5f, card.y + Hud.Px(8f), outlinePixels, outlinePixels), outline);
-
-                _cardName.normal.textColor = selected ? Color.white : new Color(0.85f, 0.86f, 0.9f);
-                GUI.Label(new Rect(card.x, card.y + Hud.Px(106f), card.width, Hud.Px(22f)), entry.displayName, _cardName);
-                _small.alignment = TextAnchor.MiddleCenter;
-                GUI.Label(new Rect(card.x, card.y + Hud.Px(126f), card.width, Hud.Px(20f)),
-                          $"{entry.lengthKm:0.0} km  ·  {entry.theme}", _small);
-                _small.alignment = TextAnchor.UpperLeft;
-
-                if (!mayChoose) continue;
-                _hover.Watch(card);
-                if (GUI.Button(card, GUIContent.none, GUIStyle.none))
-                {
-                    GameAudio.Select();
-                    ChosenScene = entry.scene;
-                    if (lan) LanSession.Current.Host.SetTrack(entry.scene);
-                }
-            }
         }
 
         /// <summary>A circuit's outline in white on a clear square, drawn as discs along it.</summary>
@@ -717,6 +519,7 @@ namespace CarRace.UnityGame
             _text.fontSize = Hud.Font(18);
             _small.fontSize = Hud.Font(14);
             _play.fontSize = Hud.Font(30);
+            LayoutStyles();
         }
     }
 }

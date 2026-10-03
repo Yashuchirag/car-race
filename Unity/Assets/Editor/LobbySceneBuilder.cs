@@ -47,7 +47,7 @@ namespace CarRace.UnityGame.EditorTools
             Object.DestroyImmediate(car.GetComponent<Rigidbody>());
             Object.DestroyImmediate(car.GetComponent<BoxCollider>());
             car.transform.SetParent(root.transform, false);
-            car.transform.SetPositionAndRotation(new Vector3(0f, 0.045f + definition.cgHeight, 0f), Quaternion.Euler(0f, 210f, 0f));
+            car.transform.SetPositionAndRotation(new Vector3(0f, 0.045f + definition.cgHeight, 0f), Quaternion.Euler(0f, 345f, 0f));
             var body = SkidpadSceneBuilder.EnsureMaterial(SkidpadSceneBuilder.BodyMaterialPath, new Color(0.8f, 0.1f, 0.08f), null, Vector2.one);
             foreach (var r in car.GetComponentsInChildren<Renderer>()) if (r.name == "Body") r.sharedMaterial = body;
 

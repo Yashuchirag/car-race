@@ -20,6 +20,8 @@ namespace CarRace.UnityGame
             public float lengthKm;
             [Tooltip("The centreline fitted into a unit square, north up, a couple of hundred points.")]
             public Vector2[] outline = new Vector2[0];
+            [Tooltip("Where each corner's number goes, in the outline's square, in order from the start line.")]
+            public Vector2[] corners = new Vector2[0];
         }
 
         public List<Entry> entries = new List<Entry>();

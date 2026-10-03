@@ -79,6 +79,21 @@ namespace CarRace.UnityGame.EditorTools
 
         /// <summary>For a headless check: -executeMethod
         /// CarRace.UnityGame.EditorTools.TrackSceneBuilder.BuildFromCommandLine -track monza</summary>
+        /// <summary>The lobby's catalog brought up to date for every circuit in Assets/Tracks without
+        /// building any scene: Unity.exe -batchmode -quit -executeMethod
+        /// CarRace.UnityGame.EditorTools.TrackSceneBuilder.CatalogFromCommandLine</summary>
+        public static void CatalogFromCommandLine()
+        {
+            foreach (string path in Directory.GetFiles(TracksFolder, "*.json"))
+            {
+                string circuit = Path.GetFileNameWithoutExtension(path);
+                var track = JsonUtility.FromJson<TrackFile>(File.ReadAllText(path));
+                Vector3[] centre = Points(track.centerline, Min(track.centerline.z));
+                RecordInCatalog($"Track {track.name}", track.name, circuit, Length(centre), centre, track);
+            }
+            Debug.Log("Track catalog updated.");
+        }
+
         public static void BuildFromCommandLine()
         {
             string[] args = Environment.GetCommandLineArgs();
@@ -99,7 +114,8 @@ namespace CarRace.UnityGame.EditorTools
         const string CatalogPath = "Assets/Settings/TrackCatalog.asset";
 
         [Serializable] class Polyline { public float[] x, y, z, width_left, width_right; }
-        [Serializable] class TrackFile { public string name; public float sample_spacing_m, length_m; public Polyline centerline, racing_line; }
+        [Serializable] class Corner { public float apex_s; public string direction; public int number; }
+        [Serializable] class TrackFile { public string name; public float sample_spacing_m, length_m; public Polyline centerline, racing_line; public Corner[] corners; }
 
         public static void Build(string circuit)
         {
@@ -329,14 +345,14 @@ namespace CarRace.UnityGame.EditorTools
             GraphicsSetup.SetUpSkyAndSun(sun, theme.Night);
             EditorSceneManager.SaveScene(scene, scenePath);
             SkidpadSceneBuilder.AddToBuildSettings(scenePath);
-            RecordInCatalog($"Track {track.name}", track.name, circuit, Length(centre), centre);
+            RecordInCatalog($"Track {track.name}", track.name, circuit, Length(centre), centre, track);
             Selection.activeGameObject = car;
             Debug.Log($"{track.name} built at {scenePath}: {n} samples, {Length(centre):0} m of road, " +
                       $"{Max(track.centerline.z) - floor:0} m of climb. {AiCars} AI on the grid ahead of you. Press Play; the AI go when you do.");
         }
 
         /// <summary>This circuit's card in the lobby: name, length, theme and outline.</summary>
-        static void RecordInCatalog(string scene, string name, string circuit, float lengthM, Vector3[] centre)
+        static void RecordInCatalog(string scene, string name, string circuit, float lengthM, Vector3[] centre, TrackFile track)
         {
             var catalog = AssetDatabase.LoadAssetAtPath<TrackCatalog>(CatalogPath);
             if (catalog == null)
@@ -362,6 +378,18 @@ namespace CarRace.UnityGame.EditorTools
             entry.theme = Theme.For(circuit).Name;
             entry.lengthKm = lengthM / 1000f;
             entry.outline = outline.ToArray();
+
+            // Each corner's number, placed a little outside its apex, in the same square.
+            var corners = new List<Vector2>();
+            foreach (Corner c in track.corners ?? new Corner[0])
+            {
+                int i = Mathf.Clamp(Mathf.RoundToInt(c.apex_s / track.sample_spacing_m), 0, centre.Length - 1);
+                Vector3 along = (centre[(i + 1) % centre.Length] - centre[(i - 1 + centre.Length) % centre.Length]).normalized;
+                var left = new Vector2(-along.z, along.x);
+                Vector2 outside = c.direction == "right" ? left : -left;
+                corners.Add((new Vector2(centre[i].x - minX, centre[i].z - minZ) + offset) / span + outside * 0.055f);
+            }
+            entry.corners = corners.ToArray();
             catalog.entries.Sort((a, b) => string.CompareOrdinal(a.displayName, b.displayName));
             EditorUtility.SetDirty(catalog);
             AssetDatabase.SaveAssets();

@@ -44,8 +44,9 @@ namespace CarRace.UnityGame
                 _roundedRadius = radius;
                 _rounded = new GUIStyle { normal = { background = _roundedTexture }, border = new RectOffset(radius, radius, radius, radius) };
             }
+            // Times GUI.color, so a fade over a whole panel (the lobby's) fades these too.
             Color before = GUI.color;
-            GUI.color = colour;
+            GUI.color = before * colour;
             _rounded.Draw(rect, false, false, false, false);
             GUI.color = before;
         }
@@ -54,7 +55,7 @@ namespace CarRace.UnityGame
         public static void Fill(Rect rect, Color colour)
         {
             Color before = GUI.color;
-            GUI.color = colour;
+            GUI.color = before * colour;
             GUI.DrawTexture(rect, Texture2D.whiteTexture);
             GUI.color = before;
         }
