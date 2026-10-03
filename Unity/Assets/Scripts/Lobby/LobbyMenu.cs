@@ -30,12 +30,19 @@ namespace CarRace.UnityGame
         [Tooltip("The car as built, which the setup screen's settings are changes to.")]
         [SerializeField] CarDefinition car;
         [SerializeField] float turnDegreesPerSecond = 18f;
+        [Tooltip("The glass panels' material (Shaders/GlassPanel.shader); without it the panels are flat.")]
+        [SerializeField] Material glass;
 
-        static readonly Color Panel = new Color(0.05f, 0.06f, 0.1f, 0.86f);
+        // Glass: smoky panels over a blur of the garage (GlassBackdrop), rows and secondary
+        // buttons a lighter pane on them, the accent kept for what is chosen and for PLAY.
+        static readonly Color Panel = new Color(0.03f, 0.04f, 0.07f, 0.8f);
+        static readonly Color GlassTint = new Color(0.03f, 0.04f, 0.07f, 0.6f);
         static readonly Color Accent = new Color(0.9f, 0.12f, 0.1f);
         static readonly Color AccentLight = new Color(1f, 0.55f, 0.1f);
-        static readonly Color Muted = new Color(0.62f, 0.64f, 0.72f);
-        static readonly Color Row = new Color(0.12f, 0.13f, 0.18f, 0.95f);
+        static readonly Color Muted = new Color(0.8f, 0.82f, 0.88f);
+        static readonly Color Row = new Color(1f, 1f, 1f, 0.08f);
+        static readonly Color Divider = new Color(1f, 1f, 1f, 0.14f);
+        GlassBackdrop _backdrop;
         static readonly Color ReadyColour = new Color(0.12f, 0.6f, 0.28f);
         static readonly Color ReadyLight = new Color(0.2f, 0.72f, 0.36f);
 
@@ -84,6 +91,7 @@ namespace CarRace.UnityGame
         {
             string[] args = Environment.GetCommandLineArgs();
             if (Array.IndexOf(args, "-benchmark") >= 0) { Play(); return; }
+            if (glass != null && Camera.main != null) _backdrop = Camera.main.gameObject.AddComponent<GlassBackdrop>();
             CarDesigns.Apply(displayCar, PlayerSetup.DesignIndex);
             PlayerSetup.Paint(displayCar != null ? displayCar.Find("Body") : null, PlayerSetup.Colour);
 
@@ -168,8 +176,12 @@ namespace CarRace.UnityGame
             _hover.Begin();
             if (_setupOpen) { SetupScreen(); return; }
 
-            // Title, top left.
+            // Title, top left, over a soft shadow so it reads against the garage's white walls.
             float margin = Hud.Px(40f);
+            Color titleColour = _title.normal.textColor;
+            _title.normal.textColor = new Color(0f, 0f, 0f, 0.45f);
+            GUI.Label(new Rect(margin + Hud.Px(3f), Hud.Px(31f), Hud.Px(700f), Hud.Px(80f)), "CAR RACE", _title);
+            _title.normal.textColor = titleColour;
             GUI.Label(new Rect(margin, Hud.Px(28f), Hud.Px(700f), Hud.Px(80f)), "CAR RACE", _title);
             Hud.Fill(new Rect(margin, Hud.Px(104f), Hud.Px(120f), Hud.Px(5f)), Accent);
             Hud.Fill(new Rect(margin + Hud.Px(120f), Hud.Px(104f), Hud.Px(60f), Hud.Px(5f)), AccentLight);
@@ -588,13 +600,11 @@ namespace CarRace.UnityGame
                                     panel.y + Hud.Px(52f) + (i / 2) * (cardHeight + gap), cardWidth, cardHeight);
                 bool selected = entry.scene == chosen;
                 bool hover = mayChoose && card.Contains(Event.current.mousePosition);
-                if (selected || hover)
-                {
-                    float ring = Hud.Px(selected ? 3f : 2f);
-                    Hud.Rounded(new Rect(card.x - ring, card.y - ring, card.width + 2f * ring, card.height + 2f * ring),
-                                selected ? Accent : new Color(1f, 1f, 1f, 0.35f));
-                }
-                Hud.Rounded(card, Row);
+                // Chosen: the pane tinted with the accent and an accent bar down its left edge, since
+                // a solid ring behind a see-through card shows through it as a solid card.
+                Hud.Rounded(card, selected ? new Color(Accent.r, Accent.g, Accent.b, 0.3f) : hover ? new Color(1f, 1f, 1f, 0.14f) : Row);
+                if (selected)
+                    Hud.Rounded(new Rect(card.x + Hud.Px(5f), card.y + Hud.Px(14f), Hud.Px(4f), card.height - Hud.Px(28f)), Accent);
 
                 if (!_outlines.TryGetValue(entry.scene, out Texture2D outline))
                     _outlines[entry.scene] = outline = OutlineTexture(entry.outline, outlinePixels);
@@ -650,14 +660,34 @@ namespace CarRace.UnityGame
             return texture;
         }
 
+        /// <summary>A glass panel with its title: an accent tick, the title, and a hairline under
+        /// it. The content starts 52 px down, as it did under the old solid header.</summary>
         void PanelWithHeader(Rect rect, string title)
         {
-            Hud.Rounded(rect, Panel);
-            float header = Hud.Px(38f);
-            Hud.Rounded(new Rect(rect.x, rect.y, rect.width, header), Accent);
-            Hud.Fill(new Rect(rect.x, rect.y + header * 0.5f, rect.width, header * 0.5f), Accent);
-            Hud.Fill(new Rect(rect.x, rect.y + header, rect.width, Hud.Px(3f)), AccentLight);
-            GUI.Label(new Rect(rect.x + Hud.Px(16f), rect.y, rect.width, header), title, _header);
+            Glass(rect, GlassTint);
+            float header = Hud.Px(42f);
+            Hud.Rounded(new Rect(rect.x + Hud.Px(16f), rect.y + Hud.Px(13f), Hud.Px(5f), Hud.Px(18f)), Accent);
+            GUI.Label(new Rect(rect.x + Hud.Px(30f), rect.y + Hud.Px(2f), rect.width, header), title, _header);
+            Hud.Fill(new Rect(rect.x + Hud.Px(16f), rect.y + header, rect.width - Hud.Px(32f), Mathf.Max(1f, Hud.Px(1f))), Divider);
+        }
+
+        /// <summary>
+        /// Frosted glass over <paramref name="rect"/>: the blurred garage behind it
+        /// (GlassBackdrop) through the glass shader, tinted, with a sheen from the top and a
+        /// bright edge. Flat in the panel colour until the first blurred frame, or without the
+        /// material.
+        /// </summary>
+        void Glass(Rect rect, Color tint)
+        {
+            if (Event.current.type != EventType.Repaint) return;
+            Texture blurred = _backdrop != null ? _backdrop.Blurred : null;
+            if (glass == null || blurred == null) { Hud.Rounded(rect, Panel); return; }
+            glass.SetVector("_Rect", new Vector4(rect.x, rect.y, rect.width, rect.height));
+            glass.SetVector("_Screen", new Vector4(Screen.width, Screen.height, Hud.Px(16f), Mathf.Max(1f, Hud.Px(1.3f))));
+            glass.SetColor("_Tint", tint);
+            glass.SetColor("_Edge", new Color(1f, 1f, 1f, 0.28f));
+            glass.SetFloat("_Sheen", 0.07f);
+            Graphics.DrawTexture(rect, blurred, glass);
         }
 
         void Styles()

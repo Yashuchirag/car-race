@@ -438,6 +438,10 @@ namespace CarRace.UnityGame.EditorTools
                 case "Yellow": return Flat("Painted Yellow", new Color(0.95f, 0.75f, 0.1f), 0.4f);
                 case "NeonPink": return Neon("Neon Pink", new Color(1f, 0.1f, 0.6f));
                 case "NeonCyan": return Neon("Neon Cyan", new Color(0.1f, 0.9f, 1f));
+                case "Epoxy": return Flat("Garage Epoxy", new Color(0.24f, 0.25f, 0.27f), 0.78f);
+                case "WallPanel": return Flat("Garage Wall", new Color(0.78f, 0.79f, 0.81f), 0.35f);
+                case "LightPanel": return Lamp("Garage Light", new Color(1f, 0.97f, 0.92f), 6f);
+                case "Screen": return Lamp("Timing Screen", new Color(0.05f, 0.16f, 0.35f), 1.5f);
                 case "Alps":
                 case "Ridges":
                 case "Dunes":
@@ -451,6 +455,16 @@ namespace CarRace.UnityGame.EditorTools
                 }
                 default: throw new InvalidOperationException($"No material for a scenery part named {key}; add it to StructureModels.Named.");
             }
+        }
+
+        /// <summary>A surface that gives light, day or night: a strip light, a screen.</summary>
+        static Material Lamp(string name, Color colour, float intensity)
+        {
+            Material m = Flat(name, colour, 0.5f);
+            m.SetColor("_EmissionColor", colour * intensity);
+            m.EnableKeyword("_EMISSION");
+            m.globalIlluminationFlags = MaterialGlobalIlluminationFlags.None;
+            return m;
         }
 
         /// <summary>A neon strip: dark by day, glowing past white into bloom at night.</summary>

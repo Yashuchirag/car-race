@@ -57,6 +57,10 @@ MATERIALS = {
     "NeonCyan": (1.0, (0.1, 0.9, 1.0), 0.0, 0.3),
     "Corrugated": (2.0, (0.75, 0.77, 0.8), 0.6, 0.45),
     "Seats": (1.0, (0.08, 0.22, 0.62), 0.0, 0.5),
+    "Epoxy": (2.0, (0.33, 0.34, 0.36), 0.0, 0.25),     # the garage: its floor, walls and lights
+    "WallPanel": (2.0, (0.82, 0.83, 0.85), 0.0, 0.6),
+    "LightPanel": (1.0, (1.0, 1.0, 1.0), 0.0, 0.3),
+    "Screen": (1.0, (0.04, 0.1, 0.2), 0.0, 0.15),
 }
 
 
@@ -811,6 +815,130 @@ LANDMARKS = {
 }
 
 
+# ---- the lobby ---------------------------------------------------------------------
+
+def garage():
+    """The lobby: the inside of a team's pit garage, 12 m wide, 18 m deep and 5 m high, the
+    car on a turntable in the middle (at the origin). The roller door is open across most of
+    the front (-z), onto the pit lane, which LobbySceneBuilder lays outside it; the camera
+    stands near the back looking out. Epoxy floor with the box painted round the turntable;
+    white walls with the team's red band; strip lights in three rows under the roof; tyre
+    racks on the left wall and piles of tyres by the door; tool chests, a workbench and the
+    timing screens on the right; a quick-lift jack in front of the car."""
+    m = Model("garage")
+    W, D, H = 6.0, 9.0, 5.0             # half width, half depth, height
+    t = 0.3                              # wall thickness
+    door_w, door_h = 4.6, 4.2            # half the door's width, its height
+
+    # Shell: floor, roof, back and side walls, and the front wall round the door.
+    m.box((0, -0.05, 0), (2 * W + 2 * t, 0.1, 2 * D + 2 * t), "Epoxy")
+    m.box((0, H + 0.15, 0), (2 * W + 2 * t, 0.3, 2 * D + 2 * t), "DarkSteel")
+    m.box((0, H / 2, D + t / 2), (2 * W + 2 * t, H, t), "WallPanel")
+    for side in (-1, 1):
+        m.box((side * (W + t / 2), H / 2, 0), (t, H, 2 * D), "WallPanel")
+        m.box((side * (W + door_w) / 2, H / 2, -D - t / 2), (W - door_w, H, t), "WallPanel")
+    m.box((0, (H + door_h) / 2, -D - t / 2), (2 * door_w, H - door_h, t), "WallPanel")
+
+    # The team's band round the walls, a dark skirting, and the door's frame and drum.
+    for side in (-1, 1):
+        m.box((side * (W - 0.01), 2.75, 0), (0.02, 0.35, 2 * D), "Red")
+        m.box((side * (W - 0.01), 0.08, 0), (0.03, 0.16, 2 * D), "DarkSteel")
+    m.box((0, 2.75, D - 0.01), (2 * W, 0.35, 0.02), "Red")
+    m.box((0, 0.08, D - 0.01), (2 * W, 0.16, 0.03), "DarkSteel")
+    for side in (-1, 1):
+        m.box((side * door_w, door_h / 2, -D + 0.08), (0.12, door_h, 0.16), "Steel")
+    m.cylinder((-door_w - 0.1, door_h + 0.35, -D + 0.35), (door_w + 0.1, door_h + 0.35, -D + 0.35), 0.32, "Corrugated", sides=16)
+    m.box((0, door_h + 0.03, -D + 0.05), (2 * door_w, 0.06, 0.12), "DarkSteel")      # the shutter's bottom bar, rolled up
+
+    # Roof beams and the strip lights between them, three rows.
+    for z in (-7.5, -4.5, -1.5, 1.5, 4.5, 7.5):
+        m.box((0, H - 0.2, z), (2 * W, 0.4, 0.2), "Steel")
+    for x in (-3.2, 0.0, 3.2):
+        for z in (-6.0, -3.0, 0.0, 3.0, 6.0):
+            m.box((x, H - 0.45, z), (0.3, 0.08, 2.2), "DarkSteel")
+            m.box((x, H - 0.5, z), (0.22, 0.03, 2.1), "LightPanel")
+            for zz in (z - 0.9, z + 0.9):
+                rod(m, (x, H - 0.41, zz), (x, H - 0.4 + 0.4, zz), 0.01, "Steel")
+
+    # The turntable, flush with the floor, and the box painted round it.
+    m.cylinder((0, 0.0, 0), (0, 0.04, 0), 3.0, "DarkSteel", sides=48)
+    m.cylinder((0, 0.0, 0), (0, 0.045, 0), 3.06, "Steel", sides=48, caps=False)
+    bx, bz, line = 3.6, 4.4, 0.12
+    for side in (-1, 1):
+        m.box((side * bx, 0.004, 0), (line, 0.008, 2 * bz), "Yellow")
+        m.box((0, 0.004, side * bz), (2 * bx + line, 0.008, line), "Yellow")
+    for k in range(-3, 4):                                                     # hatching by the door
+        m.box((k * 1.2, 0.004, -D + 1.0), (0.5, 0.008, 0.12), "Yellow", rotate=None)
+
+    # Left wall: two tyre racks, three shelves each, tyres standing in a row along the wall;
+    # and piles of tyres lying flat by the door.
+    def tyre_standing(x, y, z):
+        m.cylinder((x, y + 0.33, z), (x, y + 0.33, z + 0.27), 0.33, "Rubber", sides=18)
+        m.cylinder((x, y + 0.33, z - 0.005), (x, y + 0.33, z + 0.275), 0.22, "Steel", sides=14)
+
+    for rz in (-3.6, 1.0):
+        x0 = -W + 0.45
+        for dz in (0.0, 3.0):
+            for dx in (-0.35, 0.35):
+                m.box((x0 + dx, 1.35, rz + dz), (0.06, 2.7, 0.06), "Red")
+        for y in (0.15, 1.0, 1.85):
+            m.box((x0, y, rz + 1.5), (0.8, 0.05, 3.06), "Steel")
+            if y < 2.5:
+                for k in range(10):
+                    tyre_standing(x0, y + 0.03, rz + 0.08 + k * 0.29)
+    for px, pz, count in ((-4.6, -D + 1.0, 4), (-3.8, -D + 1.4, 3), (4.4, -D + 1.1, 4)):
+        for k in range(count):
+            y = 0.15 + k * 0.29
+            m.cylinder((px, y - 0.13, pz), (px, y + 0.13, pz), 0.33, "Rubber", sides=18)
+        m.cylinder((px, 0.02, pz), (px, 0.03 + count * 0.29, pz), 0.18, "DarkSteel", sides=12, caps=True)
+
+    # Right wall: two roll cabs with a top chest, a workbench with a monitor, and the timing
+    # screens on the wall above it.
+    def roll_cab(z):
+        x = W - 0.4
+        m.box((x, 0.55, z), (0.65, 0.9, 1.3), "Red")
+        m.box((x, 1.02, z), (0.68, 0.04, 1.34), "DarkSteel")                    # worktop
+        m.box((x, 1.35, z), (0.55, 0.6, 1.2), "Red")                            # top chest
+        for y in (0.3, 0.5, 0.7, 0.9):
+            m.box((x - 0.33, y, z), (0.01, 0.02, 1.2), "DarkSteel")             # drawer lines
+            m.box((x - 0.345, y + 0.07, z), (0.02, 0.025, 0.9), "Steel")        # handles
+        for y in (1.2, 1.4):
+            m.box((x - 0.285, y + 0.06, z), (0.02, 0.025, 0.8), "Steel")
+        for dz in (-0.55, 0.55):
+            m.cylinder((x, 0.03, z + dz), (x, 0.1, z + dz), 0.05, "Rubber", sides=8)
+
+    roll_cab(-2.6)
+    roll_cab(-1.0)
+    bench_z = 2.4
+    m.box((W - 0.45, 0.95, bench_z), (0.8, 0.06, 2.6), "Steel")                   # bench top
+    for dz in (-1.2, 1.2):
+        for dx in (-0.35, 0.35):
+            m.box((W - 0.45 + dx, 0.47, bench_z + dz), (0.05, 0.94, 0.05), "DarkSteel")
+    m.box((W - 0.45, 0.3, bench_z), (0.7, 0.04, 2.5), "DarkSteel")               # lower shelf
+    m.box((W - 0.3, 1.3, bench_z + 0.5), (0.05, 0.5, 0.85), "DarkSteel")          # monitor, bezel
+    m.box((W - 0.33, 1.3, bench_z + 0.5), (0.01, 0.44, 0.78), "Screen")
+    m.box((W - 0.3, 1.02, bench_z + 0.5), (0.2, 0.08, 0.2), "DarkSteel")          # its stand
+    for dz in (-0.9, 0.9):                                                        # timing screens
+        m.box((W - 0.06, 3.5, bench_z + dz), (0.08, 0.95, 1.65), "DarkSteel")
+        m.box((W - 0.105, 3.5, bench_z + dz), (0.01, 0.85, 1.55), "Screen")
+        for k in range(5):
+            m.box((W - 0.11, 3.82 - k * 0.15, bench_z + dz - 0.2), (0.005, 0.04, 1.05), "NeonCyan")
+
+    # A quick-lift jack in front of the car, and the air line along the roof.
+    m.box((0.0, 0.12, -5.0), (0.5, 0.14, 0.9), "Red")
+    m.box((0.0, 0.25, -4.6), (0.3, 0.12, 0.1), "DarkSteel")
+    rod(m, (0.0, 0.18, -5.4), (0.0, 1.0, -6.2), 0.025, "Steel")
+    for x in (-0.18, 0.18):
+        m.cylinder((x, 0.06, -5.35), (x * 1.4, 0.06, -5.35), 0.06, "Rubber", sides=8)
+    rod(m, (-W + 0.2, H - 0.7, 0.0), (W - 0.2, H - 0.7, 0.0), 0.035, "Yellow")
+    return m
+
+
+INTERIORS = {
+    "garage": garage,
+}
+
+
 # ---- output ------------------------------------------------------------------------
 
 def export(obj, out):
@@ -855,7 +983,19 @@ def render(obj, path):
     centre, size = (lo + hi) * 0.5, (hi - lo).length
     cam = scene.camera
     cam.data.lens = 40
-    if obj.name in HORIZONS:
+    if obj.name in INTERIORS:
+        # From where the lobby's camera stands, inside near the back, looking out.
+        cam.location = wheel.U(2.8, 2.0, 8.3)
+        cam.rotation_euler = (wheel.U(-0.3, 0.7, -2.5) - cam.location).to_track_quat("-Z", "Y").to_euler()
+        cam.data.lens = 24
+        for x in (-3.2, 0.0, 3.2):
+            for z in (-6.0, 0.0, 6.0):
+                lamp = bpy.data.objects.new("Lamp", bpy.data.lights.new("Lamp", "AREA"))
+                lamp.data.energy = 300
+                lamp.data.size = 1.5
+                lamp.location = wheel.U(x, 4.4, z)
+                scene.collection.objects.link(lamp)
+    elif obj.name in HORIZONS:
         # From where the circuit will be: the range's middle, at a driver's height.
         cam.location = wheel.U(0, 2, 0)
         cam.rotation_euler = (wheel.U(0, 40, -1000) - cam.location).to_track_quat("-Z", "Y").to_euler()
@@ -880,7 +1020,7 @@ def main():
     for obj in list(bpy.data.objects):
         bpy.data.objects.remove(obj)
     wheel.setup_cycles()
-    models = dict(TRACKSIDE, **LANDMARKS, **BUILDINGS)
+    models = dict(TRACKSIDE, **LANDMARKS, **BUILDINGS, **INTERIORS)
     for h in HORIZONS:
         models[h] = None
     only = args.only.split(",") if args.only else list(models)

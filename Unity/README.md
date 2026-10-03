@@ -72,6 +72,7 @@ and saves `Assets/Scenes/Skidpad.unity`. Copy it in with the rest:
 ```bash
 mkdir -p /mnt/d/Dev/CarRace/Assets/Editor
 cp Unity/Assets/Editor/*.cs /mnt/d/Dev/CarRace/Assets/Editor/
+mkdir -p /mnt/d/Dev/CarRace/Assets/Shaders && cp Unity/Assets/Shaders/*.shader /mnt/d/Dev/CarRace/Assets/Shaders/
 ```
 
 Running it again rebuilds the scene from scratch but keeps `Assets/Cars/ReferenceCar.asset`,
