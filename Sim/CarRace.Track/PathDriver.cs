@@ -97,6 +97,14 @@ namespace CarRace.Track
         /// grass met the asphalt.
         /// </summary>
         public float SurfaceGrip = 1f;
+
+        /// <summary>
+        /// The tyres' grip as a share of new (VehicleSim.TyreGrip), set by whoever owns the car.
+        /// The plan's speeds are scaled by its square root, which is exact wherever grip is the
+        /// limit, a corner or a braking zone alike, and the braking the driver allows itself in a
+        /// corner by the grip itself. Without it worn tyres are asked for new tyres' speeds.
+        /// </summary>
+        public float TyreGrip = 1f;
         public float RejoinAngleDeg = 20f;
 
         /// <summary>
@@ -402,7 +410,8 @@ namespace CarRace.Track
         {
             PlannedSpeedMs = PlannedSpeed(speed) * OffsetSpeedScale()
                            * MathF.Max(0.7f, 1f - WideLiftPerM * _wide)
-                           * (SurfaceGrip < OffRoadGrip ? MathF.Sqrt(Clamp(SurfaceGrip, 0.1f, 1f)) : 1f);
+                           * (SurfaceGrip < OffRoadGrip ? MathF.Sqrt(Clamp(SurfaceGrip, 0.1f, 1f)) : 1f)
+                           * MathF.Sqrt(Clamp(TyreGrip, 0.1f, 1f));
             TargetSpeedMs = SpeedCapMs >= 0f && PlannedSpeedMs > SpeedCapMs
                 ? SpeedCapMs : PlannedSpeedMs;
 
@@ -432,7 +441,7 @@ namespace CarRace.Track
             bool forTheRoad = !(SpeedCapMs >= 0f && SpeedCapMs < PlannedSpeedMs);
             if (forTheRoad)
             {
-                float lateralUse = speed * speed * MathF.Abs(_track.LineCurvature[Index]) / MathF.Max(LateralGripMs2, 1f);
+                float lateralUse = speed * speed * MathF.Abs(_track.LineCurvature[Index]) / MathF.Max(LateralGripMs2 * TyreGrip, 1f);
                 if (lateralUse > 0.95f) lateralUse = 0.95f;
                 brake = MathF.Min(brake, MathF.Sqrt(1f - lateralUse * lateralUse));
                 brake = MathF.Min(brake, _brake + BrakeSqueezePerS * dt);

@@ -179,6 +179,7 @@ namespace CarRace.UnityGame
                 {
                     if (!_started) return new VehicleInputs { Brake = 1f };
                     _drivers[k].Path.SurfaceGrip = Grip(aiCars[k]);
+                    _drivers[k].Path.TyreGrip = aiCars[k].Sim.TyreGrip;
                     return Logged(k, _drivers[k].Drive(body, dt));
                 };
                 aiCars[i].RecoveryPose = () => OnLine(k);
@@ -246,6 +247,12 @@ namespace CarRace.UnityGame
 
             for (int i = 0; i < aiCars.Length; i++) _cars[i] = aiCars[i];
             _cars[aiCars.Length] = player;
+
+            // Tyre wear, for every car this machine drives. Until the lobby has a setting for it
+            // (stage 5), -tyreWear N on the command line, a multiple of real wear; off without it.
+            float wear = float.TryParse(LanSession.Flag("-tyreWear"), System.Globalization.NumberStyles.Float,
+                                        System.Globalization.CultureInfo.InvariantCulture, out float rate) ? rate : 0f;
+            foreach (CarController car in _cars) car.Sim.TyreWearRate = wear;
             for (int i = 0; i < _cars.Length; i++)
             {
                 int entry = i < aiCars.Length ? _aiEntry[i] : _playerEntry;
@@ -358,7 +365,11 @@ namespace CarRace.UnityGame
                 if (_countdown > 0f) return;
                 _started = true;
                 GameAudio.Countdown(go: true);
-                player.Autopilot = _playerDriver != null ? (body, t) => Logged(aiCars.Length, _playerDriver.Drive(body, t)) : null;
+                player.Autopilot = _playerDriver != null ? (body, t) =>
+                {
+                    _playerDriver.Path.TyreGrip = player.Sim.TyreGrip;
+                    return Logged(aiCars.Length, _playerDriver.Drive(body, t));
+                } : null;
             }
 
             // Every step rather than every reaction interval, so lap times are to 5 ms.

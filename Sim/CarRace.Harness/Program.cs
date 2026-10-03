@@ -41,6 +41,15 @@ namespace CarRace.Harness
             if (Array.IndexOf(args, "--corner") >= 0) { CornerSweep(config); return 0; }
             if (Array.IndexOf(args, "--dump") >= 0) { DumpCase(config, "/tmp/case.csv"); return 0; }
             if (Array.IndexOf(args, "--setup-sweep") >= 0) return SetupSweep.Run(config);
+            int wearIndex = Array.IndexOf(args, "--wear");
+            if (wearIndex >= 0)
+            {
+                string circuit = wearIndex + 1 < args.Length && !args[wearIndex + 1].StartsWith("--") ? args[wearIndex + 1] : "monza";
+                int rateIndex = Array.IndexOf(args, "--rate");
+                float rate = rateIndex >= 0 && rateIndex + 1 < args.Length
+                    ? float.Parse(args[rateIndex + 1], CultureInfo.InvariantCulture) : 1f;
+                return WearRun.Run(config, circuit, Option(args, "--laps", 30), rate);
+            }
             int limitsIndex = Array.IndexOf(args, "--limits-test");
             if (limitsIndex >= 0)
                 return LimitsTest.Run(config, limitsIndex + 1 < args.Length ? args[limitsIndex + 1] : "all");
@@ -98,7 +107,8 @@ namespace CarRace.Harness
                                    Array.IndexOf(args, "--fastest-last") >= 0,
                                    Option(args, "--stop-car", -1),
                                    Option(args, "--stop-at", 0),
-                                   Option(args, "--lapped", -1));
+                                   Option(args, "--lapped", -1),
+                                   Option(args, "--tyre-wear", 0));
             }
 
             int lapIndex = Array.IndexOf(args, "--lap");
@@ -159,7 +169,11 @@ namespace CarRace.Harness
             Console.WriteLine($"  {"straight stability",-18} {detail,-44} {(stable ? "PASS" : "FAIL")}");
             allPassed &= stable;
 
-            Console.WriteLine($"\n  {(allPassed ? "All 5 checks pass." : "Validation FAILED.")}\n");
+            var (worn, wearDetail) = TyreWearCheck(config, results[1].Measured);
+            Console.WriteLine($"  {"tyre wear",-18} {wearDetail,-44} {(worn ? "PASS" : "FAIL")}");
+            allPassed &= worn;
+
+            Console.WriteLine($"\n  {(allPassed ? "All 6 checks pass." : "Validation FAILED.")}\n");
             return allPassed ? 0 : 1;
         }
 
@@ -208,17 +222,19 @@ namespace CarRace.Harness
         /// grip limit the car understeers, then snaps, and what gets measured is a
         /// spin rather than a cornering limit.
         /// </summary>
-        internal static float Skidpad(CarConfig config)
+        internal static float Skidpad(CarConfig config, float wear = 0f)
         {
             float best = 0f;
             foreach (float radius in new[] { 20f, 30f, 45f, 60f })
-                best = MathF.Max(best, RunSkidpad(config, radius, false));
+                best = MathF.Max(best, RunSkidpad(config, radius, false, wear));
             return best;
         }
 
-        internal static float RunSkidpad(CarConfig config, float radius, bool verbose)
+        /// <summary>The skidpad with every tyre held at <paramref name="wear"/> (wear itself off).</summary>
+        internal static float RunSkidpad(CarConfig config, float radius, bool verbose, float wear = 0f)
         {
             var rig = new Rig(config);
+            foreach (Wheel w in rig.Sim.Wheels) w.Wear = wear;
             rig.Settle();
             var input = new VehicleInputs();
             float dt = 1f / Rig.SubstepHz;
@@ -354,6 +370,30 @@ namespace CarRace.Harness
             float settled = MathF.Abs(rig.YawRate);
             bool ok = settled < 0.08f && rig.ForwardSpeed > cruise * 0.55f && settled < peak * 0.5f;
             return (ok, $"yaw {settled:0.000} rad/s (peak {peak:0.00}), {rig.SpeedKph:0} km/h");
+        }
+
+        /// <summary>
+        /// The sixth check, tyre wear. The skidpad at 0.6 wear and worn out must keep the share of
+        /// the new tyre's figure that TyreWear.Grip says, from 1% under it to 4% over: grip scales
+        /// the whole tyre curve, but a car cornering at a lower g also transfers less weight, and
+        /// with load sensitivity that leaves a little more of the grip usable, so the car keeps
+        /// slightly more than the tyre lost (0.819 worn out, not 0.80). Asymmetric for the same
+        /// reason as the other bands: the closed form ignores what can only help. And a lap driven
+        /// harder, sliding more, must wear the tyres faster than a cleaner one. Wear off is the
+        /// other five checks, unchanged.
+        /// </summary>
+        static (bool, string) TyreWearCheck(CarConfig config, float fresh)
+        {
+            float atCliff = Skidpad(config, TyreWear.WearCliff) / fresh;
+            float wornOut = Skidpad(config, 1f) / fresh;
+            static bool Within(float measured, float expected) => measured / expected - 1f is >= -0.01f and <= 0.04f;
+            bool grip = Within(atCliff, TyreWear.GripAtCliff) && Within(wornOut, TyreWear.WornGrip);
+
+            CarRace.Track.TrackData track = TrackLoader.Load("testcircuit");
+            float gentle = WearRun.Drive(config, track, 1, 1f, 0.75f, false).RearWearPerLap;
+            float hard = WearRun.Drive(config, track, 1, 1f, 0.95f, false).RearWearPerLap;
+            bool sliding = hard > gentle * 1.1f;
+            return (grip && sliding, $"skidpad {atCliff:0.000} and {wornOut:0.000} of new; a lap at 0.95 wears {hard / MathF.Max(gentle, 1e-9f):0.00}x one at 0.75");
         }
 
         /// <summary>Verbose traces for diagnosing a failing check.</summary>

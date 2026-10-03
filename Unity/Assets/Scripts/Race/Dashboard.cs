@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using CarRace.Vehicle;
 
 namespace CarRace.UnityGame
 {
@@ -44,6 +45,32 @@ namespace CarRace.UnityGame
             }
         }
 
+        /// <summary>
+        /// The four tyres as the car stands, each with the share of its life left: green while
+        /// worn less than TyreWear.WearCliff, amber past it, red once worn out, when the grip is
+        /// at its lowest. Only with tyre wear on.
+        /// </summary>
+        void Tyres(Rect area)
+        {
+            Hud.Rounded(area, new Color(0.05f, 0.06f, 0.1f, 0.75f));
+            _small.alignment = TextAnchor.MiddleCenter;
+            GUI.Label(new Rect(area.x, area.y + Hud.Px(4f), area.width, Hud.Px(18f)), "TYRES", _small);
+            float w = Hud.Px(34f), h = Hud.Px(50f), gap = Hud.Px(10f);
+            float left = area.center.x - gap * 0.5f - w, top = area.y + Hud.Px(26f);
+            var wheels = _car.Sim.Wheels;
+            for (int i = 0; i < 4; i++)
+            {
+                float wear = wheels[i].Wear;
+                var tyre = new Rect(left + (i % 2) * (w + gap), top + (i / 2) * (h + gap), w, h);
+                Color colour = wear >= 1f ? new Color(0.9f, 0.15f, 0.1f)
+                             : wear >= TyreWear.WearCliff ? new Color(1f, 0.6f, 0.1f) : new Color(0.2f, 0.75f, 0.3f);
+                Hud.Rounded(tyre, new Color(0.15f, 0.15f, 0.18f));
+                float life = Mathf.Clamp01(1f - wear);
+                Hud.Rounded(new Rect(tyre.x, tyre.yMax - tyre.height * life, tyre.width, tyre.height * life), colour);
+                GUI.Label(tyre, $"{life * 100f:0}", _tick);
+            }
+        }
+
         void OnDestroy()
         {
             if (_tachometer != null) Destroy(_tachometer);
@@ -75,6 +102,7 @@ namespace CarRace.UnityGame
             // Needles first, figures over them: drawn the other way round the needle and its
             // hub hid the gear.
             // Rev counter: gear below the centre, red near the limit.
+            if (_car.Sim.TyreWearRate > 0f) Tyres(new Rect(tacho.x - margin - Hud.Px(96f), tacho.yMax - Hud.Px(150f), Hud.Px(96f), Hud.Px(150f)));
             GUI.DrawTexture(tacho, _tachometer);
             Figures(tacho, MaxRpm, 1000f, v => (v / 1000f).ToString("0"));
             Needle(tacho, drivetrain.EngineRpm / MaxRpm);

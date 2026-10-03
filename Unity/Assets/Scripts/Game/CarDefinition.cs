@@ -29,6 +29,8 @@ namespace CarRace.UnityGame
             public float relaxationLength;
             public float radius;
             public float inertia;
+            [Tooltip("Energy the contact patch dissipates in sliding before the tyre is worn out, at wear x1, joules.")]
+            public float wearEnergy;
 
             public static TyreData Reference => new TyreData
             {
@@ -40,6 +42,7 @@ namespace CarRace.UnityGame
                 relaxationLength = 0.40f,
                 radius = 0.34f,
                 inertia = 1.40f,
+                wearEnergy = CarConfig.ReferenceWearEnergy,
             };
 
             public TyreConfig ToConfig() => new TyreConfig
@@ -52,6 +55,8 @@ namespace CarRace.UnityGame
                 RelaxationLength = relaxationLength,
                 Radius = radius,
                 Inertia = inertia,
+                // An asset saved before tyre wear existed reads 0 here: it gets the reference tyre's.
+                WearEnergy = wearEnergy > 0f ? wearEnergy : CarConfig.ReferenceWearEnergy,
             };
         }
 

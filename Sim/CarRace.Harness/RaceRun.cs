@@ -37,7 +37,7 @@ namespace CarRace.Harness
         public static int Run(CarConfig config, string circuit, int cars, int raceLaps,
                               int seed, bool reverseGrid, bool verbose = false,
                               string csvPath = null, bool fastestLast = false,
-                              int stopCar = -1, float stopAt = 0f, int lappedCar = -1)
+                              int stopCar = -1, float stopAt = 0f, int lappedCar = -1, float tyreWear = 0f)
         {
             TrackData track;
             try
@@ -77,6 +77,7 @@ namespace CarRace.Harness
                 if (grid + 1 == lappedCar) pace = LappedPace;
                 drivers[grid] = new RaceDriver(names[grid], track, config, limits, pace);
                 rigs[grid] = new Rig(config);
+                rigs[grid].Sim.TyreWearRate = tyreWear;
 
                 fastest = MathF.Max(fastest, pace);
                 slowest = MathF.Min(slowest, pace);
@@ -284,6 +285,7 @@ namespace CarRace.Harness
                     // the rest of the race runs to the flag.
                     if (entry.Finished) { retired[i] = true; continue; }
 
+                    drivers[i].Path.TyreGrip = rig.Sim.TyreGrip;
                     VehicleInputs input = drivers[i].Drive(rig.Body.State, Dt);
                     // --stop-car N --stop-at S: car N stands on its brakes for StopSeconds from S,
                     // where it is, for the yellow flags.
@@ -332,6 +334,12 @@ namespace CarRace.Harness
             csv?.Dispose();
             if (csvPath != null) Console.WriteLine($"  telemetry written to {csvPath}\n");
 
+            if (tyreWear > 0f)
+            {
+                float worst = 0f;
+                foreach (Rig r in rigs) foreach (Wheel w in r.Sim.Wheels) worst = MathF.Max(worst, w.Wear);
+                Console.WriteLine($"  tyres: wear x{tyreWear:0.#}, the most worn tyre at the end {worst * 100f:0}%");
+            }
             Console.WriteLine($"  flags: yellow out for {yellowSeconds:0.0} s, {yellowPasses} passes under yellow; "
                             + $"{blueFlags} blue flags, the longest hold-up {longestBlue:0.0} s");
             int result = Report(control, retired, track, totalContacts, contactsOnLapOne, time, timeout);

@@ -56,6 +56,29 @@ namespace CarRace.Vehicle
         public float TractionResponseSeconds = 0.02f;
         public float BrakeResponseSeconds = 0.04f;
 
+        /// <summary>
+        /// How fast the tyres wear, as a multiple of real life: 0, the default, is off, and leaves
+        /// the car exactly the one the harness validates. A tyre wears with the power dissipated
+        /// in its contact patch, force times sliding speed in both directions, so wheelspin,
+        /// locking and sliding all wear it faster than a clean line does.
+        /// </summary>
+        public float TyreWearRate;
+
+        /// <summary>Four new tyres, as at a pit stop.</summary>
+        public void FitNewTyres()
+        {
+            foreach (var w in Wheels) w.Wear = 0f;
+        }
+
+        /// <summary>
+        /// The tyres' grip as a share of new, for whoever plans the car's speed: the weaker axle's,
+        /// each axle its two tyres' average. Not all four together: on this rear driven car the
+        /// rears wear about twice as fast, and with all four averaged the AI asked worn out rears
+        /// (80%) for 88% and spun fifteen times in seven laps.
+        /// </summary>
+        public float TyreGrip
+            => MathF.Min(Wheels[FL].GripFactor + Wheels[FR].GripFactor, Wheels[RL].GripFactor + Wheels[RR].GripFactor) * 0.5f;
+
         float _steerPosition;   // rack position, -1..1, rate limited
 
         public float SteerPosition => _steerPosition;
@@ -293,7 +316,7 @@ namespace CarRace.Vehicle
             w.SlipRatio = (w.AngularVelocity * tyre.Radius - vLong) / reference;
             w.SlipAngle = MathF.Atan2(vLat, reference);
 
-            float peak = Pacejka.PeakForce(tyre, w.Load, w.SurfaceFriction);
+            float peak = Pacejka.PeakForce(tyre, w.Load, w.SurfaceFriction) * w.GripFactor;
             float fx = peak * Pacejka.Normalised(w.SlipRatio, tyre.LongB, tyre.LongC, tyre.LongE);
             float fy = -peak * Pacejka.Normalised(w.SlipAngle, tyre.LatB, tyre.LatC, tyre.LatE);
 
@@ -324,6 +347,14 @@ namespace CarRace.Vehicle
             w.ForceLat = w.LaggedLat;
 
             ApplyDriverAids(w, dt);
+
+            if (TyreWearRate > 0f && tyre.WearEnergy > 0f)
+            {
+                float sliding = MathF.Abs(w.ForceLong * (w.AngularVelocity * tyre.Radius - vLong))
+                              + MathF.Abs(w.ForceLat * vLat);
+                w.Wear = MathF.Min(1f, w.Wear + sliding * dt * TyreWearRate / tyre.WearEnergy);
+            }
+
             IntegrateWheel(w, w.ForceLong, inertia, tyre.Radius, dt);
 
             // Vertical and longitudinal forces act at the patch, which is what

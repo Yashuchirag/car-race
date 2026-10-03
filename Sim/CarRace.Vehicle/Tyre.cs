@@ -33,6 +33,28 @@ namespace CarRace.Vehicle
         }
     }
 
+    /// <summary>
+    /// How grip falls as a tyre wears: 4% by WearCliff, then fast, to WornGrip when worn out.
+    /// The cliff is what makes a stop worth its time: before it a worn tyre costs little, past
+    /// it each lap costs more than the one before.
+    /// </summary>
+    public static class TyreWear
+    {
+        public const float WearCliff = 0.6f;
+        public const float GripAtCliff = 0.96f;
+        public const float WornGrip = 0.80f;
+
+        /// <summary>Share of a new tyre's grip at <paramref name="wear"/>, 0 new to 1 worn out.
+        /// Exactly 1 for a new tyre, so wear switched off changes nothing.</summary>
+        public static float Grip(float wear)
+        {
+            if (wear <= 0f) return 1f;
+            if (wear < WearCliff) return 1f - (1f - GripAtCliff) * wear / WearCliff;
+            if (wear >= 1f) return WornGrip;
+            return GripAtCliff - (GripAtCliff - WornGrip) * (wear - WearCliff) / (1f - WearCliff);
+        }
+    }
+
     /// <summary>One corner: suspension state, slip state and the forces it made.</summary>
     public sealed class Wheel
     {
@@ -71,6 +93,11 @@ namespace CarRace.Vehicle
         public float BrakeScale = 1f;
         public float EngineDragScale = 1f;   // share of engine braking let through, see VehicleSim.EngineDragControl
         public float GripUsage;              // combined demand over peak, friction ellipse; above 1 the tyre is saturated
+
+        /// <summary>How worn the tyre is, 0 new to 1 worn out. Not cleared by Reset: a recovery
+        /// does not fit new tyres, only VehicleSim.FitNewTyres does.</summary>
+        public float Wear;
+        public float GripFactor => TyreWear.Grip(Wear);
 
         public ref TyreConfig Tyre(CarConfig cfg)
             => ref IsFront ? ref cfg.TyreFront : ref cfg.TyreRear;

@@ -99,6 +99,7 @@ namespace CarRace.UnityGame
             _last = position;
 
             float v = Mathf.Max(Vector3.Dot(_body.linearVelocity, player.transform.forward), 0f);
+            float grip = player.Sim.TyreGrip, worn = Mathf.Sqrt(grip);
             float spacing = Mathf.Max(track.sampleSpacing, 0.1f);
             int ahead = Mathf.CeilToInt(AheadMetres / spacing), behind = Mathf.CeilToInt(BehindMetres / spacing);
             int bars = (n + 2 * BarSamples - 1) / (2 * BarSamples);
@@ -113,8 +114,10 @@ namespace CarRace.UnityGame
                 int bar = ((b % bars) + bars) % bars;
                 int sample = (bar * step + BarSamples) % n;          // the bar's far end
                 float distance = Mathf.Max((b * step + BarSamples - _index) * spacing, 1f);
-                float ideal = _ideal[sample];
-                float needed = (v * v - ideal * ideal) / (2f * distance) / Mathf.Max(_brakingMs2, 0.1f);
+                // On worn tyres the speeds the plan allows shrink with the square root of the grip,
+                // and the braking with the grip, as they do for the AI (PathDriver.TyreGrip).
+                float ideal = _ideal[sample] * worn;
+                float needed = (v * v - ideal * ideal) / (2f * distance) / Mathf.Max(_brakingMs2 * grip, 0.1f);
                 int colour = needed < GreenBelow ? 0 : needed < RedFrom ? 1 : 2;
 
                 int o = bar * verticesPerBar;

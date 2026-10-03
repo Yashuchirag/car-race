@@ -32,6 +32,13 @@ namespace CarRace.Vehicle
 
         public float Radius;           // m, loaded rolling radius
         public float Inertia;          // kg m^2, wheel plus tyre plus brake disc
+
+        /// <summary>
+        /// Energy the contact patch can dissipate in sliding before the tyre is worn out, at a
+        /// VehicleSim.TyreWearRate of 1, in joules. Calibrated so the reference car's rear tyres
+        /// last about WearLapsAtRateOne laps of Royal Park at AI pace (harness --wear).
+        /// </summary>
+        public float WearEnergy;
     }
 
     /// <summary>
@@ -150,6 +157,9 @@ namespace CarRace.Vehicle
         /// The targets are ordinary published figures for that class and are what
         /// the harness asserts against.
         /// </summary>
+        /// <summary>The reference tyre's WearEnergy, J: see TyreConfig.WearEnergy.</summary>
+        public const float ReferenceWearEnergy = 19e6f;
+
         public static CarConfig ReferenceSportsCar()
         {
             var tyre = new TyreConfig
@@ -162,6 +172,7 @@ namespace CarRace.Vehicle
                 RelaxationLength = 0.40f,
                 Radius = 0.34f,
                 Inertia = 1.40f,
+                WearEnergy = ReferenceWearEnergy,
             };
 
             return new CarConfig
