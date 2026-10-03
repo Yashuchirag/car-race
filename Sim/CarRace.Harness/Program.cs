@@ -108,7 +108,10 @@ namespace CarRace.Harness
                                    Option(args, "--stop-car", -1),
                                    Option(args, "--stop-at", 0),
                                    Option(args, "--lapped", -1),
-                                   Option(args, "--tyre-wear", 0));
+                                   Option(args, "--tyre-wear", 0),
+                                   Option(args, "--stop-also", -1),
+                                   Array.IndexOf(args, "--safety-car") >= 0 || Array.IndexOf(args, "--safety-car-at") >= 0,
+                                   Option(args, "--safety-car-at", -1));
             }
 
             int lapIndex = Array.IndexOf(args, "--lap");

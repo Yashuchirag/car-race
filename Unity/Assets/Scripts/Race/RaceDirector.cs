@@ -118,6 +118,21 @@ namespace CarRace.UnityGame
         float[] _flagProgress;
         bool[] _trouble, _racing, _moving;
 
+        // The safety car (SafetyCar), in a solo race with it switched on: a copy of an AI car in
+        // the Supercar body, parked in its own box past the others, driven by its own RaceDriver
+        // and outside RaceControl. Last in the field the AI see.
+        SafetyCar _safety;
+        CarController _safetyCar;
+        Renderer[] _lamps;
+        MaterialPropertyBlock _lampBlock;
+        bool[] _stopped, _inPits;
+        float[] _speed;
+        static readonly Color SafetyCarColour = new Color(0.78f, 0.8f, 0.83f);
+        static readonly Color LampOn = new Color(1f, 0.6f, 0.05f), LampOff = new Color(0.25f, 0.15f, 0.05f);
+
+        /// <summary>The safety car, where the standings are kept and it is switched on; else null.</summary>
+        public SafetyCar Safety => _keepsStandings ? _safety : null;
+
         /// <summary>Seconds since GO, the clock the rulings are timed on.</summary>
         public float RaceTime => _raceTime;
 
@@ -160,6 +175,9 @@ namespace CarRace.UnityGame
 
             // A solo race runs to the lobby's settings; a LAN race to the host's (UseLan).
             if (!Lan) raceLaps = RaceSettings.Laps;
+
+            // The safety car's car, copied before anything is added to the AI car it copies.
+            if (!Lan && RaceSettings.SafetyCar) MakeSafetyCar();
             CarAudio.Attach(player, player: true);
             foreach (CarController car in aiCars) CarAudio.Attach(car, player: false);
             if (_remotes != null)
@@ -253,6 +271,10 @@ namespace CarRace.UnityGame
             _trouble = new bool[names.Length];
             _racing = new bool[names.Length];
             _moving = new bool[names.Length];
+            _stopped = new bool[names.Length];
+            _inPits = new bool[names.Length];
+            _speed = new float[names.Length];
+            if (_safetyCar != null) SetUpSafetyCar(names.Length);
             MiniMap map = FindAnyObjectByType<MiniMap>();
             if (map != null) map.YellowAt = i => Flags != null && Flags.Yellow.Exists(z => RaceFlags.Inside(_track, z, i));
             _left = new bool[names.Length];
@@ -434,9 +456,10 @@ namespace CarRace.UnityGame
                 _field[i] = Seen(aiCars[i], path.Index, path.LateralFromLineM, path.Plan, path.Lane);
             }
             int remotes = _remotes?.Count ?? 0;
-            if (_field.Length != aiCars.Length + 1 + remotes)
+            int size = aiCars.Length + 1 + remotes + (_safety != null ? 1 : 0);
+            if (_field.Length != size)
             {
-                var resized = new RaceDriver.Seen[aiCars.Length + 1 + remotes];
+                var resized = new RaceDriver.Seen[size];
                 System.Array.Copy(_field, resized, Mathf.Min(_field.Length, aiCars.Length));
                 _field = resized;
             }
@@ -455,7 +478,14 @@ namespace CarRace.UnityGame
             }
             // The other players' cars, seen as the player is: the AI assume the same pace.
             for (int r = 0; r < remotes; r++) _field[aiCars.Length + 1 + r] = Seen(_remotes[r]);
+            if (_safety != null)
+            {
+                PathDriver path = _safety.Driver.Path;
+                _field[size - 1] = Seen(_safetyCar, path.Index, path.LateralFromLineM, path.Plan, path.Lane);
+                _field[size - 1].Pitting = path.Pitting;
+            }
             if (_keepsStandings) UpdateFlags(remotes);
+            if (_safety != null && _keepsStandings) UpdateSafetyCar(size - 1, elapsed);
 
             _playerDriver?.Observe(_track, _field, aiCars.Length, elapsed);
             if (_pitting) _pitDriver.Observe(_track, _field, aiCars.Length, elapsed);
@@ -580,8 +610,8 @@ namespace CarRace.UnityGame
             for (int e = 0; e < _fieldOf.Length; e++)
             {
                 if (_fieldOf[e] < 0) continue;
-                _field[_fieldOf[e]].Yielding = _flags.BlueFor[e] >= 0;
-                _field[_fieldOf[e]].YieldingTo = FieldOf(_flags.BlueFor[e]);
+                _field[_fieldOf[e]].Yielding = BlueFor(e) >= 0;
+                _field[_fieldOf[e]].YieldingTo = FieldOf(BlueFor(e));
             }
         }
 
@@ -597,16 +627,125 @@ namespace CarRace.UnityGame
             _flagProgress[entry] = progressM;
             _racing[entry] = !e.Finished && !e.Disqualified && !HasLeft(entry);
             _trouble[entry] = _moving[entry] && (Mathf.Abs(forward) < 3f || backwards) && !inPits;
+            _stopped[entry] = _moving[entry] && Mathf.Abs(forward) < 3f && !inPits;
+            _inPits[entry] = inPits;
+            _speed[entry] = forward;
         }
 
         void Tell(RaceDriver driver, int entry)
         {
             driver.UnderYellow = _flags.InYellow[entry] >= 0;
             driver.YellowFor = FieldOf(_flags.InYellow[entry]);
-            driver.YieldTo = FieldOf(_flags.BlueFor[entry]);
+            driver.YieldTo = FieldOf(BlueFor(entry));
         }
 
         int FieldOf(int entry) => entry >= 0 ? _fieldOf[entry] : -1;
+
+        /// <summary>The blue flag for an entry, none under the safety car: nobody is let by in the queue.</summary>
+        int BlueFor(int entry) => _safety != null && _safety.Out ? -1 : _flags.BlueFor[entry];
+
+        /// <summary>
+        /// The safety car's car: a copy of the first AI car in the Supercar body, painted silver,
+        /// with a light bar on the roof. Laid out and given its driver once the track is known
+        /// (SetUpSafetyCar).
+        /// </summary>
+        void MakeSafetyCar()
+        {
+            if (aiCars.Length == 0) return;
+            _safetyCar = Instantiate(aiCars[0].gameObject).GetComponent<CarController>();
+            _safetyCar.name = "Safety Car";
+            for (int d = 0; d < CarDesigns.Count; d++)
+                if (CarDesigns.NameOf(d) == "Supercar") CarDesigns.Apply(_safetyCar.transform, d);
+            PlayerSetup.Paint(_safetyCar.transform.Find("Body"), SafetyCarColour);
+            LightBar(_safetyCar.transform);
+            CarAudio.Attach(_safetyCar, player: false);
+        }
+
+        /// <summary>A bar across the roof with an amber lamp at each end, flashed while it is out.
+        /// No colliders: a collider on a child would join the car's rigid body.</summary>
+        void LightBar(Transform car)
+        {
+            Renderer body = car.Find("Body")?.GetComponent<Renderer>();
+            if (body == null) return;
+            Bounds b = body.bounds;
+            Vector3 roof = car.InverseTransformPoint(new Vector3(b.center.x, b.max.y, b.center.z));
+            var bar = new GameObject("Light Bar").transform;
+            bar.SetParent(car, false);
+            bar.localPosition = new Vector3(0f, roof.y + 0.04f, roof.z - 0.1f);
+
+            // The primitives' own lit material, coloured per renderer: Shader.Find for the unlit one
+            // came back stripped from the build, and drew the lamps magenta.
+            GameObject Part(string name, Vector3 at, Vector3 size, Color colour)
+            {
+                GameObject part = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                DestroyImmediate(part.GetComponent<Collider>());
+                part.name = name;
+                part.transform.SetParent(bar, false);
+                part.transform.localPosition = at;
+                part.transform.localScale = size;
+                PlayerSetup.Paint(part.transform, colour);
+                return part;
+            }
+            Part("Base", new Vector3(0f, 0.03f, 0f), new Vector3(1.1f, 0.06f, 0.22f), new Color(0.08f, 0.08f, 0.09f));
+            _lamps = new[]
+            {
+                Part("Lamp Left", new Vector3(-0.3f, 0.1f, 0f), new Vector3(0.42f, 0.09f, 0.18f), LampOff).GetComponent<Renderer>(),
+                Part("Lamp Right", new Vector3(0.3f, 0.1f, 0f), new Vector3(0.42f, 0.09f, 0.18f), LampOff).GetComponent<Renderer>(),
+            };
+            _lampBlock = new MaterialPropertyBlock();
+        }
+
+        /// <summary>The safety car's driver, its box, and its place in the pits before the start.</summary>
+        void SetUpSafetyCar(int entries)
+        {
+            if (!_track.HasPitLane) { Destroy(_safetyCar.gameObject); _safetyCar = null; return; }
+            CarConfig config = _safetyCar.Sim.Config;
+            var driver = new RaceDriver("Safety car", _track, config, PlanningLimits(config), 0.85f);
+            _safety = new SafetyCar(driver, entries) { ForceAt = RaceSettings.SafetyCarAt };
+            _safety.Park(_track);
+            int box = _track.SafetyCarBox;
+            Vec3 along = _track.Tangent(_track.LanePoints[TrackData.PitLaneIndex], box);
+            Vec3 spot = _track.LanePoints[TrackData.PitLaneIndex][box] + TrackData.Right(along) * _track.PitBoxShiftM;
+            _safetyCar.PlaceOnGrid(new Vector3(spot.X, spot.Y + config.CgHeight + 0.3f, spot.Z),
+                                   Quaternion.LookRotation(new Vector3(along.X, 0f, along.Z), Vector3.up));
+            _safetyCar.Sim.TyreWearRate = 0f;
+            _safetyCar.Autopilot = (body, dt) =>
+            {
+                if (!_started) return new VehicleInputs { Brake = 1f };
+                driver.Path.SurfaceGrip = Grip(_safetyCar);
+                driver.Path.TyreGrip = _safetyCar.Sim.TyreGrip;
+                return driver.Drive(body, dt);
+            };
+        }
+
+        /// <summary>
+        /// The safety car's look at the field, after the flags: whether it comes out, and when it
+        /// goes in; passes under it penalised at the green; every AI told whether it is out and
+        /// how fast to go; and its own driver shown the field, from <paramref name="slot"/>.
+        /// </summary>
+        void UpdateSafetyCar(int slot, float elapsed)
+        {
+            int leaderLaps = 0;
+            foreach (RaceControl.Entry e in _control.Entries) leaderLaps = Mathf.Max(leaderLaps, e.LapsComplete);
+            SafetyCar.Phase was = _safety.State;
+            foreach (var (car, passed) in _safety.Update(_track, _flags, _flagIndex, _flagProgress, _speed, _trouble,
+                                                         _stopped, _racing, _inPits, leaderLaps, raceLaps, _raceTime, elapsed))
+                _control.SafetyCarPass(car, passed, _raceTime);
+            if (_safety.State != was) Debug.Log($"SAFETY CAR t {_raceTime:0.0} {_safety.State}, leader on lap {leaderLaps + 1}");
+            foreach (RaceDriver d in _drivers) { d.UnderSafetyCar = _safety.Out; d.SafetyCarShare = _safety.Share; }
+            if (_playerDriver != null) { _playerDriver.UnderSafetyCar = _safety.Out; _playerDriver.SafetyCarShare = _safety.Share; }
+            _safety.Driver.UnderSafetyCar = _safety.Out;
+            _safety.Driver.Observe(_track, _field, slot, elapsed);
+
+            if (_lamps == null) return;
+            bool flash = _safety.Out && Mathf.Repeat(_raceTime, 0.5f) < 0.25f;
+            for (int l = 0; l < _lamps.Length; l++)
+            {
+                _lamps[l].GetPropertyBlock(_lampBlock);
+                _lampBlock.SetColor("_BaseColor", _safety.Out && (l == 0) == flash ? LampOn : LampOff);
+                _lamps[l].SetPropertyBlock(_lampBlock);
+            }
+        }
 
         /// <summary>
         /// Your stop, every physics step. Past the pit entry line and out beyond the pit wall, the

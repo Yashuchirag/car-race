@@ -77,7 +77,7 @@ namespace CarRace.UnityGame
             };
 
             // The pit lane, from the TrackData the AI drive: down it from the entry line at a
-            // driver's height, and over the boxes from above the track.
+            // driver's height, over the boxes from above the track, and the safety car in its box.
             CarRace.Track.TrackData pit = path.ToTrackData();
             pit.EnsureLanes(CarRace.Track.RaceDriver.DefaultHalfWidthM);
             pit.EnsurePitLane();
@@ -87,6 +87,8 @@ namespace CarRace.UnityGame
                 int entry = pit.PitEntryLine;
                 views.Add(("pitlane", Lane(entry - Ahead(15)) + Vector3.up * 1.3f, Lane(entry + Ahead(80)) + Vector3.up * 1f));
                 views.Add(("pitboxes", At(-Ahead(30)) - Right(0) * 4f + Vector3.up * 9f, Lane(0, pit.PitBoxShiftM)));
+                int sc = pit.SafetyCarBox;
+                views.Add(("safetycar", Lane(sc - Ahead(9), pit.PitBoxShiftM + 3f) + Vector3.up * 2.4f, Lane(sc, pit.PitBoxShiftM) + Vector3.up * 0.8f));
             }
 
             // The three tightest corners, at least 150 m apart, seen from their outside.

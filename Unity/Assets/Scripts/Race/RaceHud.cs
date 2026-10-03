@@ -8,7 +8,8 @@ namespace CarRace.UnityGame
     /// The race officials, on screen: each ruling on the player as a banner with its flag for a
     /// few seconds (black and white for a track limits warning or penalty, black for the
     /// disqualification), and while any stand, the penalty seconds so far and the warnings used
-    /// under the position box. Added by RaceDirector, which owns the rulings.
+    /// under the position box; the flags, the safety car among them. Added by RaceDirector,
+    /// which owns the rulings.
     /// </summary>
     public sealed class RaceHud : MonoBehaviour
     {
@@ -19,8 +20,10 @@ namespace CarRace.UnityGame
         RaceControl.Event _banner;
         float _bannerUntil;
         Texture2D _blackAndWhite, _chequered;
-        bool _wasYellow;
+        bool _wasYellow, _wasSafetyCar;
         float _greenUntil;
+        SafetyCar.Phase _phase;
+        float _phaseUntil;
         GUIStyle _title, _detail, _status;
 
         public void Show(RaceDirector director, int playerEntry)
@@ -47,6 +50,18 @@ namespace CarRace.UnityGame
                 _banner = ruling;
                 _bannerUntil = Time.time + BannerSeconds;
                 if (ruling.Ruling == RaceControl.Ruling.Warning) GameAudio.Back(); else GameAudio.Countdown(go: false);
+            }
+
+            // The safety car coming out, and being called in: a banner each, for BannerSeconds.
+            SafetyCar safety = _director.Safety;
+            if (safety != null && safety.State != _phase)
+            {
+                _phase = safety.State;
+                if (_phase == SafetyCar.Phase.Deployed || _phase == SafetyCar.Phase.InThisLap)
+                {
+                    _phaseUntil = Time.time + BannerSeconds;
+                    GameAudio.Countdown(go: false);
+                }
             }
         }
 
@@ -109,11 +124,25 @@ namespace CarRace.UnityGame
                 return;
             }
 
+            if (Time.time < _phaseUntil && _phase == SafetyCar.Phase.Deployed)
+            {
+                DrawBanner(false, true, "SAFETY CAR DEPLOYED",
+                           "No overtaking. Close up behind the car ahead; the field queues behind the safety car.");
+                return;
+            }
+            if (Time.time < _phaseUntil && _phase == SafetyCar.Phase.InThisLap)
+            {
+                DrawBanner(false, true, "SAFETY CAR IN THIS LAP",
+                           "Racing resumes when the leader crosses the line. No overtaking before it.");
+                return;
+            }
+
             if (_banner == null || Time.time > _bannerUntil) return;
             RaceControl.Entry ruled = _director.Control.Entries[_entry];
             string other = _banner.Other >= 0 ? _director.Control.Entries[_banner.Other].Name : "";
             string offence = _banner.Cause == RaceControl.Cause.PlaceKept ? $"Kept the place on {other}"
                            : _banner.Cause == RaceControl.Cause.YellowFlag ? $"Passed {other} under a yellow flag"
+                           : _banner.Cause == RaceControl.Cause.SafetyCar ? $"Passed {other} under the safety car"
                            : _banner.Cause == RaceControl.Cause.Cut ? "Corner cut: you gained by leaving the track"
                            : "Track limits: four wheels off";
             switch (_banner.Ruling)
@@ -161,15 +190,25 @@ namespace CarRace.UnityGame
         void FlagPanel(RaceControl.Entry me)
         {
             RaceFlags flags = _director.Flags;
+            SafetyCar safety = _director.Safety;
+            bool underSafetyCar = safety != null && safety.Out;
             bool yellow = flags != null && flags.InYellow[_entry] >= 0;
-            int blue = flags != null ? flags.BlueFor[_entry] : -1;
-            if (_wasYellow && !yellow) _greenUntil = Time.time + GreenSeconds;
+            int blue = flags != null && !underSafetyCar ? flags.BlueFor[_entry] : -1;
+            if (_wasYellow && !yellow || _wasSafetyCar && !underSafetyCar) _greenUntil = Time.time + GreenSeconds;
             _wasYellow = yellow;
+            _wasSafetyCar = underSafetyCar;
 
             string label;
             Color colour = Color.white;
             Texture2D pattern = null;
             if (me.Finished) { label = "CHEQUERED FLAG"; pattern = Chequered(); }
+            else if (underSafetyCar)
+            {
+                label = safety.State == SafetyCar.Phase.InThisLap ? "SC IN THIS LAP"
+                      : safety.State == SafetyCar.Phase.Ending ? "SC IN  ·  NO PASSING"
+                      : "SAFETY CAR OUT";
+                colour = new Color(1f, 0.82f, 0.05f);
+            }
             else if (yellow) { label = "YELLOW  ·  NO OVERTAKING"; colour = new Color(1f, 0.82f, 0.05f); }
             else if (blue >= 0) { label = $"BLUE  ·  LET {_director.Control.Entries[blue].Name.ToUpperInvariant()} BY"; colour = new Color(0.1f, 0.35f, 0.95f); }
             else if (Time.time < _greenUntil) { label = "GREEN  ·  TRACK CLEAR"; colour = new Color(0.15f, 0.75f, 0.3f); }

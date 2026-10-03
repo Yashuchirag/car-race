@@ -5,14 +5,17 @@ namespace CarRace.UnityGame
 {
     /// <summary>
     /// How a solo race is run, set in the lobby's PLAYERS panel and kept between sessions: the
-    /// laps, and how fast the tyres wear. A LAN race takes its laps from the host's lobby instead.
-    /// -laps N and -tyreWear N on the command line override the saved choice for one session, for
-    /// testing.
+    /// laps, how fast the tyres wear, and whether the safety car comes out. A LAN race takes its
+    /// laps from the host's lobby instead. -laps N and -tyreWear N on the command line override
+    /// the saved choice for one session, for testing, and -safetyCarAt S brings the safety car
+    /// out S seconds after GO. Under -benchmark it only comes out when forced, so benchmarks
+    /// stay comparable.
     /// </summary>
     public static class RaceSettings
     {
         const string LapsKey = "CarRace.Race.Laps";
         const string WearKey = "CarRace.Race.TyreWear";
+        const string SafetyCarKey = "CarRace.Race.SafetyCar";
         public const int MaxLaps = 20;
 
         /// <summary>The wear rates on offer, multiples of real wear; 0 is off. At x1 the rear tyres
@@ -34,6 +37,18 @@ namespace CarRace.UnityGame
         }
 
         public static float TyreWearRate => Override("-tyreWear", out float rate) ? rate : WearRates[WearChoice];
+
+        public static bool SafetyCarChoice
+        {
+            get => PlayerPrefs.GetInt(SafetyCarKey, 1) != 0;
+            set { PlayerPrefs.SetInt(SafetyCarKey, value ? 1 : 0); PlayerPrefs.Save(); }
+        }
+
+        /// <summary>When -safetyCarAt forces it out, seconds after GO, or -1.</summary>
+        public static float SafetyCarAt => Override("-safetyCarAt", out float at) ? at : -1f;
+
+        public static bool SafetyCar => SafetyCarAt >= 0f
+            || SafetyCarChoice && Array.IndexOf(Environment.GetCommandLineArgs(), "-benchmark") < 0;
 
         public static string WearLabel(int choice) => WearRates[choice] <= 0f ? "OFF" : $"x{WearRates[choice]:0}";
 

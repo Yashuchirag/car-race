@@ -334,12 +334,15 @@ namespace CarRace.UnityGame
                           "PLAY races the AI on your own. Host or join to race people on your network.", _small);
                 y += Hud.Px(48f);
 
-                // The solo race: its laps and how fast the tyres wear (RaceSettings).
+                // The solo race: its laps, how fast the tyres wear, and the safety car (RaceSettings).
                 SettingRow(x, ref y, width, "LAPS", RaceSettings.Laps.ToString(),
                            RaceSettings.Laps > 1, RaceSettings.Laps < RaceSettings.MaxLaps, step => RaceSettings.Laps += step);
                 SettingRow(x, ref y, width, "TYRE WEAR", RaceSettings.WearLabel(RaceSettings.WearChoice),
                            RaceSettings.WearChoice > 0, RaceSettings.WearChoice < RaceSettings.WearRates.Length - 1,
                            step => RaceSettings.WearChoice += step);
+                SettingRow(x, ref y, width, "SAFETY CAR", RaceSettings.SafetyCarChoice ? "ON" : "OFF",
+                           RaceSettings.SafetyCarChoice, !RaceSettings.SafetyCarChoice,
+                           step => RaceSettings.SafetyCarChoice = step > 0);
             }
             else if (mode == LanSession.Mode.Browsing)
             {

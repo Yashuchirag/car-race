@@ -72,6 +72,23 @@ namespace CarRace.Track
         public int YieldTo = -1;
         public float YieldShare = 0.85f;
 
+        /// <summary>
+        /// The safety car is out: no passing, except a car stopped or in the pit lane, and the
+        /// speed held to SafetyCarShare of the plan. The owner sets the share from SafetyCar.
+        /// </summary>
+        public bool UnderSafetyCar;
+        public float SafetyCarShare = 1f;
+
+        /// <summary>Under the safety car a stop costs least, so it is taken at this wear.</summary>
+        public float CheapStopWear = 0.4f;
+
+        /// <summary>A cap on its own pace whatever else applies, as a share of the plan: the safety
+        /// car's driver runs under it.</summary>
+        public float PaceCap = 1f;
+
+        /// <summary>Held in its box after the stop (Stopped), not released: the safety car parked.</summary>
+        public bool Hold;
+
         public readonly PathDriver Path;
         public readonly string Name;
 
@@ -119,6 +136,7 @@ namespace CarRace.Track
         /// </summary>
         public float CompanyAlongM = 12f;
         public float CompanyAcrossM = 5.5f;
+        public float QueueAlongsideM = 5f;
 
         /// <summary>
         /// When it leaves a lane: nobody alongside for CompanyHoldSeconds, not passing, and the
@@ -358,6 +376,20 @@ namespace CarRace.Track
             Pit = PitState.InLane;
         }
 
+        /// <summary>Parks the car in its box (Box), stopped, as the safety car waits in the pit lane:
+        /// it leaves once Hold is cleared, as after any stop.</summary>
+        public void ParkInBox(TrackData track, int laps)
+        {
+            Path.StartAt(Box, laps);
+            Path.JumpToLane(1);
+            Path.Pitting = true;
+            Path.PlanForPit = true;
+            Path.PitShiftM = track.PitBoxShiftM;
+            Pit = PitState.Stopped;
+            _serviceLeft = 0f;
+            Hold = true;
+        }
+
         /// <summary>Back to racing, wherever the stop had got to: the autopilot handing a player's
         /// car back at the exit line.</summary>
         public void EndPit()
@@ -395,7 +427,8 @@ namespace CarRace.Track
             switch (Pit)
             {
                 case PitState.Racing:
-                    bool due = PitRequested || Wear >= PitWear && LapsLeft >= 2;
+                    bool due = PitRequested || Wear >= PitWear && LapsLeft >= 2
+                            || UnderSafetyCar && Wear >= CheapStopWear && LapsLeft >= 2;
                     int toPit = ((track.PitFrom - self.Index) % n + n) % n;
                     if (due && toPit * spacing <= PitApproachM && into > span) Pit = PitState.Approach;
                     Path.PlanForPit = Pit == PitState.Approach;
@@ -433,7 +466,7 @@ namespace CarRace.Track
 
                 case PitState.Stopped:
                     _serviceLeft -= dt;
-                    if (_serviceLeft > 0f || !ClearToLeave(track, field, me, self)) return 0f;
+                    if (_serviceLeft > 0f || Hold || !ClearToLeave(track, field, me, self)) return 0f;
                     TyresFitted?.Invoke();
                     PitRequested = false;
                     Pit = PitState.Leaving;
@@ -508,7 +541,13 @@ namespace CarRace.Track
                 // what turns a whole field into a queue: a driver that has pulled out to pass
                 // still counts the car it is passing as a reason to slow down, and nobody
                 // ever gets by.
-                if (MathF.Abs(field[i].LateralM - self.LateralM) > InTheWayM
+                // Under the safety car the field runs single file: the car ahead on the road is
+                // followed whichever lane it is in, unless it is in trouble or in the pit lane.
+                // Judged by lanes, a car slowed to a crawl behind another drew alongside, took
+                // the other lane and drove on past.
+                bool queue = UnderSafetyCar && Pit == PitState.Racing && !field[i].Pitting
+                          && field[i].SpeedMs >= TroubleMinSpeedMs;
+                if (!queue && MathF.Abs(field[i].LateralM - self.LateralM) > InTheWayM
                     && i != _giveWayTo && !GiveUpCorner(track, self, field[i], me, i, gap)
                     && !PathsMeet(track, self, field[i], gap)) continue;
                 if (gap >= ahead) continue;
@@ -578,7 +617,8 @@ namespace CarRace.Track
                 // Under a yellow only the car in trouble may be passed. A car giving way under a
                 // blue flag is worth passing whatever the plans say: it is waiting to be passed.
                 bool retrying = blocker == _gaveUpOn && _retryIn > 0f;
-                bool allowed = !UnderYellow || blocker == YellowFor;
+                bool allowed = (!UnderYellow || blocker == YellowFor)
+                            && (!UnderSafetyCar || front.SpeedMs < TroubleMinSpeedMs || front.Pitting);
                 if (_passing < 0 && !retrying && allowed && Pit == PitState.Racing && ahead < wanted + 10f
                     && (front.Yielding && front.YieldingTo == me || WorthPassing(track, self, front, ahead)))
                 {
@@ -600,7 +640,9 @@ namespace CarRace.Track
             // passing no longer counted as in the way, so it steered back in behind, where the
             // car counted again. Held-up cars swapped lanes every second or so, sometimes
             // changing side at 160 km/h, and that is what spun them.
-            if (_passing >= 0 && (UnderYellow && _passing != YellowFor || Pit != PitState.Racing)) _passing = -1;
+            if (_passing >= 0 && (UnderYellow && _passing != YellowFor || Pit != PitState.Racing
+                                  || UnderSafetyCar && field[_passing].SpeedMs >= TroubleMinSpeedMs && !field[_passing].Pitting))
+                _passing = -1;
             if (_passing >= 0) KeepPassing(track, field, me, dt);
             IsOvertaking = _passing >= 0;
 
@@ -653,6 +695,8 @@ namespace CarRace.Track
 
             if (pitCap >= 0f && (Path.SpeedCapMs < 0f || pitCap < Path.SpeedCapMs)) Path.SpeedCapMs = pitCap;
             float flagShare = UnderYellow ? YellowShare : YieldTo >= 0 ? YieldShare : 1f;
+            if (UnderSafetyCar && Pit == PitState.Racing) flagShare = MathF.Min(flagShare, SafetyCarShare);
+            flagShare = MathF.Min(flagShare, PaceCap);
             if (flagShare < 1f)
             {
                 float flagCap = Path.PlanAt(self.Index) * flagShare;
@@ -949,7 +993,9 @@ namespace CarRace.Track
             {
                 if (i == me || field[i].Gone) continue;
                 float along = MathF.Min(Gap(track, self, field[i]), Gap(track, field[i], self));
-                if (along > CompanyAlongM) continue;
+                // Under the safety car the queue closes up to well inside CompanyAlongM at a
+                // crawl, and a car only that close behind is not alongside: overlapping only.
+                if (along > (UnderSafetyCar ? QueueAlongsideM : CompanyAlongM)) continue;
                 float theirs = track.FromCentre(field[i].Index, field[i].LateralM);
                 float across = mine - theirs;
                 if (MathF.Abs(across) > CompanyAcrossM) continue;

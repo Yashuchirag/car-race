@@ -38,7 +38,8 @@ namespace CarRace.Harness
         public static int Run(CarConfig config, string circuit, int cars, int raceLaps,
                               int seed, bool reverseGrid, bool verbose = false,
                               string csvPath = null, bool fastestLast = false,
-                              int stopCar = -1, float stopAt = 0f, int lappedCar = -1, float tyreWear = 0f)
+                              int stopCar = -1, float stopAt = 0f, int lappedCar = -1, float tyreWear = 0f,
+                              int stopAlso = -1, bool safetyCarOn = false, float safetyCarAt = -1f)
         {
             TrackData track;
             try
@@ -105,7 +106,37 @@ namespace CarRace.Harness
                 drivers[i].PitWear = 0.65f + 0.1f * (float)random.NextDouble();
                 drivers[i].TyresFitted = () => { rigs[car].Sim.FitNewTyres(); control.Entries[car].PitStops++; };
             }
-            var field = new RaceDriver.Seen[cars];
+            // The safety car, with --safety-car or --safety-car-at: a car of the field's own, parked
+            // in its box, driven like the rest but outside RaceControl, and last in the field the
+            // drivers see.
+            SafetyCar safety = null;
+            Rig scRig = null;
+            if (safetyCarOn && track.HasPitLane)
+            {
+                safety = new SafetyCar(new RaceDriver("Safety car", track, config, limits, 0.85f), cars) { ForceAt = safetyCarAt };
+                safety.Park(track);
+                scRig = new Rig(config);
+                scRig.Settle();
+                int box = track.SafetyCarBox;
+                Vector3 tangent = track.Tangent(track.LanePoints[TrackData.PitLaneIndex], box);
+                Vector3 spot = track.LanePoints[TrackData.PitLaneIndex][box] + TrackData.Right(tangent) * track.PitBoxShiftM;
+                scRig.Body.State = new BodyState
+                {
+                    Position = new Vector3(spot.X, scRig.Sim.Config.CgHeight, spot.Z),
+                    Orientation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, MathF.Atan2(tangent.X, tangent.Z)),
+                    Velocity = Vector3.Zero,
+                    AngularVelocity = Vector3.Zero,
+                };
+            }
+            var stopped = new bool[cars];
+            var pitting = new bool[cars];
+            var speeds = new float[cars];
+            int scPasses = 0, scContacts = 0;
+            bool scTouching = false;
+            float deployedAt = -1f, leadingAt = -1f, queuedAt = -1f, calledAt = -1f;
+            float closest = float.MaxValue, scFromM = 0f, queuedLaps = -1f;
+            SafetyCar.Phase lastPhase = SafetyCar.Phase.In;
+            var field = new RaceDriver.Seen[safety != null ? cars + 1 : cars];
             var retired = new bool[cars];
             var contact = new bool[cars, cars];
             var stoppedSince = new float[cars];
@@ -165,6 +196,9 @@ namespace CarRace.Harness
                         Vector3 along = track.Tangent(track.Line, drivers[i].Path.Index);
                         bool spun = Vector3.Dot(rigs[i].Body.State.Forward, along) < 0f;
                         trouble[i] = moving[i] && (MathF.Abs(forwardSpeed) < 3f || spun) && !drivers[i].InPits;
+                        stopped[i] = moving[i] && MathF.Abs(forwardSpeed) < 3f && !drivers[i].InPits;
+                        pitting[i] = drivers[i].Path.Pitting;
+                        speeds[i] = forwardSpeed;
                         racing[i] = !retired[i] && !control.Entries[i].Disqualified;
                         flagIndex[i] = drivers[i].Path.Index;
                         flagProgress[i] = drivers[i].Path.ProgressM;
@@ -178,11 +212,43 @@ namespace CarRace.Harness
                                             + $"{control.Entries[passed].Name} under a yellow flag");
                     }
                     if (flags.Yellow.Count > 0) yellowSeconds += ReactionSteps * Dt;
+                    if (safety != null)
+                    {
+                        int leaderLaps = LeaderLaps(control);
+                        if (safety.State == SafetyCar.Phase.Leading && queuedAt < 0f && safety.Queued(track, flagProgress, speeds, racing, pitting))
+                        {
+                            queuedAt = time;
+                            queuedLaps = (safety.Driver.Path.ProgressM - scFromM) / track.LengthM;
+                        }
+                        foreach (var (car, passed) in safety.Update(track, flags, flagIndex, flagProgress, speeds, trouble,
+                                                                    stopped, racing, pitting, leaderLaps, raceLaps, time,
+                                                                    ReactionSteps * Dt))
+                        {
+                            scPasses++;
+                            control.SafetyCarPass(car, passed, time);
+                            if (verbose)
+                                Console.WriteLine($"    SC      {time,7:0.0} s  {control.Entries[car].Name} passed "
+                                                + $"{control.Entries[passed].Name} under the safety car");
+                        }
+                        if (safety.State != lastPhase)
+                        {
+                            if (safety.State == SafetyCar.Phase.Deployed) deployedAt = time;
+                            if (safety.State == SafetyCar.Phase.Leading) { leadingAt = time; scFromM = safety.Driver.Path.ProgressM; }
+                            if (safety.State == SafetyCar.Phase.InThisLap) calledAt = time;
+                            Console.WriteLine($"    SC      {time,7:0.0} s  {safety.State}, leader on lap {leaderLaps + 1}");
+                            lastPhase = safety.State;
+                        }
+                    }
                     for (int i = 0; i < cars; i++)
                     {
                         drivers[i].UnderYellow = flags.InYellow[i] >= 0;
                         drivers[i].YellowFor = flags.InYellow[i];
-                        drivers[i].YieldTo = flags.BlueFor[i];
+                        drivers[i].YieldTo = safety != null && safety.Out ? -1 : flags.BlueFor[i];
+                        if (safety != null)
+                        {
+                            drivers[i].UnderSafetyCar = safety.Out;
+                            drivers[i].SafetyCarShare = safety.Share;
+                        }
                         if (flags.BlueFor[i] >= 0 && bluePair[i] < 0) blueFlags++;
                         bluePair[i] = flags.BlueFor[i];
 
@@ -233,9 +299,45 @@ namespace CarRace.Harness
                             // parked car and the race never ends.
                             Gone = retired[i],
                             Pitting = drivers[i].Path.Pitting,
-                            Yielding = flags.BlueFor[i] >= 0,
-                            YieldingTo = flags.BlueFor[i],
+                            Yielding = drivers[i].YieldTo >= 0,
+                            YieldingTo = drivers[i].YieldTo,
                         };
+                    }
+                    if (safety != null)
+                    {
+                        RaceDriver sc = safety.Driver;
+                        field[cars] = new RaceDriver.Seen
+                        {
+                            Index = sc.Path.Index,
+                            LateralM = sc.Path.LateralFromLineM,
+                            SpeedMs = scRig.ForwardSpeed,
+                            Plan = sc.Path.Plan,
+                            Position = scRig.Body.State.Position,
+                            Lane = sc.Path.Lane,
+                            Pitting = sc.Path.Pitting,
+                            YieldingTo = -1,
+                        };
+                        sc.UnderSafetyCar = safety.Out;
+                        sc.Observe(track, field, cars, ReactionSteps * Dt);
+
+                        // Contacts with it, counted apart from the field's.
+                        bool touching = false;
+                        for (int i = 0; i < cars; i++)
+                        {
+                            if (retired[i]) continue;
+                            touching |= Overlapping(scRig, rigs[i]);
+                            if (safety.Out && !sc.Path.Pitting && !drivers[i].Path.Pitting)
+                            {
+                                Vector3 d = rigs[i].Body.State.Position - scRig.Body.State.Position;
+                                closest = MathF.Min(closest, MathF.Sqrt(d.X * d.X + d.Z * d.Z));
+                            }
+                        }
+                        if (touching && !scTouching)
+                        {
+                            scContacts++;
+                            if (verbose) Console.WriteLine($"    CONTACT {time,7:0.0} s  with the safety car");
+                        }
+                        scTouching = touching;
                     }
 
                     for (int i = 0; i < cars; i++)
@@ -315,7 +417,7 @@ namespace CarRace.Harness
                     VehicleInputs input = drivers[i].Drive(rig.Body.State, Dt);
                     // --stop-car N --stop-at S: car N stands on its brakes for StopSeconds from S,
                     // where it is, for the yellow flags.
-                    if (i + 1 == stopCar && time >= stopAt && time < stopAt + StopSeconds)
+                    if ((i + 1 == stopCar || i + 1 == stopAlso) && time >= stopAt && time < stopAt + StopSeconds)
                         input = new VehicleInputs { Brake = 1f, Steer = input.Steer };
                     rig.Step(input);
 
@@ -366,6 +468,12 @@ namespace CarRace.Harness
                     else stoppedSince[i] = -1f;
                 }
 
+                if (safety != null)
+                {
+                    safety.Driver.Path.TyreGrip = scRig.Sim.TyreGrip;
+                    scRig.Step(safety.Driver.Drive(scRig.Body.State, Dt));
+                }
+
                 time += Dt;
                 step++;
 
@@ -393,7 +501,19 @@ namespace CarRace.Harness
             }
             Console.WriteLine($"  flags: yellow out for {yellowSeconds:0.0} s, {yellowPasses} passes under yellow; "
                             + $"{blueFlags} blue flags, the longest hold-up {longestBlue:0.0} s");
+            if (safety != null)
+            {
+                string At(float t) => t < 0f ? "never" : $"{t:0} s";
+                Console.WriteLine($"  safety car: out {safety.Deployments} time(s); deployed {At(deployedAt)}, leading {At(leadingAt)}, "
+                                + $"field queued {At(queuedAt)}{(queuedLaps >= 0f ? $" ({queuedLaps:0.0} laps behind it)" : "")}, called in {At(calledAt)}, green {At(safety.GreenAt)}; "
+                                + $"{scPasses} passes under it, {scContacts} contacts with it, closest car {(closest < 1e6f ? $"{closest:0.0} m" : "none")}");
+            }
             int result = Report(control, retired, track, totalContacts, contactsOnLapOne, time, timeout);
+            if (safety != null && safetyCarAt >= 0f && (safety.GreenAt < 0f || scPasses > 0 || scContacts > 0))
+            {
+                Console.WriteLine("  FAIL: the safety car never went in, a car passed under it, or a car touched it.");
+                result = 1;
+            }
             if (!pitsOk)
             {
                 Console.WriteLine("  FAIL: a car broke the pit limit or stopped in the pit lane outside its box.");

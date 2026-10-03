@@ -125,6 +125,7 @@ namespace CarRace.Track
 
         public int PitFrom = -1, PitEntryLine, PitExitLine, PitTo;
         public int[] PitBoxIndex;
+        public int SafetyCarBox = -1;
         /// <summary>The fast lane's centre from the centreline at each sample in the pit, and how
         /// far further out a box is than that.</summary>
         public float[] PitOffsetM;
@@ -183,6 +184,9 @@ namespace CarRace.Track
             PitBoxIndex = new int[PitBoxes];
             for (int b = 0; b < PitBoxes; b++)
                 PitBoxIndex[b] = Wrap((int)MathF.Round(((b - (PitBoxes - 1) * 0.5f) * PitBoxSpacingM) / SampleSpacingM));
+
+            // The safety car's, one box past the last, nearer the exit than any car's.
+            SafetyCarBox = Wrap((int)MathF.Round(((PitBoxes + 1) * 0.5f * PitBoxSpacingM) / SampleSpacingM));
 
             LanePoints = new[] { LanePoints[0], LanePoints[1], points };
             LaneCurvature = new[] { LaneCurvature[0], LaneCurvature[1], SignedCurvature(points, stride) };

@@ -90,7 +90,7 @@ namespace CarRace.Track
         public enum Ruling { None, Warning, Penalty, Disqualified, GiveBack }
 
         /// <summary>What a ruling is for.</summary>
-        public enum Cause { TrackLimits, Cut, PlaceKept, YellowFlag }
+        public enum Cause { TrackLimits, Cut, PlaceKept, YellowFlag, SafetyCar }
 
         public sealed class Event
         {
@@ -234,6 +234,14 @@ namespace CarRace.Track
             Entry entry = Entries[car];
             if (entry.Finished || entry.Disqualified) return null;
             return Penalise(car, Cause.YellowFlag, PenaltySeconds, passed, time);
+        }
+
+        /// <summary>A pass under the safety car, judged at the green: PenaltySeconds.</summary>
+        public Event SafetyCarPass(int car, int passed, float time)
+        {
+            Entry entry = Entries[car];
+            if (entry.Disqualified) return null;
+            return Penalise(car, Cause.SafetyCar, PenaltySeconds, passed, time);
         }
 
         /// <summary>A penalty of <paramref name="seconds"/>, the black flag if it is the
