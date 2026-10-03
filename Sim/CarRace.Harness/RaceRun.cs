@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 using CarRace.Track;
 using CarRace.Vehicle;
@@ -85,7 +86,25 @@ namespace CarRace.Harness
 
             for (int i = 0; i < cars; i++) PlaceOnGrid(rigs[i], drivers[i], track, i);
 
+
             var control = new RaceControl(names, raceLaps);
+
+            // Pit stops, with tyre wear on: a box a car, by grid slot, and each driver's own wear
+            // to come in at, spread over 0.65 to 0.75 so the field does not all stop together.
+            var pitEntered = new float[cars];
+            var pitSeconds = new List<float>();
+            float fastestInLimit = 0f;
+            int stoppedOutside = 0;
+            var stillFor = new float[cars];
+            for (int i = 0; i < cars; i++)
+            {
+                pitEntered[i] = -1f;
+                if (tyreWear <= 0f) continue;
+                int car = i;
+                drivers[i].Box = track.PitBoxIndex[i % TrackData.PitBoxes];
+                drivers[i].PitWear = 0.65f + 0.1f * (float)random.NextDouble();
+                drivers[i].TyresFitted = () => { rigs[car].Sim.FitNewTyres(); control.Entries[car].PitStops++; };
+            }
             var field = new RaceDriver.Seen[cars];
             var retired = new bool[cars];
             var contact = new bool[cars, cars];
@@ -126,7 +145,7 @@ namespace CarRace.Harness
                 csv.WriteLine("t,car,lap,s,x,z,speed_kph,fwd_kph,target_kph,planned_kph,cap_kph,"
                             + "steer,throttle,brake,cross_m,lateral_m,offset_m,wanted_m,heading_deg,"
                             + "sideslip_deg,recovering,yaw_rate,slip_fl,slip_fr,slip_rl,slip_rr,"
-                            + "load_fl,load_fr,load_rl,load_rr,gear,blocked_by,gap_m,following,overtaking");
+                            + "load_fl,load_fr,load_rl,load_rr,gear,blocked_by,gap_m,following,overtaking,pit");
             }
 
             float time = 0f;
@@ -145,7 +164,7 @@ namespace CarRace.Harness
                         if (forwardSpeed > 10f) moving[i] = true;
                         Vector3 along = track.Tangent(track.Line, drivers[i].Path.Index);
                         bool spun = Vector3.Dot(rigs[i].Body.State.Forward, along) < 0f;
-                        trouble[i] = moving[i] && (MathF.Abs(forwardSpeed) < 3f || spun);
+                        trouble[i] = moving[i] && (MathF.Abs(forwardSpeed) < 3f || spun) && !drivers[i].InPits;
                         racing[i] = !retired[i] && !control.Entries[i].Disqualified;
                         flagIndex[i] = drivers[i].Path.Index;
                         flagProgress[i] = drivers[i].Path.ProgressM;
@@ -213,6 +232,7 @@ namespace CarRace.Harness
                             // road. Leaving it in the field makes everyone queue behind a
                             // parked car and the race never ends.
                             Gone = retired[i],
+                            Pitting = drivers[i].Path.Pitting,
                             Yielding = flags.BlueFor[i] >= 0,
                             YieldingTo = flags.BlueFor[i],
                         };
@@ -286,6 +306,12 @@ namespace CarRace.Harness
                     if (entry.Finished) { retired[i] = true; continue; }
 
                     drivers[i].Path.TyreGrip = rig.Sim.TyreGrip;
+                    if (tyreWear > 0f && step % ReactionSteps == 0)
+                    {
+                        Wheel[] w = rig.Sim.Wheels;
+                        drivers[i].Wear = MathF.Max(w[0].Wear + w[1].Wear, w[2].Wear + w[3].Wear) * 0.5f;
+                        drivers[i].LapsLeft = raceLaps - entry.LapsComplete - 1;
+                    }
                     VehicleInputs input = drivers[i].Drive(rig.Body.State, Dt);
                     // --stop-car N --stop-at S: car N stands on its brakes for StopSeconds from S,
                     // where it is, for the yellow flags.
@@ -315,7 +341,24 @@ namespace CarRace.Harness
                         track.Centre, sample, rig.Body.State.Position));
                     if (fromCentre > offLineM[i]) offLineM[i] = fromCentre;
 
-                    if (rig.SpeedKph < 3f && time > 3f)
+                    // The pit lane: how long each stop takes, the fastest anyone goes under the limit,
+                    // and any car standing still in it anywhere but its own box.
+                    if (drivers[i].InPits && pitEntered[i] < 0f) pitEntered[i] = time;
+                    if (!drivers[i].InPits && pitEntered[i] >= 0f) { pitSeconds.Add(time - pitEntered[i]); pitEntered[i] = -1f; }
+                    if (drivers[i].InPits && track.InPitLimit(drivers[i].Path.Index))
+                        fastestInLimit = MathF.Max(fastestInLimit, rig.ForwardSpeed);
+                    bool still = drivers[i].Pit == RaceDriver.PitState.InLane && MathF.Abs(rig.ForwardSpeed) < 0.5f;
+                    stillFor[i] = still ? stillFor[i] + Dt : 0f;
+                    if (stillFor[i] >= 1f && stillFor[i] < 1f + Dt)
+                    {
+                        stoppedOutside++;
+                        if (verbose)
+                            Console.WriteLine($"    PIT     {time,7:0.0} s  {entry.Name} standing in the pit lane "
+                                            + $"{(track.IntoPit(drivers[i].Box) - track.IntoPit(drivers[i].Path.Index)) * track.SampleSpacingM:0} m short of its box, "
+                                            + $"blocked by {(drivers[i].BlockedBy >= 0 ? control.Entries[drivers[i].BlockedBy].Name : "nobody")} at {drivers[i].BlockedGapM:0.0} m");
+                    }
+
+                    if (rig.SpeedKph < 3f && time > 3f && !drivers[i].InPits)
                     {
                         if (stoppedSince[i] < 0f) stoppedSince[i] = time;
                         if (time - stoppedSince[i] > 8f) retired[i] = true;
@@ -334,15 +377,28 @@ namespace CarRace.Harness
             csv?.Dispose();
             if (csvPath != null) Console.WriteLine($"  telemetry written to {csvPath}\n");
 
+            bool pitsOk = true;
             if (tyreWear > 0f)
             {
                 float worst = 0f;
                 foreach (Rig r in rigs) foreach (Wheel w in r.Sim.Wheels) worst = MathF.Max(worst, w.Wear);
-                Console.WriteLine($"  tyres: wear x{tyreWear:0.#}, the most worn tyre at the end {worst * 100f:0}%");
+                int stops = 0, unstopped = 0;
+                foreach (RaceControl.Entry e in control.Entries) { stops += e.PitStops; if (e.PitStops == 0) unstopped++; }
+                float average = 0f;
+                foreach (float s in pitSeconds) average += s / pitSeconds.Count;
+                Console.WriteLine($"  tyres: wear x{tyreWear:0.#}, the most worn tyre at the end {worst * 100f:0}%; {stops} pit stops, "
+                                + $"{unstopped} cars never stopped; {average:0.0} s in the pit lane on average; fastest under the "
+                                + $"limit {fastestInLimit * 3.6f:0} km/h; {stoppedOutside} stops outside a box");
+                pitsOk = fastestInLimit <= TrackData.PitLimitMs + 2f / 3.6f && stoppedOutside == 0;
             }
             Console.WriteLine($"  flags: yellow out for {yellowSeconds:0.0} s, {yellowPasses} passes under yellow; "
                             + $"{blueFlags} blue flags, the longest hold-up {longestBlue:0.0} s");
             int result = Report(control, retired, track, totalContacts, contactsOnLapOne, time, timeout);
+            if (!pitsOk)
+            {
+                Console.WriteLine("  FAIL: a car broke the pit limit or stopped in the pit lane outside its box.");
+                result = 1;
+            }
             if (yellowPasses > 0)
             {
                 Console.WriteLine("  FAIL: a car passed under a yellow flag.");
@@ -403,6 +459,7 @@ namespace CarRace.Harness
                 driver.BlockedGapM.ToString("0.#", c),
                 (driver.IsFollowing ? 1 : 0).ToString(c),
                 (driver.IsOvertaking ? 1 : 0).ToString(c),
+                driver.Pit.ToString(),
             }));
         }
 

@@ -100,6 +100,94 @@ namespace CarRace.Track
             }
         }
 
+        // ---- the pit lane --------------------------------------------------------
+
+        /// <summary>
+        /// The pit lane, on the right of the start straight, built from the centreline so the
+        /// harness, the AI and the scene builder share one definition (EnsurePitLane). To the
+        /// AI it is a third lane: LanePoints[PitLaneIndex] is the right passing lane everywhere
+        /// outside the pit, and inside it runs out to the pit lane and back, so a car already in
+        /// the right lane can take it with no step.
+        ///
+        /// Along the lap, in order: PitFrom, where it leaves the right lane; PitEntryLine, the
+        /// end of the entry ramp, where the limit starts and the pit wall begins; the boxes;
+        /// PitExitLine, where the limit ends; PitTo, where it is back in the right lane.
+        /// </summary>
+        public const int PitLaneIndex = 2;
+        public const float PitHalfSpanWantedM = 250f;
+        public const float PitRampM = 60f;
+        public const float PitWallGapM = 1.5f;     // road edge to the fast lane's near side
+        public const float PitFastLaneM = 6f;
+        public const float PitWorkingLaneM = 5f;
+        public const float PitBoxSpacingM = 16f;
+        public const int PitBoxes = 8;
+        public const float PitLimitMs = 60f / 3.6f;
+
+        public int PitFrom = -1, PitEntryLine, PitExitLine, PitTo;
+        public int[] PitBoxIndex;
+        /// <summary>The fast lane's centre from the centreline at each sample in the pit, and how
+        /// far further out a box is than that.</summary>
+        public float[] PitOffsetM;
+        public float PitBoxShiftM;
+        public bool HasPitLane => PitFrom >= 0;
+
+        /// <summary>Samples from PitFrom to <paramref name="index"/> along the lap; more than
+        /// PitSpan when it is not in the pit stretch.</summary>
+        public int IntoPit(int index) => ((index - PitFrom) % Count + Count) % Count;
+        public int PitSpan => IntoPit(PitTo);
+        public bool InPitStretch(int index) => HasPitLane && IntoPit(index) <= PitSpan;
+        public bool InPitLimit(int index) => HasPitLane && IntoPit(index) >= IntoPit(PitEntryLine) && IntoPit(index) <= IntoPit(PitExitLine);
+
+        /// <summary>
+        /// Builds the pit lane after EnsureLanes. Its half span is PitHalfSpanWantedM, or less
+        /// where the start straight (the stretch round sample 0 straighter than 500 m radius) is
+        /// shorter, 10 m short of where it bends: the test circuit's straight runs 192 m either
+        /// side of the line, the shortest of the six. The fast lane's centre sits PitWallGapM plus
+        /// half its width past the right edge, ramping out from the right lane over PitRampM, and
+        /// the boxes are PitBoxSpacingM apart in the working lane beyond it, centred on the line,
+        /// in front of the garages.
+        /// </summary>
+        public void EnsurePitLane()
+        {
+            if (HasPitLane || LanePoints == null) return;
+            int n = Count;
+            int stride = Math.Max(1, (int)MathF.Round(6f / SampleSpacingM));
+            float[] centreCurvature = SignedCurvature(Centre, stride);
+            int forward = 0, back = 0;
+            while (forward < n / 2 && MathF.Abs(centreCurvature[Wrap(forward)]) < 1f / 500f) forward++;
+            while (back < n / 2 && MathF.Abs(centreCurvature[Wrap(-back)]) < 1f / 500f) back++;
+            float half = MathF.Min(PitHalfSpanWantedM, MathF.Min(forward, back) * SampleSpacingM - 10f);
+            int halfSamples = (int)MathF.Round(half / SampleSpacingM);
+            int ramp = (int)MathF.Round(PitRampM / SampleSpacingM);
+
+            PitFrom = Wrap(-halfSamples);
+            PitTo = Wrap(halfSamples);
+            PitEntryLine = Wrap(-halfSamples + ramp);
+            PitExitLine = Wrap(halfSamples - ramp);
+
+            PitOffsetM = new float[n];
+            var points = (Vector3[])LanePoints[1].Clone();
+            for (int k = -halfSamples; k <= halfSamples; k++)
+            {
+                int i = Wrap(k);
+                float fast = WidthRight[i] + PitWallGapM + PitFastLaneM * 0.5f;
+                int fromEnd = Math.Min(k + halfSamples, halfSamples - k);
+                float t = Math.Min(1f, fromEnd / (float)ramp);
+                t = t * t * (3f - 2f * t);   // smoothstep: no kink where it leaves the lane
+                float offset = LaneHalfM[i] + (fast - LaneHalfM[i]) * t;
+                PitOffsetM[i] = offset;
+                points[i] = Centre[i] + Right(Tangent(Centre, i)) * offset;
+            }
+            PitBoxShiftM = (PitFastLaneM + PitWorkingLaneM) * 0.5f;
+
+            PitBoxIndex = new int[PitBoxes];
+            for (int b = 0; b < PitBoxes; b++)
+                PitBoxIndex[b] = Wrap((int)MathF.Round(((b - (PitBoxes - 1) * 0.5f) * PitBoxSpacingM) / SampleSpacingM));
+
+            LanePoints = new[] { LanePoints[0], LanePoints[1], points };
+            LaneCurvature = new[] { LaneCurvature[0], LaneCurvature[1], SignedCurvature(points, stride) };
+        }
+
         /// <summary>
         /// How sharply the road curves up or down along the racing line, 1/m, negative over a
         /// crest; smoothed over CrestSpanM so a single sample's height noise is not a crest.

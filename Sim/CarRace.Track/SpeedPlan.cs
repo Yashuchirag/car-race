@@ -37,6 +37,11 @@ namespace CarRace.Track
 
         /// <summary>A plan for another path along the same samples, such as a passing lane.</summary>
         public static float[] Build(TrackData track, Limits limits, float[] curvatureOfPath)
+            => Build(track, limits, curvatureOfPath, null);
+
+        /// <summary>A plan held under <paramref name="ceilingMs"/> at each sample (a pit limit), with
+        /// the braking down to it and the acceleration away planned as for a corner.</summary>
+        public static float[] Build(TrackData track, Limits limits, float[] curvatureOfPath, float[] ceilingMs)
         {
             float lateralLimitMs2 = limits.LateralMs2;
             float brakingLimitMs2 = limits.BrakingMs2;
@@ -65,6 +70,7 @@ namespace CarRace.Track
                     ? MathF.Sqrt(lateralLimitMs2 / denominator)
                     : topSpeedMs;
                 speed[i] = MathF.Min(corner, topSpeedMs);
+                if (ceilingMs != null) speed[i] = MathF.Min(speed[i], ceilingMs[i]);
             }
 
             // Backward pass: every sample is capped at the speed it can still brake from

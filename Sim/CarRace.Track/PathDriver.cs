@@ -79,6 +79,20 @@ namespace CarRace.Track
         public int Lane;
         public float LaneRateMs = 1.5f;
 
+        /// <summary>
+        /// Driving the pit lane (TrackData.PitLaneIndex) in place of the right passing lane,
+        /// shifted PitShiftM further out, towards the boxes. Only switched on from the right lane,
+        /// fully in it, inside the stretch where the two are one, so the aim does not jump; the
+        /// owner (RaceDriver) sees to that.
+        /// </summary>
+        public bool Pitting;
+        public float PitShiftM;
+
+        /// <summary>On the way to the pit lane: plan with its speeds before driving it, so the
+        /// braking for the limit starts on the track. Without it a car followed the right lane's
+        /// plan up to the pit lane and arrived at 177 km/h.</summary>
+        public bool PlanForPit;
+
         /// <summary>How far into a lane the car is, 0 on the racing line, 1 in the lane.</summary>
         public float LaneBlend => _laneBlend;
         public int LaneSide => _laneSide;
@@ -280,7 +294,8 @@ namespace CarRace.Track
             _laneBlend = Clamp(_laneBlend + (wanted ? step : -step), 0f, 1f);
         }
 
-        int LaneArray => _laneSide > 0 ? 1 : 0;
+        int LaneArray => Pitting && _lanePlans != null && _lanePlans.Length > TrackData.PitLaneIndex
+            ? TrackData.PitLaneIndex : _laneSide > 0 ? 1 : 0;
 
         /// <summary>The point the car aims at for a sample: the racing line, shifted by
         /// LineOffsetM, blended towards the lane it is moving into.</summary>
@@ -288,7 +303,11 @@ namespace CarRace.Track
         {
             index = _track.Wrap(index);
             Vector3 racing = _track.Line[index] + TrackData.Right(_track.Tangent(_track.Line, index)) * LineOffsetM;
-            return _laneBlend > 0f ? Vector3.Lerp(racing, _track.LanePoints[LaneArray][index], _laneBlend) : racing;
+            if (_laneBlend <= 0f) return racing;
+            Vector3 lane = _track.LanePoints[LaneArray][index];
+            if (LaneArray == TrackData.PitLaneIndex && PitShiftM != 0f)
+                lane += TrackData.Right(_track.Tangent(_track.Centre, index)) * PitShiftM;
+            return Vector3.Lerp(racing, lane, _laneBlend);
         }
 
         /// <summary>The plan where the car is going: the racing line's, the lane's once in it,
@@ -296,8 +315,11 @@ namespace CarRace.Track
         float PlanFor(int index)
         {
             index = _track.Wrap(index);
+            bool pit = (Pitting || PlanForPit) && _lanePlans != null && _lanePlans.Length > TrackData.PitLaneIndex;
+            if (pit && PlanForPit && _laneBlend < 1f)
+                return MathF.Min(_plan[index], _lanePlans[TrackData.PitLaneIndex][index]);
             if (_laneBlend <= 0f) return _plan[index];
-            float lane = _lanePlans[LaneArray][index];
+            float lane = _lanePlans[pit ? TrackData.PitLaneIndex : LaneArray][index];
             return _laneBlend >= 1f ? lane : MathF.Min(_plan[index], lane);
         }
 

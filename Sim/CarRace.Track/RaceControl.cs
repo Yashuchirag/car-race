@@ -21,6 +21,7 @@ namespace CarRace.Track
             public float LastLapS;
             public float FinishedAtS = -1f;
             public int Contacts;
+            public int PitStops;
 
             /// <summary>Seconds of penalty, added to the race time at the flag.</summary>
             public float PenaltyS;

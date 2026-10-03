@@ -44,6 +44,10 @@ namespace CarRace.Track
             /// cause.</summary>
             public bool Gone;
 
+            /// <summary>In the pit lane (PathDriver.Pitting): where it will be is not its lane's
+            /// path, so others judge it by where it is.</summary>
+            public bool Pitting;
+
             /// <summary>Under a blue flag, giving way to the car <see cref="YieldingTo"/>.</summary>
             public bool Yielding;
             public int YieldingTo;
@@ -282,15 +286,169 @@ namespace CarRace.Track
             _brakingMs2 = limits.BrakingMs2;
             _lateralMs2 = limits.LateralMs2;
             track.EnsureLanes(HalfWidthM);
+            track.EnsurePitLane();
             Path = new PathDriver(track, SpeedPlan.Build(track, limits), car, new[]
             {
                 SpeedPlan.Build(track, limits, track.LaneCurvature[0]),
                 SpeedPlan.Build(track, limits, track.LaneCurvature[1]),
+                SpeedPlan.Build(track, limits, track.LaneCurvature[TrackData.PitLaneIndex], PitCeiling(track)),
             });
             Path.LateralGripMs2 = grip;
         }
 
         public VehicleInputs Drive(in BodyState body, float dt) => Path.Drive(body, dt);
+
+        // ---- pit stops --------------------------------------------------------------
+
+        public enum PitState { Racing, Approach, InLane, Stopped, Leaving }
+        public PitState Pit { get; private set; }
+
+        /// <summary>In the pit lane: exempt from the stuck rule and from raising a yellow.</summary>
+        public bool InPits => Pit >= PitState.InLane;
+
+        /// <summary>Its box, a sample on the lap (TrackData.PitBoxIndex), or -1 for none: set by
+        /// the owner, one box a car.</summary>
+        public int Box = -1;
+
+        /// <summary>Set by the owner each reaction interval: how worn the tyres are, the more
+        /// worn axle's two averaged, and the laps left after the one being driven.</summary>
+        public float Wear;
+        public int LapsLeft = int.MaxValue;
+
+        /// <summary>
+        /// Wear at which this driver comes in, its own, between 0.65 and 0.75 in a field (the
+        /// owner spreads them), just ahead of the cliff at 0.6 to 1, past which every lap costs
+        /// more; not with fewer than two laps to go, which a new set cannot win back.
+        /// </summary>
+        public float PitWear = 0.7f;
+
+        /// <summary>Come in this time round whatever the tyres: a player's stop, driven by the
+        /// autopilot, is asked for this way.</summary>
+        public bool PitRequested;
+
+        public float ServiceSeconds = 4f;
+        /// <summary>Called when the tyres are changed, for the owner to fit them on the car:
+        /// this class never touches the vehicle model.</summary>
+        public Action TyresFitted;
+
+        /// <summary>How far before the pit lane it moves to the right lane to be ready, and the
+        /// deceleration it plans for stopping at the box.</summary>
+        public float PitApproachM = 400f;
+        public float BoxStopMs2 = 3.5f;
+        float _serviceLeft;
+
+        static float[] PitCeiling(TrackData track)
+        {
+            var ceiling = new float[track.Count];
+            // 95% of the limit, since the speed control runs a few km/h over a target it has just
+            // braked to: at the limit itself cars crossed the line at 64 km/h.
+            for (int i = 0; i < ceiling.Length; i++) ceiling[i] = track.InPitLimit(i) ? TrackData.PitLimitMs * 0.95f : float.MaxValue;
+            return ceiling;
+        }
+
+        /// <summary>
+        /// The stop, step by step: Approach, into the right lane before the pit lane leaves it;
+        /// InLane, along the pit lane at the limit, shifting into the box over its last 30 m and
+        /// braking to stop on it; Stopped, ServiceSeconds of tyre change; Leaving, out of the box
+        /// and along the lane until it rejoins the right lane. A car not fully in the right lane
+        /// where the pit lane leaves it has missed it, and tries again next time round.
+        /// Returns a speed cap for the stop, or -1.
+        /// </summary>
+        float Pitstop(TrackData track, Seen[] field, int me, in Seen self, float dt)
+        {
+            if (!track.HasPitLane || Box < 0) return -1f;
+            int n = track.Count;
+            int into = track.IntoPit(self.Index), span = track.PitSpan;
+            float spacing = track.SampleSpacingM;
+            switch (Pit)
+            {
+                case PitState.Racing:
+                    bool due = PitRequested || Wear >= PitWear && LapsLeft >= 2;
+                    int toPit = ((track.PitFrom - self.Index) % n + n) % n;
+                    if (due && toPit * spacing <= PitApproachM && into > span) Pit = PitState.Approach;
+                    Path.PlanForPit = Pit == PitState.Approach;
+                    return -1f;
+
+                case PitState.Approach:
+                    if (into > span) return -1f;   // not there yet
+                    if (Path.Lane == 1 && Path.LaneSide > 0 && Path.LaneBlend >= 1f)
+                    {
+                        Pit = PitState.InLane;
+                        Path.Pitting = true;
+                    }
+                    else { Pit = PitState.Racing; Path.PlanForPit = false; }   // missed it: next time round
+                    return -1f;
+
+                case PitState.InLane:
+                {
+                    int boxInto = track.IntoPit(Box);
+                    float toBox = MathF.Max(0f, (boxInto - into) * spacing);
+                    // Into the box over its last 14 m and out again within 14 m, inside the 16 m between
+                    // boxes. Turning in over 20 m with boxes 12 m apart put a car in the working lane
+                    // behind one stopped in the box before its own; over 9 m, a car at walking pace
+                    // stopped only 2 m into its box, half in the fast lane, and held up the next.
+                    // And the move over is done 5 m before the box, the rest straight in: at walking
+                    // pace the steering trails the aim, and a car still moving over when it stopped
+                    // stood 3 m into its box rather than 5.5.
+                    Path.PitShiftM = track.PitBoxShiftM * Smooth(1f - (toBox - 5f) / 10f);
+                    if (toBox <= 2f && MathF.Abs(self.SpeedMs) < 0.5f)
+                    {
+                        Pit = PitState.Stopped;
+                        _serviceLeft = ServiceSeconds;
+                    }
+                    return MathF.Sqrt(2f * BoxStopMs2 * MathF.Max(toBox - 1f, 0f));
+                }
+
+                case PitState.Stopped:
+                    _serviceLeft -= dt;
+                    if (_serviceLeft > 0f || !ClearToLeave(track, field, me, self)) return 0f;
+                    TyresFitted?.Invoke();
+                    PitRequested = false;
+                    Pit = PitState.Leaving;
+                    return 0f;
+
+                default:   // Leaving
+                {
+                    float past = (into - track.IntoPit(Box)) * spacing;
+                    Path.PitShiftM = track.PitBoxShiftM * Smooth(1f - (past - 1f) / 13f);
+                    if (into >= span || into < track.IntoPit(Box))
+                    {
+                        Path.Pitting = false;
+                        Path.PlanForPit = false;
+                        Path.PitShiftM = 0f;
+                        Pit = PitState.Racing;
+                    }
+                    return -1f;
+                }
+            }
+        }
+
+        /// <summary>
+        /// A safe release, as a pit crew gives one: nobody moving in the pit lane from ReleaseAheadM
+        /// ahead back to ReleaseBehindM behind, or further back if it would be here within
+        /// ReleaseSeconds. Pulling out regardless put a car leaving its box into one coming down the
+        /// fast lane in four races of five, and a fixed 25 m still let one arrive at 54 km/h.
+        /// </summary>
+        bool ClearToLeave(TrackData track, Seen[] field, int me, in Seen self)
+        {
+            for (int i = 0; i < field.Length; i++)
+            {
+                if (i == me || field[i].Gone || !field[i].Pitting || MathF.Abs(field[i].SpeedMs) < 0.5f) continue;
+                float ahead = Distance(track, self.Index, field[i].Index);
+                if (ahead > track.LengthM / 2f) ahead -= track.LengthM;
+                float behind = MathF.Max(ReleaseBehindM, field[i].SpeedMs * ReleaseSeconds);
+                if (ahead > -behind && ahead < ReleaseAheadM) return false;
+            }
+            return true;
+        }
+
+        public float ReleaseBehindM = 25f, ReleaseAheadM = 6f, ReleaseSeconds = 4f;
+
+        static float Smooth(float t)
+        {
+            t = Clamp(t, 0f, 1f);
+            return t * t * (3f - 2f * t);
+        }
 
         /// <summary>
         /// Looks at the other cars and decides how fast to go and where to sit. Called on a
@@ -300,6 +458,7 @@ namespace CarRace.Track
         public void Observe(TrackData track, Seen[] field, int me, float dt)
         {
             Seen self = field[me];
+            float pitCap = Pitstop(track, field, me, self, dt);
             float ahead = float.MaxValue;
             int blocker = -1;
 
@@ -388,7 +547,7 @@ namespace CarRace.Track
                 // blue flag is worth passing whatever the plans say: it is waiting to be passed.
                 bool retrying = blocker == _gaveUpOn && _retryIn > 0f;
                 bool allowed = !UnderYellow || blocker == YellowFor;
-                if (_passing < 0 && !retrying && allowed && ahead < wanted + 10f
+                if (_passing < 0 && !retrying && allowed && Pit == PitState.Racing && ahead < wanted + 10f
                     && (front.Yielding && front.YieldingTo == me || WorthPassing(track, self, front, ahead)))
                 {
                     _passingCandidate = blocker;
@@ -409,7 +568,7 @@ namespace CarRace.Track
             // passing no longer counted as in the way, so it steered back in behind, where the
             // car counted again. Held-up cars swapped lanes every second or so, sometimes
             // changing side at 160 km/h, and that is what spun them.
-            if (_passing >= 0 && UnderYellow && _passing != YellowFor) _passing = -1;
+            if (_passing >= 0 && (UnderYellow && _passing != YellowFor || Pit != PitState.Racing)) _passing = -1;
             if (_passing >= 0) KeepPassing(track, field, me, dt);
             IsOvertaking = _passing >= 0;
 
@@ -444,6 +603,8 @@ namespace CarRace.Track
                 bool near = MathF.Abs(laneFromCentre - track.LineFromCentreM[self.Index]) < RejoinNearM;
                 if (_companyFor > 0f || !near) lane = Path.Lane;
             }
+            // On the way in, in and out: the right lane, which the pit lane is part of.
+            if (Pit != PitState.Racing) lane = 1;
             Path.Lane = lane;
 
             // Whatever offset it started with, from its grid slot or a recovery, eases back
@@ -458,6 +619,7 @@ namespace CarRace.Track
                 Path.LineOffsetM += Clamp(-Path.LineOffsetM, -step, step);
             }
 
+            if (pitCap >= 0f && (Path.SpeedCapMs < 0f || pitCap < Path.SpeedCapMs)) Path.SpeedCapMs = pitCap;
             float flagShare = UnderYellow ? YellowShare : YieldTo >= 0 ? YieldShare : 1f;
             if (flagShare < 1f)
             {
@@ -553,7 +715,11 @@ namespace CarRace.Track
             {
                 if (i == me || field[i].Gone) continue;
                 float side = MathF.Abs(field[i].LateralM - self.LateralM);
-                if (side > SafetyWidthM) continue;
+                // Both in the pit lane, the narrower width: a car standing in its box is parked,
+                // and one going by on the fast lane is on a fixed line, so the margin the bound
+                // keeps for cars moving about on the track only queued cars behind every box.
+                float width = Path.Pitting && field[i].Pitting ? InTheWayM : SafetyWidthM;
+                if (side > width) continue;
 
                 float gap = Gap(track, self, field[i]);
                 if (gap <= 0f || gap > horizon) continue;
@@ -676,6 +842,10 @@ namespace CarRace.Track
         /// </summary>
         bool PathsMeet(TrackData track, in Seen self, in Seen other, float gap)
         {
+            // A car in the pit lane is not on its lane's path: the pit lane is lane 1 to the
+            // planner, so one standing in its box looked to be on the right lane, and the car
+            // behind queued for it.
+            if (Path.Pitting || other.Pitting) return false;
             // At least PathsLookM ahead of it, closing or not: judged only while closing, the car
             // behind forgot the other as soon as it had slowed to its speed, and sped up again.
             float closing = self.SpeedMs - MathF.Max(other.SpeedMs, 0f);
