@@ -105,6 +105,17 @@ namespace UnityEngine
     {
         public T GetComponent<T>() => throw new NotImplementedException();
         public int layer { get; set; }
+        public SceneManagement.Scene scene => throw new NotImplementedException();
+    }
+
+    public static class PlayerPrefs
+    {
+        public static string GetString(string key, string defaultValue) => throw new NotImplementedException();
+        public static void SetString(string key, string value) => throw new NotImplementedException();
+        public static int GetInt(string key, int defaultValue) => throw new NotImplementedException();
+        public static void SetInt(string key, int value) => throw new NotImplementedException();
+        public static void DeleteKey(string key) => throw new NotImplementedException();
+        public static void Save() => throw new NotImplementedException();
     }
 
     public class Transform : Component
@@ -244,5 +255,13 @@ namespace UnityEngine
     public sealed class RequireComponent : Attribute
     {
         public RequireComponent(Type type) { }
+    }
+}
+
+namespace UnityEngine.SceneManagement
+{
+    public struct Scene
+    {
+        public string name => throw new NotImplementedException();
     }
 }

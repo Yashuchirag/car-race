@@ -23,10 +23,12 @@ namespace CarRace.UnityGame
     /// With -benchmark on the command line it goes straight to the race, so the benchmark
     /// still measures racing.
     /// </summary>
-    public sealed class LobbyMenu : MonoBehaviour
+    public sealed partial class LobbyMenu : MonoBehaviour
     {
         [SerializeField] Transform displayCar;
         [SerializeField] TrackCatalog catalog;
+        [Tooltip("The car as built, which the setup screen's settings are changes to.")]
+        [SerializeField] CarDefinition car;
         [SerializeField] float turnDegreesPerSecond = 18f;
 
         static readonly Color Panel = new Color(0.05f, 0.06f, 0.1f, 0.86f);
@@ -98,6 +100,14 @@ namespace CarRace.UnityGame
             else if (!LanSession.Active && !string.IsNullOrEmpty(join)) LanSession.Current.Join(join);
             else if (!LanSession.Active && Array.IndexOf(args, "-lanBrowse") >= 0) LanSession.Current.StartBrowsing();
 
+            // -openSetup <tab>: the setup screen open on that tab (0 suspension to 5 assists),
+            // for screenshots.
+            if (int.TryParse(LanSession.Flag("-openSetup"), out int tab) && car != null)
+            {
+                OpenSetup();
+                _setupTab = Mathf.Clamp(tab, 0, SetupTabs.Length - 1);
+            }
+
             // -lobbyScreenshot <file>: a picture of the lobby after a few seconds (or
             // -screenshotDelay seconds), then quit.
             int shot = Array.IndexOf(args, "-lobbyScreenshot");
@@ -107,6 +117,7 @@ namespace CarRace.UnityGame
         void Update()
         {
             if (displayCar != null) displayCar.Rotate(0f, turnDegreesPerSecond * Time.deltaTime, 0f, Space.World);
+            if (_setupOpen) return;
             if (Input.GetKeyDown(KeyCode.Return) && GUIUtility.keyboardControl == 0) Play();
         }
 
@@ -155,6 +166,7 @@ namespace CarRace.UnityGame
         {
             Styles();
             _hover.Begin();
+            if (_setupOpen) { SetupScreen(); return; }
 
             // Title, top left.
             float margin = Hud.Px(40f);
@@ -181,6 +193,10 @@ namespace CarRace.UnityGame
             PlayersPanel(new Rect(car.x, margin, width, car.y - margin - Hud.Px(20f)));
 
             PanelWithHeader(car, "YOUR CAR");
+            // The setup for the chosen circuit, in the header's corner; locked with the car.
+            if (Button(new Rect(car.xMax - Hud.Px(128f), car.y + Hud.Px(5f), Hud.Px(118f), Hud.Px(28f)), "SETUP",
+                       !locked && this.car != null && SetupScene.Length > 0, back: true))
+                OpenSetup();
             float size = Hud.Px(80f), gap = Hud.Px(20f);
             float left = car.x + (width - (4f * size + 3f * gap)) * 0.5f, top = car.y + Hud.Px(56f);
             if (designs > 0)

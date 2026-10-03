@@ -91,10 +91,11 @@ namespace CarRace.UnityGame
                 return;
             }
 
+            if (driver == null) driver = GetComponent<DriverInput>();
             _config = definition.ToConfig();
+            if (driver != null && !Benchmarking) ApplyPlayerSetup();
             Sim = new VehicleSim(_config);
             _body = GetComponent<Rigidbody>();
-            if (driver == null) driver = GetComponent<DriverInput>();
             if (driver != null)
                 driver.ConfigureSteering(_config.MaxSteerAngleDegrees, _config.SteerFalloffSpeed, _config.Wheelbase);
             _ground = new UnityGround(groundLayers, _body);
@@ -111,6 +112,30 @@ namespace CarRace.UnityGame
                     "this rate load transfer lags by 20 ms and the car feels vague. Set Project " +
                     "Settings, Time, Fixed Timestep to 0.005.");
             }
+        }
+
+        static readonly bool Benchmarking = Array.IndexOf(Environment.GetCommandLineArgs(), "-benchmark") >= 0;
+
+        /// <summary>
+        /// The player's setup for this circuit and their assists, from the lobby's setup screen.
+        /// Only the car with a DriverInput takes them: the AI's cars, and the copies a LAN race
+        /// makes of them, have none and stay as built. Not under -benchmark, whose runs are
+        /// compared with one another and must all drive the same car.
+        /// </summary>
+        void ApplyPlayerSetup()
+        {
+            string scene = gameObject.scene.name;
+            CarSetup setup = SetupStore.Load(scene, _config);
+            _config = setup.Apply();
+            antiLockBrakes = SetupStore.Get(SetupStore.Assist.Abs);
+            tractionControl = SetupStore.Get(SetupStore.Assist.TractionControl);
+            engineDragControl = SetupStore.Get(SetupStore.Assist.EngineBrakingControl);
+            automaticGearbox = SetupStore.Get(SetupStore.Assist.AutomaticGearbox);
+            Debug.Log($"{name}: setup for {scene}: " +
+                      $"{(setup.AllDefault ? "as built" : setup.ToText().Replace('\n', ' ').Trim())}; " +
+                      $"ABS {(antiLockBrakes ? "on" : "off")}, traction control {(tractionControl ? "on" : "off")}, " +
+                      $"engine braking control {(engineDragControl ? "on" : "off")}, " +
+                      $"{(automaticGearbox ? "automatic" : "manual")} gearbox");
         }
 
         /// <summary>
