@@ -13,7 +13,7 @@ namespace CarRace.Net
     {
         /// <summary>Bumped whenever these bytes change meaning. A client that does not
         /// recognise the version must ignore the packet rather than guess at it.</summary>
-        public const byte Version = 2;
+        public const byte Version = 3;
 
         public const int Port = 47901;
         static readonly byte[] Magic = { (byte)'C', (byte)'R', (byte)'C', (byte)'E' };

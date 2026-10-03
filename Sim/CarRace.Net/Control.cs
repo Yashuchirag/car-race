@@ -26,6 +26,9 @@ namespace CarRace.Net
         public string Track = "";
         public byte Laps = 3;
         public byte AiCars;
+        /// <summary>The tyre wear choice, a place in the game's list of rates (0 is off).</summary>
+        public byte TyreWear;
+        public bool SafetyCar = true;
         public List<PlayerInfo> Players = new List<PlayerInfo>();
     }
 
@@ -35,6 +38,8 @@ namespace CarRace.Net
     {
         public string Track = "";
         public byte Laps;
+        public byte TyreWear;
+        public bool SafetyCar;
         public PlayerInfo[] Grid = Array.Empty<PlayerInfo>();
     }
 
@@ -47,6 +52,10 @@ namespace CarRace.Net
         public float BestLapS;         // or -1 before a lap is complete
         public float LastLapS;
         public bool Left;              // the player quit the race
+        public float PenaltyS;         // seconds added at the flag
+        public byte Warnings, Penalties, PitStops;
+        public bool Disqualified;
+        public bool LapValid, LastLapValid;
     }
 
     /// <summary>The whole field, in grid order, at one race time. Everyone ranks it the same
@@ -59,6 +68,57 @@ namespace CarRace.Net
 
     public enum RejectReason : byte { Full = 1, Started = 2, Version = 3 }
 
+    /// <summary>What a player's machine tells the host about its own car, which only it can
+    /// judge: it has the wheels. The host keeps the rulings.</summary>
+    public enum ReportKind : byte { LeftTrack = 1, Judged = 2, PitIn = 3, PitOut = 4, TyresFitted = 5 }
+
+    /// <summary>One report from a player: what, and for Judged the judge's verdict (the game's
+    /// TrackLimits.Kind, as a byte).</summary>
+    public struct Report
+    {
+        public byte Id;
+        public ReportKind Kind;
+        public byte Value;
+    }
+
+    /// <summary>A yellow zone: the car in trouble (its grid slot) and the samples it runs between.</summary>
+    public struct FlagZone
+    {
+        public byte Car;
+        public int From, To;
+    }
+
+    /// <summary>A place gained off the track and owed back: who owes it, to whom, by when.</summary>
+    public struct FlagOwed
+    {
+        public byte Car, Passed;
+        public float DeadlineS;
+    }
+
+    /// <summary>
+    /// The marshals, as the host sees them, for everyone: the yellow zones, the flag each car is
+    /// shown (the car in trouble whose zone it is in, the car about to lap it; -1 for none),
+    /// places owed back, and the safety car's phase (the game's SafetyCar.Phase; 0 is in).
+    /// Cars by grid slot.
+    /// </summary>
+    public sealed class FlagsState
+    {
+        public byte SafetyCar;
+        public FlagZone[] Zones = Array.Empty<FlagZone>();
+        public sbyte[] InYellow = Array.Empty<sbyte>();
+        public sbyte[] BlueFor = Array.Empty<sbyte>();
+        public FlagOwed[] Owed = Array.Empty<FlagOwed>();
+    }
+
+    /// <summary>A ruling by the host, for every screen's banners: the game's RaceControl.Event.</summary>
+    public struct RulingInfo
+    {
+        public float TimeS;
+        public byte Car, Cause, Ruling;
+        public float Seconds;
+        public sbyte Other;
+    }
+
     /// <summary>
     /// The messages that have to arrive: joining, the lobby, the start. They go over TCP,
     /// each as a two byte length and then the message, whose first byte is its type. None of
@@ -67,13 +127,15 @@ namespace CarRace.Net
     public static class Control
     {
         /// <summary>Bumped whenever any message here or a datagram changes meaning.</summary>
-        public const byte Version = 2;
+        public const byte Version = 3;
 
-        public enum Type : byte { Hello = 1, Welcome, Reject, Lobby, Setup, Start, Ready, Go, Standings, Return }
+        public enum Type : byte { Hello = 1, Welcome, Reject, Lobby, Setup, Start, Ready, Go, Standings, Return, Report, Flags, Rulings }
 
-        public static byte[] Hello(PlayerInfo me) => Build(Type.Hello, w =>
+        /// <summary>Hello, as this version says it; <paramref name="version"/> only for testing
+        /// that an older one is turned away.</summary>
+        public static byte[] Hello(PlayerInfo me, byte version = Version) => Build(Type.Hello, w =>
         {
-            w.Write(Version);
+            w.Write(version);
             WriteString(w, me.Name);
             w.Write(me.Colour);
             w.Write(me.Design);
@@ -88,6 +150,8 @@ namespace CarRace.Net
             WriteString(w, lobby.Track);
             w.Write(lobby.Laps);
             w.Write(lobby.AiCars);
+            w.Write(lobby.TyreWear);
+            w.Write(lobby.SafetyCar);
             WritePlayers(w, lobby.Players);
         });
 
@@ -103,6 +167,8 @@ namespace CarRace.Net
         {
             WriteString(w, start.Track);
             w.Write(start.Laps);
+            w.Write(start.TyreWear);
+            w.Write(start.SafetyCar);
             WritePlayers(w, start.Grid);
         });
 
@@ -127,8 +193,76 @@ namespace CarRace.Net
                 w.Write(s.BestLapS);
                 w.Write(s.LastLapS);
                 w.Write(s.Left);
+                w.Write(s.PenaltyS);
+                w.Write(s.Warnings);
+                w.Write(s.Penalties);
+                w.Write(s.PitStops);
+                w.Write(s.Disqualified);
+                w.Write(s.LapValid);
+                w.Write(s.LastLapValid);
             }
         });
+
+        public static byte[] ReportMessage(ReportKind kind, byte value) => Build(Type.Report, w =>
+        {
+            w.Write((byte)kind);
+            w.Write(value);
+        });
+
+        public static Report ReadReport(byte[] message, byte id)
+        {
+            using BinaryReader r = Body(message);
+            return new Report { Id = id, Kind = (ReportKind)r.ReadByte(), Value = r.ReadByte() };
+        }
+
+        public static byte[] FlagsMessage(FlagsState flags) => Build(Type.Flags, w =>
+        {
+            w.Write(flags.SafetyCar);
+            w.Write((byte)flags.Zones.Length);
+            foreach (FlagZone z in flags.Zones) { w.Write(z.Car); w.Write(z.From); w.Write(z.To); }
+            w.Write((byte)flags.InYellow.Length);
+            for (int i = 0; i < flags.InYellow.Length; i++) { w.Write(flags.InYellow[i]); w.Write(flags.BlueFor[i]); }
+            w.Write((byte)flags.Owed.Length);
+            foreach (FlagOwed o in flags.Owed) { w.Write(o.Car); w.Write(o.Passed); w.Write(o.DeadlineS); }
+        });
+
+        public static FlagsState ReadFlags(byte[] message)
+        {
+            using BinaryReader r = Body(message);
+            var flags = new FlagsState { SafetyCar = r.ReadByte(), Zones = new FlagZone[r.ReadByte()] };
+            for (int i = 0; i < flags.Zones.Length; i++)
+                flags.Zones[i] = new FlagZone { Car = r.ReadByte(), From = r.ReadInt32(), To = r.ReadInt32() };
+            int cars = r.ReadByte();
+            flags.InYellow = new sbyte[cars];
+            flags.BlueFor = new sbyte[cars];
+            for (int i = 0; i < cars; i++) { flags.InYellow[i] = r.ReadSByte(); flags.BlueFor[i] = r.ReadSByte(); }
+            flags.Owed = new FlagOwed[r.ReadByte()];
+            for (int i = 0; i < flags.Owed.Length; i++)
+                flags.Owed[i] = new FlagOwed { Car = r.ReadByte(), Passed = r.ReadByte(), DeadlineS = r.ReadSingle() };
+            return flags;
+        }
+
+        public static byte[] RulingsMessage(IReadOnlyList<RulingInfo> rulings) => Build(Type.Rulings, w =>
+        {
+            w.Write((byte)rulings.Count);
+            foreach (RulingInfo e in rulings)
+            {
+                w.Write(e.TimeS); w.Write(e.Car); w.Write(e.Cause); w.Write(e.Ruling); w.Write(e.Seconds); w.Write(e.Other);
+            }
+        });
+
+        public static RulingInfo[] ReadRulings(byte[] message)
+        {
+            using BinaryReader r = Body(message);
+            var rulings = new RulingInfo[r.ReadByte()];
+            for (int i = 0; i < rulings.Length; i++)
+                rulings[i] = new RulingInfo
+                {
+                    TimeS = r.ReadSingle(), Car = r.ReadByte(), Cause = r.ReadByte(), Ruling = r.ReadByte(),
+                    Seconds = r.ReadSingle(), Other = r.ReadSByte(),
+                };
+            return rulings;
+        }
 
         public static Standings ReadStandings(byte[] message)
         {
@@ -139,6 +273,8 @@ namespace CarRace.Net
                 {
                     LapsComplete = r.ReadByte(), ProgressM = r.ReadSingle(), FinishedAtS = r.ReadSingle(),
                     BestLapS = r.ReadSingle(), LastLapS = r.ReadSingle(), Left = r.ReadBoolean(),
+                    PenaltyS = r.ReadSingle(), Warnings = r.ReadByte(), Penalties = r.ReadByte(), PitStops = r.ReadByte(),
+                    Disqualified = r.ReadBoolean(), LapValid = r.ReadBoolean(), LastLapValid = r.ReadBoolean(),
                 };
             return standings;
         }
@@ -168,6 +304,7 @@ namespace CarRace.Net
             return new LobbyState
             {
                 Track = ReadString(r), Laps = r.ReadByte(), AiCars = r.ReadByte(),
+                TyreWear = r.ReadByte(), SafetyCar = r.ReadBoolean(),
                 Players = new List<PlayerInfo>(ReadPlayers(r)),
             };
         }
@@ -177,7 +314,8 @@ namespace CarRace.Net
             using BinaryReader r = Body(message);
             return new RaceStart
             {
-                Track = ReadString(r), Laps = r.ReadByte(), Grid = ReadPlayers(r),
+                Track = ReadString(r), Laps = r.ReadByte(), TyreWear = r.ReadByte(), SafetyCar = r.ReadBoolean(),
+                Grid = ReadPlayers(r),
             };
         }
 

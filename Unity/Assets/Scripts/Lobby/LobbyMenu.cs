@@ -16,7 +16,8 @@ namespace CarRace.UnityGame
     /// repainted as a colour is picked. The players panel is also LAN play's: host a game or
     /// join one, see everyone who has joined, and as host set the AI cars and start the race.
     /// In a LAN game only the host picks the circuit. -lanHost hosts at once (with -lanAi N
-    /// AI cars, -lanLaps N laps, and -track for the circuit), -lanJoin
+    /// AI cars, -lanLaps N laps, -lanWear N a tyre wear choice, -lanSafetyCar 0 or 1, and
+    /// -track for the circuit), -lanJoin
     /// 127.0.0.1 joins that address and -lanBrowse opens the Join screen, for testing
     /// several copies on one machine.
     ///
@@ -107,6 +108,8 @@ namespace CarRace.UnityGame
                 LanSession.Current.StartHosting(LanSession.Flag("-track") ?? ChosenScene);
                 if (int.TryParse(LanSession.Flag("-lanAi"), out int ai)) LanSession.Current.Host?.SetAiCars(ai);
                 if (int.TryParse(LanSession.Flag("-lanLaps"), out int laps)) LanSession.Current.Host?.SetLaps(laps);
+                if (int.TryParse(LanSession.Flag("-lanWear"), out int wear)) LanSession.Current.Host?.SetTyreWear(wear);
+                if (int.TryParse(LanSession.Flag("-lanSafetyCar"), out int sc)) LanSession.Current.Host?.SetSafetyCar(sc != 0);
             }
             else if (!LanSession.Active && !string.IsNullOrEmpty(join)) LanSession.Current.Join(join);
             else if (!LanSession.Active && Array.IndexOf(args, "-lanBrowse") >= 0) LanSession.Current.StartBrowsing();
@@ -336,7 +339,31 @@ namespace CarRace.UnityGame
                         if (Button(new Rect(lapCount.xMax + Hud.Px(6f), laps.y + Hud.Px(5f), Hud.Px(30f), Hud.Px(30f)), "+", lobby.Laps < MaxLaps))
                             session.Host.SetLaps(lobby.Laps + 1);
                     }
-                    y = laps.yMax + Hud.Px(10f);
+                    y = laps.yMax + Hud.Px(6f);
+
+                    // Tyre wear and the safety car, likewise: the host sets them, everyone sees them.
+                    int wear = Mathf.Clamp(lobby.TyreWear, 0, RaceSettings.WearRates.Length - 1);
+                    if (hosting)
+                    {
+                        SettingRow(x, ref y, width, "TYRE WEAR", RaceSettings.WearLabel(wear),
+                                   wear > 0, wear < RaceSettings.WearRates.Length - 1, step => session.Host.SetTyreWear(wear + step));
+                        SettingRow(x, ref y, width, "SAFETY CAR", lobby.SafetyCar ? "ON" : "OFF",
+                                   lobby.SafetyCar, !lobby.SafetyCar, step => session.Host.SetSafetyCar(step > 0));
+                    }
+                    else
+                    {
+                        foreach (var (label, value) in new[] { ("TYRE WEAR", RaceSettings.WearLabel(wear)), ("SAFETY CAR", lobby.SafetyCar ? "ON" : "OFF") })
+                        {
+                            var row = new Rect(x, y, width, Hud.Px(40f));
+                            Hud.Rounded(row, Row);
+                            GUI.Label(new Rect(row.x + Hud.Px(12f), row.y, row.width, row.height), label, _text);
+                            _text.alignment = TextAnchor.MiddleCenter;
+                            GUI.Label(new Rect(row.xMax - Hud.Px(80f), row.y, Hud.Px(60f), row.height), value, _text);
+                            _text.alignment = TextAnchor.MiddleLeft;
+                            y = row.yMax + Hud.Px(6f);
+                        }
+                    }
+                    y += Hud.Px(4f);
 
                     string status = hosting
                         ? $"{lobby.Players.Count} of {LanHost.MaxPlayers} players, {lobby.Players.Count + lobby.AiCars} of {LanHost.MaxCars} cars. Others join from your IP: {LocalAddresses()}"

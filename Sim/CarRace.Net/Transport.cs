@@ -156,6 +156,15 @@ namespace CarRace.Net
         public bool Closed { get; private set; }
         public Socket Socket => _socket;
 
+        /// <summary>Why it closed, for the logs.</summary>
+        public string Why { get; private set; }
+
+        void Close(string why)
+        {
+            Closed = true;
+            Why ??= why;
+        }
+
         public FrameSocket(Socket socket)
         {
             _socket = socket;
@@ -180,7 +189,7 @@ namespace CarRace.Net
                 _out.RemoveRange(0, sent);
             }
             catch (SocketException e) when (e.SocketErrorCode == SocketError.WouldBlock) { }
-            catch (Exception) { Closed = true; }
+            catch (Exception e) { Close($"sending failed: {e.Message}"); }
         }
 
         /// <summary>The next whole message, if one has arrived. Marks the socket closed when
@@ -192,23 +201,28 @@ namespace CarRace.Net
 
             try
             {
-                if (_socket.Available > 0)
+                // Readable with nothing to read is the other end closing; but data can arrive
+                // between asking what is available and asking whether the socket is readable, so
+                // what is available is asked again after. Taken for a close, that race dropped
+                // every player of a LAN race once the host sent flags ten times a second.
+                if (_socket.Available == 0 && _socket.Poll(0, SelectMode.SelectRead) && _socket.Available == 0)
+                {
+                    Close("the other end closed");
+                    return false;
+                }
+                if (_socket.Available > 0 && _inCount < _in.Length)
                 {
                     int read = _socket.Receive(_in, _inCount, _in.Length - _inCount, SocketFlags.None);
+                    if (read == 0) { Close("the other end closed (read nothing)"); return false; }
                     _inCount += read;
-                }
-                else if (_socket.Poll(0, SelectMode.SelectRead))
-                {
-                    Closed = true;   // readable with nothing to read: the other end closed
-                    return false;
                 }
             }
             catch (SocketException e) when (e.SocketErrorCode == SocketError.WouldBlock) { }
-            catch (Exception) { Closed = true; return false; }
+            catch (Exception e) { Close($"receiving failed: {e.Message}"); return false; }
 
             if (_inCount < 2) return false;
             int length = _in[0] | (_in[1] << 8);
-            if (length == 0 || length > MaxMessage) { Closed = true; return false; }
+            if (length == 0 || length > MaxMessage) { Close($"a message of {length} bytes, over {MaxMessage}"); return false; }
             if (_inCount < 2 + length) return false;
 
             message = new byte[length];
@@ -220,7 +234,7 @@ namespace CarRace.Net
 
         public void Dispose()
         {
-            Closed = true;
+            Close("closed here");
             try { _socket.Shutdown(SocketShutdown.Both); } catch (Exception) { }
             _socket.Close();
         }

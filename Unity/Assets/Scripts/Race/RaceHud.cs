@@ -53,10 +53,9 @@ namespace CarRace.UnityGame
             }
 
             // The safety car coming out, and being called in: a banner each, for BannerSeconds.
-            SafetyCar safety = _director.Safety;
-            if (safety != null && safety.State != _phase)
+            if (_director.SafetyCarPhase != _phase)
             {
-                _phase = safety.State;
+                _phase = _director.SafetyCarPhase;
                 if (_phase == SafetyCar.Phase.Deployed || _phase == SafetyCar.Phase.InThisLap)
                 {
                     _phaseUntil = Time.time + BannerSeconds;
@@ -191,8 +190,8 @@ namespace CarRace.UnityGame
         void FlagPanel(RaceControl.Entry me)
         {
             RaceFlags flags = _director.Flags;
-            SafetyCar safety = _director.Safety;
-            bool underSafetyCar = safety != null && safety.Out;
+            bool underSafetyCar = _director.SafetyCarOut;
+            SafetyCar.Phase phase = _director.SafetyCarPhase;
             bool yellow = flags != null && flags.InYellow[_entry] >= 0;
             int blue = flags != null && !underSafetyCar ? flags.BlueFor[_entry] : -1;
             if (_wasYellow && !yellow || _wasSafetyCar && !underSafetyCar) _greenUntil = Time.time + GreenSeconds;
@@ -205,8 +204,8 @@ namespace CarRace.UnityGame
             if (me.Finished) { label = "CHEQUERED FLAG"; pattern = Chequered(); }
             else if (underSafetyCar)
             {
-                label = safety.State == SafetyCar.Phase.InThisLap ? "SC IN THIS LAP"
-                      : safety.State == SafetyCar.Phase.Ending ? "SC IN  ·  NO PASSING"
+                label = phase == SafetyCar.Phase.InThisLap ? "SC IN THIS LAP"
+                      : phase == SafetyCar.Phase.Ending ? "SC IN  ·  NO PASSING"
                       : "SAFETY CAR OUT";
                 colour = new Color(1f, 0.82f, 0.05f);
             }

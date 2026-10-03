@@ -132,6 +132,13 @@ namespace CarRace.Track
         public float PitBoxShiftM;
         public bool HasPitLane => PitFrom >= 0;
 
+        /// <summary>Whether a point at sample <paramref name="index"/> is in the pit lane, beyond the
+        /// pit wall: how a car seen only by its position (another player's, the safety car on a
+        /// client) is known to be pitting.</summary>
+        public bool InPitLaneAt(int index, Vector3 point)
+            => HasPitLane && InPitStretch(index)
+               && LateralOffset(Centre, index, point) > WidthRight[index] + PitWallGapM * 0.5f;
+
         /// <summary>Samples from PitFrom to <paramref name="index"/> along the lap; more than
         /// PitSpan when it is not in the pit stretch.</summary>
         public int IntoPit(int index) => ((index - PitFrom) % Count + Count) % Count;

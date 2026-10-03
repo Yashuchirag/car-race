@@ -21,7 +21,15 @@ namespace CarRace.UnityGame
     ///
     /// The host's RaceDirector keeps the standings for every car, and the host sends them
     /// four times a second; a client's RaceDirector shows the host's numbers, so positions,
-    /// the finish and the results are the same on every screen.
+    /// the finish, the penalties, the stops and the results are the same on every screen.
+    ///
+    /// Track limits are judged by the machine that drives the car, which has the wheels: a
+    /// client reports leaving the track, each offence, and its pit stops to the host
+    /// (ReportKind), whose race control rules as for its own car. The host sends its flags ten
+    /// times a second (yellow zones, the flag each car is shown, places owed back, the safety
+    /// car's phase) and each ruling once, for the banners. The safety car is a car the host
+    /// drives, sent with its own cars under LanHost.SafetyCarId; a client draws a copy of it,
+    /// dressed the same. Tyre wear and the safety car come from the host's lobby.
     ///
     /// For testing: -lanAutopilot has the AI drive this machine's car, -lanScreenshotAt
     /// 10,25 takes screenshots that many seconds into the race scene, beside the executable,
@@ -40,7 +48,9 @@ namespace CarRace.UnityGame
         readonly Dictionary<byte, int> _slotOf = new Dictionary<byte, int>();
         RaceDirector _director;
         Standings _applied;
-        float _nextSend, _nextStandings;
+        float _nextSend, _nextStandings, _nextFlags;
+        int _rulingsSent;
+        FlagsState _appliedFlags;
         bool _hostGone;
 
         public static void SetUp(LanSession session)
@@ -63,6 +73,21 @@ namespace CarRace.UnityGame
 
             // The scene's cars, the player's first, then copies of an AI car to fill the grid,
             // made before any car is turned into a RemoteCar, so a copy is a plain car.
+            // The safety car's car, copied before any car is turned remote: driven on the host,
+            // a remote copy on a client.
+            // Straight into its box on every machine: parked far away and then moved there by the
+            // network, a client's kinematic copy swept up through the scene and threw that
+            // player's car under the circuit.
+            CarController safetyCar = null;
+            TrackData pits = track.ToTrackData();
+            pits.EnsureLanes(RaceDriver.DefaultHalfWidthM);
+            pits.EnsurePitLane();
+            if (start.SafetyCar && director.AiCars.Length > 0 && pits.HasPitLane)
+            {
+                safetyCar = Instantiate(director.AiCars[0].gameObject).GetComponent<CarController>();
+                var (position, rotation) = RaceDirector.SafetyCarBox(pits, safetyCar.Sim.Config.CgHeight);
+                safetyCar.PlaceOnGrid(position, rotation);
+            }
             var spare = new List<CarController>(director.AiCars);
             for (int k = spare.Count; k < start.Grid.Length - 1 && director.AiCars.Length > 0; k++)
             {
@@ -74,7 +99,7 @@ namespace CarRace.UnityGame
             Extrapolator source = session.Host != null ? session.Host.Cars : session.Client.Cars;
             System.Func<float, float> hostTimeOf = session.Host != null
                 ? (System.Func<float, float>)(t => t)
-                : t => session.Client.HostNow(t);
+                : t => session.Client != null ? session.Client.HostNow(t) : t;   // the host gone: drawn where they were
             var ai = new List<CarController>();
             var all = new List<Transform> { _mine.transform };
 
@@ -106,7 +131,18 @@ namespace CarRace.UnityGame
             }
             foreach (CarController unused in spare) Destroy(unused.gameObject);
 
-            director.UseLan(ai.ToArray(), _remotes, start.Laps, SecondsToGo, grid, names, keepsStandings: session.Host != null);
+            if (safetyCar != null && session.Host == null)
+            {
+                safetyCar.name = "Safety Car";
+                RaceDirector.DressAsSafetyCar(safetyCar, () => director.SafetyCarOut);
+                _remotes.Add(RemoteCar.Make(safetyCar, LanHost.SafetyCarId, source, hostTimeOf));
+                all.Add(safetyCar.transform);
+                safetyCar = null;
+            }
+            director.UseLan(ai.ToArray(), _remotes, start.Laps, SecondsToGo, grid, names, keepsStandings: session.Host != null,
+                            tyreWear: start.TyreWear, safetyCar: start.SafetyCar, safetyCarCar: safetyCar);
+            if (session.Host == null)
+                director.ReportToHost = (kind, value) => _session.Client?.SendReport((ReportKind)kind, value);
             director.AiDrivesPlayer = System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-lanAutopilot") >= 0;
             string shots = LanSession.Flag("-lanScreenshotAt");
             if (!string.IsNullOrEmpty(shots)) StartCoroutine(Screenshots(shots, session.MyId));
@@ -172,6 +208,7 @@ namespace CarRace.UnityGame
             }
 
             Standings();
+            Flags();
             if (_session.State == LanSession.Mode.Off && !_hostGone)
             {
                 _hostGone = true;
@@ -188,6 +225,7 @@ namespace CarRace.UnityGame
             {
                 var cars = new List<CarState> { State(0, _mine, stateTime) };
                 foreach (var (id, car) in _aiCars) cars.Add(State(id, car, stateTime));
+                if (_director.SafetyCarCar != null) cars.Add(State(LanHost.SafetyCarId, _director.SafetyCarCar, stateTime));
                 _session.Host.SendSnapshot(cars, now);
             }
             else _session.Client?.SendCar(State(_session.MyId, _mine, stateTime), stateTime);
@@ -217,6 +255,13 @@ namespace CarRace.UnityGame
                         BestLapS = e.BestLapS < float.MaxValue ? e.BestLapS : -1f,
                         LastLapS = e.LastLapS,
                         Left = _director.HasLeft(i),
+                        PenaltyS = e.PenaltyS,
+                        Warnings = (byte)Mathf.Clamp(e.Warnings, 0, 255),
+                        Penalties = (byte)Mathf.Clamp(e.Penalties, 0, 255),
+                        PitStops = (byte)Mathf.Clamp(e.PitStops, 0, 255),
+                        Disqualified = e.Disqualified,
+                        LapValid = e.LapValid,
+                        LastLapValid = e.LastLapValid,
                     };
                 }
                 _session.Host.SendStandings(standings);
@@ -235,9 +280,71 @@ namespace CarRace.UnityGame
                 e.FinishedAtS = s.FinishedAtS;
                 e.BestLapS = s.BestLapS >= 0f ? s.BestLapS : float.MaxValue;
                 e.LastLapS = s.LastLapS;
+                e.PenaltyS = s.PenaltyS;
+                e.Warnings = s.Warnings;
+                e.Penalties = s.Penalties;
+                e.PitStops = s.PitStops;
+                e.Disqualified = s.Disqualified;
+                e.LapValid = s.LapValid;
+                e.LastLapValid = s.LastLapValid;
                 if (s.Left) _director.MarkLeft(i);
             }
             control.Rank();
+        }
+
+        /// <summary>
+        /// The host: takes every player's reports on their own cars to race control, and sends
+        /// its flags ten times a second and each new ruling once. A client: copies the host's
+        /// latest flags in and adds each ruling to its race control's, for the banners.
+        /// </summary>
+        void Flags()
+        {
+            RaceControl control = _director.Control;
+            if (control == null) return;
+            if (_session.Host != null)
+            {
+                foreach (Report report in _session.Host.Reports)
+                    if (_slotOf.TryGetValue(report.Id, out int slot)) _director.OnRemoteReport(slot, (byte)report.Kind, report.Value);
+                _session.Host.Reports.Clear();
+
+                float now = LanSession.Now;
+                if (now >= _nextFlags && _director.Flags != null)
+                {
+                    _nextFlags = now + 0.1f;
+                    _session.Host.SendFlags(_director.FlagsForLan());
+                }
+                if (control.Events.Count > _rulingsSent)
+                {
+                    var rulings = new List<RulingInfo>();
+                    for (; _rulingsSent < control.Events.Count; _rulingsSent++)
+                    {
+                        RaceControl.Event e = control.Events[_rulingsSent];
+                        Debug.Log($"LAN: ruling on slot {e.Car}: {e.Ruling} for {e.Cause}, {e.Seconds:0} s, other {e.Other}");
+                        rulings.Add(new RulingInfo
+                        {
+                            TimeS = e.TimeS, Car = (byte)e.Car, Cause = (byte)e.Cause, Ruling = (byte)e.Ruling,
+                            Seconds = e.Seconds, Other = (sbyte)e.Other,
+                        });
+                    }
+                    _session.Host.SendRulings(rulings);
+                }
+                return;
+            }
+
+            LanClient client = _session.Client;
+            if (client == null) return;
+            if (client.Flags != null && client.Flags != _appliedFlags)
+            {
+                _appliedFlags = client.Flags;
+                _director.ApplyFlags(client.Flags);
+            }
+            foreach (RulingInfo r in client.Rulings)
+                control.Events.Add(new RaceControl.Event
+                {
+                    TimeS = r.TimeS, Car = r.Car, Cause = (RaceControl.Cause)r.Cause, Ruling = (RaceControl.Ruling)r.Ruling,
+                    Seconds = r.Seconds, Other = r.Other,
+                });
+            client.Rulings.Clear();
         }
 
         GUIStyle _banner;

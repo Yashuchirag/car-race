@@ -46,6 +46,17 @@ namespace CarRace.Net
         /// <summary>The race as the host last sent it, null before the first.</summary>
         public Standings Standings { get; private set; }
 
+        /// <summary>Why the connection closed, for the logs; null while it is open.</summary>
+        public string CloseReason { get; private set; }
+
+        /// <summary>The host's latest flags, or null before the first.</summary>
+        public FlagsState Flags { get; private set; }
+
+        /// <summary>Rulings from the host not yet taken by the game, oldest first.</summary>
+        public readonly System.Collections.Generic.List<RulingInfo> Rulings = new System.Collections.Generic.List<RulingInfo>();
+
+        readonly byte _version;
+
         /// <summary>GO on the host's clock, NaN until the host has it.</summary>
         public float GoAtHostSeconds { get; private set; } = float.NaN;
 
@@ -66,9 +77,10 @@ namespace CarRace.Net
 
         /// <param name="udpPort">Where to send datagrams, if not the host's port: the harness
         /// points it at a proxy that delays and drops them.</param>
-        public LanClient(IPAddress host, int port, PlayerInfo me, int udpPort = 0)
+        public LanClient(IPAddress host, int port, PlayerInfo me, int udpPort = 0, byte version = Control.Version)
         {
             _me = me;
+            _version = version;
             _hostUdp = new IPEndPoint(host, udpPort != 0 ? udpPort : port);
 
             var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp) { Blocking = false, NoDelay = true };
@@ -94,7 +106,12 @@ namespace CarRace.Net
             {
                 _lastHeard = now;
                 try { Handle(message); }
-                catch (Exception) { Close(); return; }
+                catch (Exception e)
+                {
+                    CloseReason = $"a {Control.TypeOf(message)} message of {message.Length} bytes did not read: {e.Message}";
+                    Close();
+                    return;
+                }
             }
             _tcp.Flush();
 
@@ -108,7 +125,11 @@ namespace CarRace.Net
                 ReadDatagrams(now);
             }
 
-            if (_tcp.Closed || now - _lastHeard > LanHost.TimeoutSeconds) Close();
+            if (_tcp.Closed || now - _lastHeard > LanHost.TimeoutSeconds)
+            {
+                CloseReason ??= _tcp.Closed ? $"the connection: {_tcp.Why}" : "nothing from the host for 5 s";
+                Close();
+            }
         }
 
         public void SetSetup(byte colour, byte design)
@@ -128,6 +149,12 @@ namespace CarRace.Net
         public bool Ready => _me.Ready;
 
         /// <summary>This player's car is on the grid.</summary>
+        /// <summary>Something about this player's own car, for the host's race control.</summary>
+        public void SendReport(ReportKind kind, byte value = 0)
+        {
+            if (State == Phase.Racing) _tcp.Send(Control.ReportMessage(kind, value));
+        }
+
         public void SendReady()
         {
             if (State == Phase.Racing) _tcp.Send(Control.Ready());
@@ -157,7 +184,7 @@ namespace CarRace.Net
             }
 
             _lastHeard = now;
-            _tcp.Send(Control.Hello(_me));
+            _tcp.Send(Control.Hello(_me, _version));
             State = Phase.Lobby;
             return true;
         }
@@ -191,11 +218,19 @@ namespace CarRace.Net
                 case Control.Type.Standings:
                     Standings = Control.ReadStandings(message);
                     break;
+                case Control.Type.Flags:
+                    Flags = Control.ReadFlags(message);
+                    break;
+                case Control.Type.Rulings:
+                    Rulings.AddRange(Control.ReadRulings(message));
+                    break;
                 case Control.Type.Return:
                     // Back to the lobby, still together: everyone says ready again.
                     Race = null;
                     GoAtHostSeconds = float.NaN;
                     Standings = null;
+                    Flags = null;
+                    Rulings.Clear();
                     foreach (byte id in new System.Collections.Generic.List<byte>(Cars.Ids)) Cars.Remove(id);
                     _me.Ready = false;
                     State = Phase.Lobby;

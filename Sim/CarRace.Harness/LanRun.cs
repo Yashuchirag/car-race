@@ -112,14 +112,25 @@ namespace CarRace.Harness
                       $"a seventh player is turned away ({extra.State}, {extra.Rejected})");
             }
 
+            // A copy of the game a version behind is turned away, by name.
+            using (var old = new LanClient(IPAddress.Loopback, host.Port, new PlayerInfo { Name = "Old copy" }, version: (byte)(Control.Version - 1)))
+            {
+                PollUntil(ref now, () => old.State == LanClient.Phase.Rejected, 2f, host, machines, t => old.Poll(t));
+                Check(old.State == LanClient.Phase.Rejected && old.Rejected == RejectReason.Version,
+                      $"a copy speaking version {Control.Version - 1} is turned away ({old.State}, {old.Rejected})");
+            }
+
             // Lobby changes reach everyone.
             host.SetAiCars(ai);
+            host.SetTyreWear(3);
+            host.SetSafetyCar(false);
             if (players > 1) machines[1].Client.SetSetup(7, 3);
             bool agreed = PollUntil(ref now, () => machines.TrueForAll(m => m.Client == null
                                         || m.Client.Lobby.AiCars == host.Lobby.AiCars
+                                           && m.Client.Lobby.TyreWear == 3 && !m.Client.Lobby.SafetyCar
                                            && (players == 1 || m.Client.Lobby.Players[1].Colour == 7)),
                                     2f, host, machines);
-            Check(agreed, $"AI count ({host.Lobby.AiCars}) and a changed colour reach every player");
+            Check(agreed, $"AI count ({host.Lobby.AiCars}), tyre wear, the safety car and a changed colour reach every player");
 
             // Ready in the lobby: the host may start only once everyone is.
             bool notYet = players == 1 || !host.AllReady;
@@ -140,8 +151,9 @@ namespace CarRace.Harness
             foreach (Machine m in machines)
                 if (m.Client?.Race != null)
                     sameGrid &= string.Join(",", Array.ConvertAll(m.Client.Race.Grid, p => p.Id))
-                              == string.Join(",", Array.ConvertAll(race.Grid, p => p.Id));
-            Check(started && sameGrid, $"every player has the start and the same {race.Grid.Length} car grid");
+                              == string.Join(",", Array.ConvertAll(race.Grid, p => p.Id))
+                              && m.Client.Race.TyreWear == race.TyreWear && m.Client.Race.SafetyCar == race.SafetyCar;
+            Check(started && sameGrid, $"every player has the start, the same {race.Grid.Length} car grid, and the same tyre wear and safety car");
 
             // GO waits for the last player to load.
             host.SetReady();
@@ -287,6 +299,69 @@ namespace CarRace.Harness
                       goneAfter >= 0f ? $"a player who quits leaves every track in {goneAfter * 1000f:0} ms"
                                       : "a player who quits leaves every track");
 
+            // A player's report on its own car reaches the host: here a corner cut (the game's
+            // TrackLimits.Kind.Cut is 3), and a pit stop.
+            Machine reporter = machines.Find(m => m.Client != null && !m.Quit);
+            if (reporter != null)
+            {
+                host.Reports.Clear();
+                reporter.Client.SendReport(ReportKind.Judged, 3);
+                reporter.Client.SendReport(ReportKind.PitIn);
+                bool reported = PollUntil(ref now, () => host.Reports.Count >= 2, 2f, host, machines);
+                Check(reported && host.Reports[0].Id == reporter.Id && host.Reports[0].Kind == ReportKind.Judged
+                      && host.Reports[0].Value == 3 && host.Reports[1].Kind == ReportKind.PitIn,
+                      $"{reporter.Name}'s reports on its own car (a cut, into the pits) reach the host in order");
+            }
+
+            // The flags and the safety car's phase, and the host's rulings, reach every player.
+            var flags = new FlagsState
+            {
+                SafetyCar = 2,
+                Zones = new[] { new FlagZone { Car = 1, From = 2990, To = 140 } },
+                InYellow = new sbyte[race.Grid.Length], BlueFor = new sbyte[race.Grid.Length],
+                Owed = new[] { new FlagOwed { Car = 0, Passed = 1, DeadlineS = now + 10f } },
+            };
+            for (int i = 0; i < race.Grid.Length; i++) { flags.InYellow[i] = (sbyte)(i == 0 ? 1 : -1); flags.BlueFor[i] = (sbyte)(i == 2 ? 0 : -1); }
+            var ruling = new RulingInfo { TimeS = now, Car = 1, Cause = 1, Ruling = 2, Seconds = 5f, Other = -1 };
+            foreach (Machine m in machines) m.Client?.Rulings.Clear();
+            host.SendFlags(flags);
+            host.SendRulings(new[] { ruling });
+            bool flagged = PollUntil(ref now, () => machines.TrueForAll(m => m.Quit || m.Client == null
+                                        || m.Client.Flags != null && m.Client.Rulings.Count > 0), 2f, host, machines);
+            foreach (Machine m in machines)
+            {
+                if (m.Quit || m.Client?.Flags == null) continue;
+                FlagsState got = m.Client.Flags;
+                flagged &= got.SafetyCar == 2 && got.Zones.Length == 1 && got.Zones[0].Equals(flags.Zones[0])
+                        && got.Owed.Length == 1 && got.Owed[0].Equals(flags.Owed[0])
+                        && System.Linq.Enumerable.SequenceEqual(got.InYellow, flags.InYellow)
+                        && System.Linq.Enumerable.SequenceEqual(got.BlueFor, flags.BlueFor)
+                        && m.Client.Rulings[0].Equals(ruling);
+            }
+            Check(flagged, "flags (a yellow zone across the line, yellow and blue per car, a place owed), the safety car's phase "
+                         + "and a ruling reach every player intact");
+
+            // The safety car, a car the host drives on no grid slot, reaches everyone under its own id.
+            var safetyCarState = new CarState { Id = LanHost.SafetyCarId, Position = track.Line[0], Orientation = Quaternion.Identity, TimeSeconds = now };
+            host.SendSnapshot(new[] { safetyCarState }, now);
+            bool safetyCarSeen = PollUntil(ref now, () => machines.TrueForAll(m => m.Quit || m.Client == null || Contains(m.Client.Cars, LanHost.SafetyCarId)),
+                                           2f, host, machines);
+            Check(safetyCarSeen, $"the safety car reaches every player as car {LanHost.SafetyCarId}");
+
+            // Flags ten times a second and more, for a while: nobody may take a message arriving
+            // mid-check for the host hanging up, which once dropped every player of a real race.
+            float floodEnds = now + 3f;
+            while (now < floodEnds)
+            {
+                host.SendFlags(flags);
+                PollAll(host, machines, now);
+                now += 0.002f;
+            }
+            Check(machines.TrueForAll(m => m.Quit || m.Client == null || m.Client.State == LanClient.Phase.Racing),
+                  "flags sent 500 times a second for 3 s drop nobody: "
+                  + string.Join(", ", machines.FindAll(m => !m.Quit && m.Client != null && m.Client.State != LanClient.Phase.Racing)
+                                          .ConvertAll(m => $"{m.Name} {m.Client.State} ({m.Client.CloseReason})")));
+
             // Standings, as the host's race control sends them, reach every player intact.
             var standings = new Standings { RaceTimeS = now, Cars = new Standing[race.Grid.Length] };
             for (int i = 0; i < standings.Cars.Length; i++)
@@ -294,6 +369,8 @@ namespace CarRace.Harness
                 {
                     LapsComplete = (byte)(i % 3), ProgressM = 1234.5f + i, FinishedAtS = i == 0 ? 95.25f : -1f,
                     BestLapS = 88.125f + i, LastLapS = 90f, Left = quitter != null && race.Grid[i].Id == quitter.Id,
+                    PenaltyS = 5f * (i % 2), Warnings = (byte)(i % 3), Penalties = (byte)(i % 2), PitStops = (byte)(i % 2),
+                    Disqualified = i == 3, LapValid = i % 2 == 0, LastLapValid = i % 3 != 0,
                 };
             host.SendStandings(standings);
             bool same = PollUntil(ref now, () => machines.TrueForAll(m => m.Quit || m.Client == null

@@ -22,6 +22,10 @@ namespace CarRace.Net
         public const int MaxCars = 8;
         public const byte FirstAiId = 32;
 
+        /// <summary>The safety car's id in snapshots: a car the host drives, on no grid slot. The
+        /// highest the snapshot's six bit ids carry; 250 arrived as 58, and matched no car.</summary>
+        public const byte SafetyCarId = 63;
+
         /// <summary>A client heard nothing from for this long has gone, even if its TCP
         /// connection never said so, as happens when a cable is pulled.</summary>
         public const float TimeoutSeconds = 5f;
@@ -78,6 +82,13 @@ namespace CarRace.Net
         /// should take off the track.</summary>
         public readonly List<byte> Left = new List<byte>();
 
+        /// <summary>What players' machines have said about their own cars since the host last
+        /// looked, oldest first; the host's game takes them and clears the list.</summary>
+        public readonly List<Report> Reports = new List<Report>();
+
+        /// <summary>Why players were dropped, since the host last looked, for its log.</summary>
+        public readonly List<string> Dropped = new List<string>();
+
         public LanHost(string hostName, PlayerInfo me, string track, int port = DefaultPort)
         {
             _hostName = hostName;
@@ -107,6 +118,8 @@ namespace CarRace.Net
 
         public void SetTrack(string track) { Lobby.Track = track; SendLobby(); }
         public void SetLaps(int laps) { Lobby.Laps = (byte)Math.Clamp(laps, 1, 99); SendLobby(); }
+        public void SetTyreWear(int choice) { Lobby.TyreWear = (byte)Math.Clamp(choice, 0, 255); SendLobby(); }
+        public void SetSafetyCar(bool on) { Lobby.SafetyCar = on; SendLobby(); }
 
         /// <summary>As many as asked for, as long as the grid does not pass MaxCars.</summary>
         public void SetAiCars(int count)
@@ -137,7 +150,12 @@ namespace CarRace.Net
             foreach (Client client in _clients.ToArray())
             {
                 client.Tcp.Flush();
-                if (client.Tcp.Closed || now - client.LastHeard > TimeoutSeconds) Drop(client);
+                if (client.Tcp.Closed || now - client.LastHeard > TimeoutSeconds)
+                {
+                    Dropped.Add($"{client.Player?.Name ?? "a connection"}: "
+                              + (client.Tcp.Closed ? client.Tcp.Why : $"nothing for {now - client.LastHeard:0.0} s"));
+                    Drop(client);
+                }
             }
 
             if (Started && float.IsNaN(GoAtHostSeconds) && _hostReady
@@ -170,6 +188,7 @@ namespace CarRace.Net
             }
             foreach (byte id in new List<byte>(Cars.Ids)) Cars.Remove(id);
             Left.Clear();
+            Reports.Clear();
 
             byte[] message = Control.Return();
             foreach (Client client in _clients)
@@ -178,9 +197,19 @@ namespace CarRace.Net
         }
 
         /// <summary>The race as the host keeps it, to every player.</summary>
-        public void SendStandings(Standings standings)
+        public void SendStandings(Standings standings) => SendAll(Control.StandingsMessage(standings));
+
+        /// <summary>The flags and the safety car, to every player.</summary>
+        public void SendFlags(FlagsState flags) => SendAll(Control.FlagsMessage(flags));
+
+        /// <summary>New rulings, to every player, for their banners.</summary>
+        public void SendRulings(IReadOnlyList<RulingInfo> rulings)
         {
-            byte[] message = Control.StandingsMessage(standings);
+            if (rulings.Count > 0) SendAll(Control.RulingsMessage(rulings));
+        }
+
+        void SendAll(byte[] message)
+        {
             foreach (Client client in _clients)
                 if (client.Player != null) client.Tcp.Send(message);
         }
@@ -201,7 +230,8 @@ namespace CarRace.Net
 
             Race = new RaceStart
             {
-                Track = Lobby.Track, Laps = Lobby.Laps, Grid = grid.ToArray(),
+                Track = Lobby.Track, Laps = Lobby.Laps, TyreWear = Lobby.TyreWear, SafetyCar = Lobby.SafetyCar,
+                Grid = grid.ToArray(),
             };
             byte[] message = Control.Start(Race);
             foreach (Client client in _clients)
@@ -263,7 +293,12 @@ namespace CarRace.Net
             {
                 client.LastHeard = now;
                 try { Handle(client, message); }
-                catch (Exception) { client.Tcp.Dispose(); return; }   // malformed: not one of ours
+                catch (Exception e)   // malformed: not one of ours
+                {
+                    Dropped.Add($"{client.Player?.Name ?? "a connection"}: a {Control.TypeOf(message)} message did not read: {e.Message}");
+                    client.Tcp.Dispose();
+                    return;
+                }
             }
         }
 
@@ -296,6 +331,9 @@ namespace CarRace.Net
                 }
                 case Control.Type.Ready when client.Player != null && Started:
                     client.Loaded = true;
+                    break;
+                case Control.Type.Report when client.Player != null && Started:
+                    Reports.Add(Control.ReadReport(message, client.Player.Id));
                     break;
                 case Control.Type.Setup when client.Player != null && !Started:
                 {

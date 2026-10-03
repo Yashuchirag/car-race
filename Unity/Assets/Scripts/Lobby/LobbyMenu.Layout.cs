@@ -305,7 +305,7 @@ namespace CarRace.UnityGame
             if (lan)
             {
                 Section(area, ref y, "RACE SETTINGS");
-                GUI.Label(new Rect(area.x, y, area.width, Hud.Px(44f)), "In a LAN game the host sets the laps and AI cars, under MULTIPLAYER.", _small);
+                GUI.Label(new Rect(area.x, y, area.width, Hud.Px(44f)), "In a LAN game the host sets the laps, the AI cars, tyre wear and the safety car, under MULTIPLAYER.", _small);
                 return;
             }
             Section(area, ref y, "RACE SETTINGS");

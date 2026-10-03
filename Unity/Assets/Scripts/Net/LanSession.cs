@@ -143,6 +143,9 @@ namespace CarRace.UnityGame
             try
             {
                 Host = new LanHost(PlayerName, Me, scene);
+                // The host's own solo choices to begin with; it changes them in the lobby.
+                Host.Lobby.TyreWear = (byte)RaceSettings.WearChoice;
+                Host.Lobby.SafetyCar = RaceSettings.SafetyCarChoice;
                 State = Mode.Hosting;
             }
             catch (SocketException e)
@@ -247,9 +250,16 @@ namespace CarRace.UnityGame
                         : Client.Rejected == RejectReason.Full ? "That game is full."
                         : Client.Rejected == RejectReason.Started ? "That race has already started."
                         : "That host is running a different version of the game.";
+                    if (Client.CloseReason != null) Debug.Log($"LAN: the connection closed: {Client.CloseReason}");
                     Leave();
                     Status = why;
                 }
+            }
+
+            if (Host != null && Host.Dropped.Count > 0)
+            {
+                foreach (string why in Host.Dropped) Debug.Log($"LAN: dropped {why}");
+                Host.Dropped.Clear();
             }
 
             if (int.TryParse(Flag("-lanStartWhen"), out int players) && CanStart && Host.Humans >= players)

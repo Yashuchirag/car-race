@@ -74,6 +74,8 @@ namespace CarRace.Net
 
             foreach (CarState car in snapshot.Cars)
             {
+                // An id past what the bits hold would arrive as another car's, or none's.
+                if (car.Id >= 1 << IdBits) throw new ArgumentOutOfRangeException(nameof(car.Id), $"car id {car.Id} does not fit in {IdBits} bits");
                 writer.WriteBits(car.Id, IdBits);
                 writer.WriteFloat(car.Position.X, -WorldExtentM, WorldExtentM, PositionBits);
                 writer.WriteFloat(car.Position.Y, -WorldHeightM, WorldHeightM, HeightBits);

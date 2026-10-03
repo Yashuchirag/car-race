@@ -99,7 +99,9 @@ namespace CarRace.UnityGame
         public RaceControl Control => _control;
 
         /// <summary>The flags, kept where the standings are (solo and a LAN host); null on a client.</summary>
-        public RaceFlags Flags => _keepsStandings ? _flags : null;
+        /// <summary>The flags: kept here where the standings are (solo and a LAN host), and on a
+        /// LAN client the host's, copied in as they arrive (ApplyFlags).</summary>
+        public RaceFlags Flags => _flags;
 
         /// <summary>Your car is in the pit lane on the autopilot, and the driver doing it.</summary>
         public bool PlayerPitting => _pitting;
@@ -123,15 +125,27 @@ namespace CarRace.UnityGame
         // and outside RaceControl. Last in the field the AI see.
         SafetyCar _safety;
         CarController _safetyCar;
-        Renderer[] _lamps;
-        MaterialPropertyBlock _lampBlock;
+        SafetyCar.Phase _lanSafetyPhase;     // on a LAN client, the host's
+        bool _lanSafetyCar;                  // a LAN race with the safety car switched on
+        int _lanWear;                        // a LAN race's tyre wear choice
+        bool[] _remotePits;                  // on a LAN host, the players whose machines say they are in the pits
         bool[] _stopped, _inPits;
         float[] _speed;
         static readonly Color SafetyCarColour = new Color(0.78f, 0.8f, 0.83f);
-        static readonly Color LampOn = new Color(1f, 0.6f, 0.05f), LampOff = new Color(0.25f, 0.15f, 0.05f);
 
         /// <summary>The safety car, where the standings are kept and it is switched on; else null.</summary>
         public SafetyCar Safety => _keepsStandings ? _safety : null;
+
+        /// <summary>Where the safety car is: the host's own, or on a LAN client the host's word.</summary>
+        public SafetyCar.Phase SafetyCarPhase => _safety != null ? _safety.State : _lanSafetyPhase;
+        public bool SafetyCarOut => SafetyCarPhase != SafetyCar.Phase.In;
+
+        /// <summary>The safety car's car, which a LAN host sends with its own cars.</summary>
+        public CarController SafetyCarCar => _safety != null ? _safetyCar : null;
+
+        /// <summary>On a LAN client: tells the host something about this machine's own car, which
+        /// only it can judge (Net.ReportKind and a value). Set by LanRace.</summary>
+        [System.NonSerialized] public System.Action<byte, byte> ReportToHost;
 
         /// <summary>Seconds since GO, the clock the rulings are timed on.</summary>
         public float RaceTime => _raceTime;
@@ -144,8 +158,19 @@ namespace CarRace.UnityGame
         /// host) or is sent them (a client).
         /// </summary>
         public void UseLan(CarController[] ai, System.Collections.Generic.List<RemoteCar> remotes, int laps,
-                           System.Func<float> secondsToGo, CarController[] grid, string[] names, bool keepsStandings)
+                           System.Func<float> secondsToGo, CarController[] grid, string[] names, bool keepsStandings,
+                           int tyreWear = 0, bool safetyCar = false, CarController safetyCarCar = null)
         {
+            _lanWear = tyreWear;
+            _lanSafetyCar = safetyCar;
+            // The host drives the safety car: a copy LanRace made before turning any car remote.
+            if (keepsStandings && safetyCar && safetyCarCar != null)
+            {
+                _safetyCar = safetyCarCar;
+                _safetyCar.name = "Safety Car";
+                DressAsSafetyCar(_safetyCar, () => SafetyCarOut);
+            }
+            else if (safetyCarCar != null) Destroy(safetyCarCar.gameObject);
             aiCars = ai;
             _remotes = remotes;
             raceLaps = Mathf.Max(1, laps);
@@ -178,6 +203,7 @@ namespace CarRace.UnityGame
 
             // The safety car's car, copied before anything is added to the AI car it copies.
             if (!Lan && RaceSettings.SafetyCar) MakeSafetyCar();
+            if (_safetyCar != null) CarAudio.Attach(_safetyCar, player: false);
             CarAudio.Attach(player, player: true);
             foreach (CarController car in aiCars) CarAudio.Attach(car, player: false);
             if (_remotes != null)
@@ -285,7 +311,8 @@ namespace CarRace.UnityGame
             // Tyre wear for every car this machine drives, from the lobby (RaceSettings) in a solo
             // race; a LAN race has none yet. With wear on, the AI stop for tyres at their own
             // wear, each in a box of its own.
-            TyreWearRate = Lan ? 0f : RaceSettings.TyreWearRate;
+            TyreWearRate = Lan ? RaceSettings.WearRates[Mathf.Clamp(_lanWear, 0, RaceSettings.WearRates.Length - 1)] : RaceSettings.TyreWearRate;
+            _remotePits = new bool[names.Length];
             foreach (CarController car in _cars) car.Sim.TyreWearRate = TyreWearRate;
             for (int i = 0; i < aiCars.Length && TyreWearRate > 0f && _track.HasPitLane; i++)
             {
@@ -308,6 +335,7 @@ namespace CarRace.UnityGame
                 {
                     player.Sim.FitNewTyres();
                     if (_keepsStandings) _control.Entries[_playerEntry].PitStops++;
+                    else ReportToHost?.Invoke(5, 0);   // ReportKind.TyresFitted
                 };
                 MiniMap pitMap = FindAnyObjectByType<MiniMap>();
                 if (pitMap != null)
@@ -326,11 +354,15 @@ namespace CarRace.UnityGame
                 monitor.PenaliseRecovery = _cars[i] == player;
                 monitor.Judged = kind =>
                 {
-                    if (_started && _keepsStandings) _control.Judge(entry, kind, _raceTime);
+                    if (!_started) return;
+                    if (_keepsStandings) _control.Judge(entry, kind, _raceTime);
+                    else ReportToHost?.Invoke(2, (byte)kind);   // ReportKind.Judged
                 };
                 monitor.Left = () =>
                 {
-                    if (_started && _keepsStandings) _control.LeftTrack(entry);
+                    if (!_started) return;
+                    if (_keepsStandings) _control.LeftTrack(entry);
+                    else ReportToHost?.Invoke(1, 0);            // ReportKind.LeftTrack
                 };
             }
             gameObject.AddComponent<RaceHud>().Show(this, _playerEntry);
@@ -581,6 +613,12 @@ namespace CarRace.UnityGame
                 SpeedMs = Vector3.Dot(remote.Velocity, t.forward),
                 Plan = _playerPlan,
                 Position = position,
+                // Not heard from yet: wherever it was put, it is not on the road. A safety car
+                // copy never moved by the network was a car stood still under the circuit, and
+                // the field queued behind it.
+                Gone = !remote.Heard,
+                // In the pit lane, by where it is: a player's stop, or the safety car in its box.
+                Pitting = _track.InPitLaneAt(index, position),
             };
         }
 
@@ -601,7 +639,7 @@ namespace CarRace.UnityGame
             for (int r = 0; r < remotes; r++)
                 if (_remotes[r] != null && _remoteEntry.TryGetValue(_remotes[r], out var remote))
                     Mark(remote.Entry, aiCars.Length + 1 + r, _remotes[r].transform, _remotes[r].Velocity,
-                         _field[aiCars.Length + 1 + r].Index, remote.Progress.ProgressM(_track), false);
+                         _field[aiCars.Length + 1 + r].Index, remote.Progress.ProgressM(_track), _remotePits[remote.Entry]);
 
             foreach (var (car, passed) in _flags.Update(_track, _flagIndex, _flagProgress, _trouble, _racing, _raceTime))
                 _control.YellowPass(car, passed, _raceTime);
@@ -655,19 +693,26 @@ namespace CarRace.UnityGame
             if (aiCars.Length == 0) return;
             _safetyCar = Instantiate(aiCars[0].gameObject).GetComponent<CarController>();
             _safetyCar.name = "Safety Car";
+            DressAsSafetyCar(_safetyCar, () => SafetyCarOut);
+        }
+
+        /// <summary>The safety car's look, on the host's car or a client's copy of it: the
+        /// Supercar body in silver and a light bar whose lamps flash while <paramref name="flashing"/>.</summary>
+        public static void DressAsSafetyCar(CarController car, System.Func<bool> flashing)
+        {
             for (int d = 0; d < CarDesigns.Count; d++)
-                if (CarDesigns.NameOf(d) == "Supercar") CarDesigns.Apply(_safetyCar.transform, d);
-            PlayerSetup.Paint(_safetyCar.transform.Find("Body"), SafetyCarColour);
-            LightBar(_safetyCar.transform);
-            CarAudio.Attach(_safetyCar, player: false);
+                if (CarDesigns.NameOf(d) == "Supercar") CarDesigns.Apply(car.transform, d);
+            PlayerSetup.Paint(car.transform.Find("Body"), SafetyCarColour);
+            Renderer[] lamps = LightBar(car.transform);
+            if (lamps != null) car.gameObject.AddComponent<SafetyCarLamps>().Set(lamps, flashing);
         }
 
         /// <summary>A bar across the roof with an amber lamp at each end, flashed while it is out.
         /// No colliders: a collider on a child would join the car's rigid body.</summary>
-        void LightBar(Transform car)
+        static Renderer[] LightBar(Transform car)
         {
             Renderer body = car.Find("Body")?.GetComponent<Renderer>();
-            if (body == null) return;
+            if (body == null) return null;
             Bounds b = body.bounds;
             Vector3 roof = car.InverseTransformPoint(new Vector3(b.center.x, b.max.y, b.center.z));
             var bar = new GameObject("Light Bar").transform;
@@ -688,12 +733,21 @@ namespace CarRace.UnityGame
                 return part;
             }
             Part("Base", new Vector3(0f, 0.03f, 0f), new Vector3(1.1f, 0.06f, 0.22f), new Color(0.08f, 0.08f, 0.09f));
-            _lamps = new[]
+            return new[]
             {
-                Part("Lamp Left", new Vector3(-0.3f, 0.1f, 0f), new Vector3(0.42f, 0.09f, 0.18f), LampOff).GetComponent<Renderer>(),
-                Part("Lamp Right", new Vector3(0.3f, 0.1f, 0f), new Vector3(0.42f, 0.09f, 0.18f), LampOff).GetComponent<Renderer>(),
+                Part("Lamp Left", new Vector3(-0.3f, 0.1f, 0f), new Vector3(0.42f, 0.09f, 0.18f), SafetyCarLamps.Off).GetComponent<Renderer>(),
+                Part("Lamp Right", new Vector3(0.3f, 0.1f, 0f), new Vector3(0.42f, 0.09f, 0.18f), SafetyCarLamps.Off).GetComponent<Renderer>(),
             };
-            _lampBlock = new MaterialPropertyBlock();
+        }
+
+        /// <summary>The safety car's box, as a pose for a car of that ride height: in the working
+        /// lane past the others, pointing along the pit lane, a little above it to settle.</summary>
+        public static (Vector3 position, Quaternion rotation) SafetyCarBox(TrackData track, float cgHeight)
+        {
+            int box = track.SafetyCarBox;
+            Vec3 along = track.Tangent(track.LanePoints[TrackData.PitLaneIndex], box);
+            Vec3 spot = track.LanePoints[TrackData.PitLaneIndex][box] + TrackData.Right(along) * track.PitBoxShiftM;
+            return (new Vector3(spot.X, spot.Y + cgHeight + 0.3f, spot.Z), Quaternion.LookRotation(new Vector3(along.X, 0f, along.Z), Vector3.up));
         }
 
         /// <summary>The safety car's driver, its box, and its place in the pits before the start.</summary>
@@ -704,11 +758,8 @@ namespace CarRace.UnityGame
             var driver = new RaceDriver("Safety car", _track, config, PlanningLimits(config), 0.85f);
             _safety = new SafetyCar(driver, entries) { ForceAt = RaceSettings.SafetyCarAt };
             _safety.Park(_track);
-            int box = _track.SafetyCarBox;
-            Vec3 along = _track.Tangent(_track.LanePoints[TrackData.PitLaneIndex], box);
-            Vec3 spot = _track.LanePoints[TrackData.PitLaneIndex][box] + TrackData.Right(along) * _track.PitBoxShiftM;
-            _safetyCar.PlaceOnGrid(new Vector3(spot.X, spot.Y + config.CgHeight + 0.3f, spot.Z),
-                                   Quaternion.LookRotation(new Vector3(along.X, 0f, along.Z), Vector3.up));
+            var (position, rotation) = SafetyCarBox(_track, config.CgHeight);
+            _safetyCar.PlaceOnGrid(position, rotation);
             _safetyCar.Sim.TyreWearRate = 0f;
             _safetyCar.Autopilot = (body, dt) =>
             {
@@ -737,14 +788,73 @@ namespace CarRace.UnityGame
             if (_playerDriver != null) { _playerDriver.UnderSafetyCar = _safety.Out; _playerDriver.SafetyCarShare = _safety.Share; }
             _safety.Driver.UnderSafetyCar = _safety.Out;
             _safety.Driver.Observe(_track, _field, slot, elapsed);
+        }
 
-            if (_lamps == null) return;
-            bool flash = _safety.Out && Mathf.Repeat(_raceTime, 0.5f) < 0.25f;
-            for (int l = 0; l < _lamps.Length; l++)
+        // ---------------------------------------------------------------- LAN: flags and reports
+
+        /// <summary>
+        /// On a LAN host: what another player's machine says about its own car, by its grid slot
+        /// (<paramref name="entry"/>). Left the track and an offence go to race control as the
+        /// host's own car's do; into and out of the pits keeps its stops from raising a yellow
+        /// or the safety car; new tyres count a stop. Kinds as Net.ReportKind.
+        /// </summary>
+        public void OnRemoteReport(int entry, byte kind, byte value)
+        {
+            if (!_keepsStandings || _control == null || entry < 0 || entry >= _control.Entries.Length) return;
+            int before = _control.Events.Count;
+            switch (kind)
             {
-                _lamps[l].GetPropertyBlock(_lampBlock);
-                _lampBlock.SetColor("_BaseColor", _safety.Out && (l == 0) == flash ? LampOn : LampOff);
-                _lamps[l].SetPropertyBlock(_lampBlock);
+                case 1: if (_started) _control.LeftTrack(entry); break;
+                case 2: if (_started) _control.Judge(entry, (TrackLimits.Kind)value, _raceTime); break;
+                case 3: _remotePits[entry] = true; break;
+                case 4: _remotePits[entry] = false; break;
+                case 5: _control.Entries[entry].PitStops++; break;
+            }
+            Debug.Log($"LAN: report from slot {entry}: kind {kind} value {value}"
+                      + (_control.Events.Count > before ? $", ruled {_control.Events[before].Ruling} for {_control.Events[before].Cause}" : ""));
+        }
+
+        /// <summary>On a LAN host: the flags as every player's screen needs them, by grid slot.</summary>
+        public CarRace.Net.FlagsState FlagsForLan()
+        {
+            int n = _control.Entries.Length;
+            var flags = new CarRace.Net.FlagsState
+            {
+                SafetyCar = (byte)SafetyCarPhase,
+                Zones = _flags.Yellow.ConvertAll(z => new CarRace.Net.FlagZone { Car = (byte)z.Car, From = z.From, To = z.To }).ToArray(),
+                InYellow = new sbyte[n], BlueFor = new sbyte[n],
+                Owed = _control.Owing.ConvertAll(o => new CarRace.Net.FlagOwed { Car = (byte)o.Car, Passed = (byte)o.Passed, DeadlineS = o.DeadlineS }).ToArray(),
+            };
+            for (int e = 0; e < n; e++)
+            {
+                flags.InYellow[e] = (sbyte)_flags.InYellow[e];
+                flags.BlueFor[e] = (sbyte)BlueFor(e);
+            }
+            return flags;
+        }
+
+        /// <summary>On a LAN client: the host's flags, copied in, so the HUD, the minimap and the
+        /// give-back countdown show them as the host's own would.</summary>
+        public void ApplyFlags(CarRace.Net.FlagsState flags)
+        {
+            if (_flags == null || _control == null) return;
+            _lanSafetyPhase = (SafetyCar.Phase)flags.SafetyCar;
+            _flags.Yellow.Clear();
+            foreach (var z in flags.Zones)
+                _flags.Yellow.Add(new RaceFlags.Zone { Car = z.Car, From = z.From, To = z.To, Until = float.PositiveInfinity });
+            for (int e = 0; e < _flags.InYellow.Length && e < flags.InYellow.Length; e++)
+            {
+                _flags.InYellow[e] = flags.InYellow[e];
+                _flags.BlueFor[e] = flags.BlueFor[e];
+            }
+            _control.Owing.Clear();
+            foreach (var o in flags.Owed)
+                _control.Owing.Add(new RaceControl.Owed { Car = o.Car, Passed = o.Passed, DeadlineS = o.DeadlineS });
+            // An AI driving this player's car (-lanAutopilot) keeps behind the safety car too.
+            if (_playerDriver != null)
+            {
+                _playerDriver.UnderSafetyCar = SafetyCarOut;
+                _playerDriver.SafetyCarShare = SafetyCarPhase == SafetyCar.Phase.Ending ? 1f : SafetyCar.FieldShare;
             }
         }
 
@@ -765,6 +875,7 @@ namespace CarRace.UnityGame
                 float fromCentre = _track.LateralOffset(_track.Centre, i, ToNumerics(player.transform.position));
                 if (fromCentre < _track.WidthRight[i] + TrackData.PitWallGapM) return;
                 _pitDriver.EnterPitLane(i, _player.Laps);
+                if (!_keepsStandings) ReportToHost?.Invoke(3, 0);   // ReportKind.PitIn
                 _pitting = true;
                 player.Autopilot = (body, t) =>
                 {
@@ -777,6 +888,7 @@ namespace CarRace.UnityGame
                      || _pitDriver.Pit == RaceDriver.PitState.Leaving && into >= _track.IntoPit(_track.PitExitLine);
             if (!out_) return;
             _pitDriver.EndPit();
+            if (!_keepsStandings) ReportToHost?.Invoke(4, 0);       // ReportKind.PitOut
             _pitting = false;
             HandBack();
         }

@@ -21,6 +21,14 @@ namespace CarRace.Harness
     ///
     /// The bots drive the harness's flat ground, where the game's circuit has hills: the
     /// height they send is the road's there plus their own ride height, and they stay level.
+    ///
+    /// The bots keep to the safety car as the host's flags show it, and see a car in the pit
+    /// lane as pitting, as a player's game does.
+    ///
+    /// Race control over the network: Bot 1 reports a corner cut on its own car 20 s after GO,
+    /// as a player's game reports what its judge finds, and every bot prints what the host
+    /// sends back: rulings on itself, its penalty seconds in the standings, and the safety
+    /// car's phase as the flags carry it.
     /// </summary>
     public static class LanBots
     {
@@ -37,6 +45,9 @@ namespace CarRace.Harness
             public float SimTime;
             public float NextSend;
             public readonly Dictionary<byte, int> Hint = new Dictionary<byte, int>();
+            public bool Cut;
+            public float Penalty;
+            public int SafetyCar;
         }
 
         public static int Run(string address, int bots, float seconds, string tracks)
@@ -86,7 +97,7 @@ namespace CarRace.Harness
                         c.SetReady(true);
                     }
                     if (c.State == LanClient.Phase.Rejected) Once($"{bot.Name} turned away: {c.Rejected}");
-                    if (c.State == LanClient.Phase.Closed) Once($"{bot.Name} lost the host");
+                    if (c.State == LanClient.Phase.Closed) Once($"{bot.Name} lost the host: {c.CloseReason}");
                     if (c.Synced) Once($"{bot.Name} synced its clock");
 
                     if (c.Race != null && bot.Rig == null)
@@ -119,6 +130,32 @@ namespace CarRace.Harness
                     }
 
                     if (bot.Rig != null) Drive(bot, track, floor, now);
+
+                    // Race control: Bot 1's cut, and what the host says back to each bot.
+                    if (bot == list[0] && !bot.Cut && c.Race != null && !float.IsNaN(c.GoAtHostSeconds)
+                        && c.HostNow(now) > c.GoAtHostSeconds + 20f)
+                    {
+                        bot.Cut = true;
+                        c.SendReport(ReportKind.LeftTrack);
+                        c.SendReport(ReportKind.Judged, 3);   // TrackLimits.Kind.Cut
+                        Console.WriteLine($"  {now,5:0.0} s  {bot.Name} reports a corner cut on its own car");
+                    }
+                    int mySlot = c.Race != null ? Array.FindIndex(c.Race.Grid, p => p.Id == c.Id && !p.Ai) : -1;
+                    foreach (RulingInfo r in c.Rulings)
+                        if (r.Car == mySlot)
+                            Console.WriteLine($"  {now,5:0.0} s  {bot.Name} hears a ruling on itself: cause {r.Cause}, ruling {r.Ruling}, {r.Seconds:0} s");
+                    c.Rulings.Clear();
+                    if (c.Standings != null && mySlot >= 0 && mySlot < c.Standings.Cars.Length
+                        && c.Standings.Cars[mySlot].PenaltyS != bot.Penalty)
+                    {
+                        bot.Penalty = c.Standings.Cars[mySlot].PenaltyS;
+                        Console.WriteLine($"  {now,5:0.0} s  {bot.Name}'s standings now carry {bot.Penalty:0} s of penalty");
+                    }
+                    if (c.Flags != null && c.Flags.SafetyCar != bot.SafetyCar)
+                    {
+                        bot.SafetyCar = c.Flags.SafetyCar;
+                        Console.WriteLine($"  {now,5:0.0} s  {bot.Name} sees the safety car phase {bot.SafetyCar}");
+                    }
                 }
 
                 LanClient first = list[0].Client;
@@ -161,6 +198,11 @@ namespace CarRace.Harness
         {
             LanClient c = bot.Client;
             bool go = !float.IsNaN(c.GoAtHostSeconds) && c.HostNow(now) >= c.GoAtHostSeconds;
+            // Under the safety car as the host's flags say, as a player's game drives it
+            // (RaceDirector.ApplyFlags): phase 0 is in, 4 is ending.
+            int phase = c.Flags?.SafetyCar ?? 0;
+            bot.Driver.UnderSafetyCar = phase != 0;
+            bot.Driver.SafetyCarShare = phase == 4 ? 1f : SafetyCar.FieldShare;
             int steps = 0;
             while (bot.SimTime + Dt <= now)
             {
@@ -209,6 +251,7 @@ namespace CarRace.Harness
                 {
                     Index = index, LateralM = track.LateralOffset(track.Line, index, at),
                     SpeedMs = Vector3.Dot(seen.Velocity, forward), Plan = bot.Driver.Path.Plan, Position = at,
+                    Pitting = track.InPitLaneAt(index, at),
                 });
             }
             return field.ToArray();
