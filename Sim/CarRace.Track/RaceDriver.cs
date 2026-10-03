@@ -43,7 +43,30 @@ namespace CarRace.Track
             /// there. That took a while to find and the symptom looked nothing like the
             /// cause.</summary>
             public bool Gone;
+
+            /// <summary>Under a blue flag, giving way to the car <see cref="YieldingTo"/>.</summary>
+            public bool Yielding;
+            public int YieldingTo;
         }
+
+        // ---- flags, set by the owner every reaction interval before Observe ----------
+
+        /// <summary>In a yellow zone: no passing, except <see cref="YellowFor"/>, the car in
+        /// trouble, and a lift to YellowShare of the plan.</summary>
+        public bool UnderYellow;
+        public int YellowFor = -1;
+        public float YellowShare = 0.9f;
+
+        /// <summary>
+        /// Under a blue flag: the car about to lap this one, or -1. It holds its line and eases
+        /// to YieldShare of the plan until that car is by, which treats it as worth passing and
+        /// closes at the attacking gap. It does not move over: a car changing lanes to give way
+        /// while the other changed lanes to pass caused three contacts in five races on the test
+        /// circuit, against none when it only lifted. Lifting harder (0.75, 0.65) did not get the
+        /// lapping cars by any sooner; how soon they commit to a pass decides that.
+        /// </summary>
+        public int YieldTo = -1;
+        public float YieldShare = 0.85f;
 
         public readonly PathDriver Path;
         public readonly string Name;
@@ -214,6 +237,16 @@ namespace CarRace.Track
         public float WantedOffsetM => Path.Lane;
 
         float _cap = -1f;
+
+        /// <summary>
+        /// Share of its braking above which stopping short of the car ahead is an emergency, and
+        /// the cap drops at once instead of easing down (EaseCap). Easing is right for traffic: a
+        /// car that lifts mid-corner because another is near spins. It is wrong for a car that has
+        /// stopped dead ahead: easing at 4.5 m/s^2 behind one that stopped from 74 km/h in 2 s
+        /// carried every car behind it into it at 60 km/h, the whole field in turn.
+        /// </summary>
+        public float EmergencyShare = 0.5f;
+        bool _emergency;
         float _companyFor;          // seconds it stays in its lane after the car alongside has gone
         int _giveWayTo = -1;        // a car alongside it could not make room for, so drops behind
 
@@ -294,6 +327,7 @@ namespace CarRace.Track
             }
 
             IsFollowing = false;
+            _emergency = false;
             BlockedBy = blocker;
             BlockedGapM = blocker >= 0 ? ahead : 0f;
             _passSecure = _passing >= 0 && SideHolding(self, field[_passing], dt);
@@ -303,8 +337,12 @@ namespace CarRace.Track
             if (blocker >= 0)
             {
                 Seen front = field[blocker];
-                bool attacking = front.Plan != null
-                    && 1f - LapSeconds(Path.Plan, track) / LapSeconds(front.Plan, track) >= AttackAdvantage;
+                // A car giving way under a blue flag is closed on at the attacking gap: it is
+                // waiting to be passed, and hanging back at the following gap held leaders up
+                // for 20 s and more behind a car that had already moved over.
+                bool attacking = front.Yielding && front.YieldingTo == me
+                    || front.Plan != null
+                       && 1f - LapSeconds(Path.Plan, track) / LapSeconds(front.Plan, track) >= AttackAdvantage;
                 float wanted = MathF.Max(MinimumGapM,
                                          (attacking ? AttackSeconds : FollowSeconds) * self.SpeedMs);
 
@@ -333,6 +371,12 @@ namespace CarRace.Track
                 // caught up, and the cap came back on the brakes. Behind one car through one
                 // corner that alternated every two seconds until the car spun.
                 IsFollowing = cap < self.SpeedMs;
+                float frontSpeed = MathF.Max(front.SpeedMs, 0f);
+                float room = ahead - MinimumGapM;
+                float needed = self.SpeedMs <= frontSpeed ? 0f
+                             : room <= 0.5f ? float.MaxValue
+                             : (self.SpeedMs * self.SpeedMs - frontSpeed * frontSpeed) / (2f * room);
+                _emergency = needed > EmergencyShare * _brakingMs2;
                 if (Path.SpeedCapMs < 0f || cap < Path.SpeedCapMs) Path.SpeedCapMs = cap;
 
                 // Pull out as soon as it is being held up, which is anywhere inside the gap
@@ -340,9 +384,12 @@ namespace CarRace.Track
                 // at racing speed the gap a driver holds is longer than that distance, so it
                 // sits at exactly the range where it has decided not to try, and the whole
                 // field files round nose to tail with identical lap times.
+                // Under a yellow only the car in trouble may be passed. A car giving way under a
+                // blue flag is worth passing whatever the plans say: it is waiting to be passed.
                 bool retrying = blocker == _gaveUpOn && _retryIn > 0f;
-                if (_passing < 0 && !retrying && ahead < wanted + 10f
-                    && WorthPassing(track, self, front, ahead))
+                bool allowed = !UnderYellow || blocker == YellowFor;
+                if (_passing < 0 && !retrying && allowed && ahead < wanted + 10f
+                    && (front.Yielding && front.YieldingTo == me || WorthPassing(track, self, front, ahead)))
                 {
                     _passingCandidate = blocker;
                     float side = SideToPass(track, field, me);
@@ -362,6 +409,7 @@ namespace CarRace.Track
             // passing no longer counted as in the way, so it steered back in behind, where the
             // car counted again. Held-up cars swapped lanes every second or so, sometimes
             // changing side at 160 km/h, and that is what spun them.
+            if (_passing >= 0 && UnderYellow && _passing != YellowFor) _passing = -1;
             if (_passing >= 0) KeepPassing(track, field, me, dt);
             IsOvertaking = _passing >= 0;
 
@@ -410,6 +458,12 @@ namespace CarRace.Track
                 Path.LineOffsetM += Clamp(-Path.LineOffsetM, -step, step);
             }
 
+            float flagShare = UnderYellow ? YellowShare : YieldTo >= 0 ? YieldShare : 1f;
+            if (flagShare < 1f)
+            {
+                float flagCap = Path.PlanAt(self.Index) * flagShare;
+                if (Path.SpeedCapMs < 0f || flagCap < Path.SpeedCapMs) Path.SpeedCapMs = flagCap;
+            }
             Path.SpeedCapMs = EaseCap(track, self, Path.SpeedCapMs, dt);
         }
 
@@ -438,6 +492,7 @@ namespace CarRace.Track
             }
 
             if (_cap < 0f) _cap = MathF.Max(self.SpeedMs, wanted);
+            if (_emergency && wanted < _cap) return _cap = wanted;
             if (wanted >= _cap)
             {
                 _cap = MathF.Min(wanted, _cap + CapReleaseMs2 * dt);

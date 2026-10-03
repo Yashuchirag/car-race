@@ -26,10 +26,18 @@ namespace CarRace.Harness
         const float GridLateralM = 2f;
         const float CarLengthM = 4.4f;
         const float CarWidthM = 1.9f;
+        const float StopSeconds = 6f;          // under the 8 s after which a stopped car is retired
+        const float LappedPace = 0.55f;
+        // Held up no more than this behind a car under a blue flag, from 50 m behind to past.
+        // Not the 15 s first planned: lapping cars take 2 to 48 s, set by when they commit to a
+        // pass (see RaceDriver.YieldTo), so this catches a car that is never let by, not a slow pass.
+        const float BlueSeconds = 60f;
+        const float HeldUpM = 50f;
 
         public static int Run(CarConfig config, string circuit, int cars, int raceLaps,
                               int seed, bool reverseGrid, bool verbose = false,
-                              string csvPath = null, bool fastestLast = false)
+                              string csvPath = null, bool fastestLast = false,
+                              int stopCar = -1, float stopAt = 0f, int lappedCar = -1)
         {
             TrackData track;
             try
@@ -65,6 +73,8 @@ namespace CarRace.Harness
                          : fastestLast ? (i == 0 ? cars - 1 : i - 1)
                          : i;
                 names[grid] = $"AI {grid + 1:00}";
+                // --lapped N: car N slow enough to be lapped, for the blue flags.
+                if (grid + 1 == lappedCar) pace = LappedPace;
                 drivers[grid] = new RaceDriver(names[grid], track, config, limits, pace);
                 rigs[grid] = new Rig(config);
 
@@ -81,6 +91,21 @@ namespace CarRace.Harness
             var stoppedSince = new float[cars];
             var offLineM = new float[cars];
             var crawlingSince = new float[cars];
+            // Flags: yellow where a car is in trouble, blue for a car about to be lapped.
+            var flags = new RaceFlags(cars);
+            var flagIndex = new int[cars];
+            var flagProgress = new float[cars];
+            var trouble = new bool[cars];
+            var racing = new bool[cars];
+            var moving = new bool[cars];
+            // For every pair, when a car a lap up came within HeldUpM behind the other, or -1:
+            // how long lapping cars are held up, whichever one the blue flag names.
+            var heldSince = new float[cars, cars];
+            for (int a = 0; a < cars; a++) for (int b = 0; b < cars; b++) heldSince[a, b] = -1f;
+            var bluePair = new int[cars];
+            for (int i = 0; i < cars; i++) bluePair[i] = -1;
+            float yellowSeconds = 0f, longestBlue = 0f;
+            int yellowPasses = 0, blueFlags = 0;
             var judges = new TrackLimits[cars];
             for (int i = 0; i < cars; i++) judges[i] = new TrackLimits();
             var nextCrawlLog = new float[cars];
@@ -115,6 +140,64 @@ namespace CarRace.Harness
                 {
                     for (int i = 0; i < cars; i++)
                     {
+                        float forwardSpeed = Vector3.Dot(rigs[i].Body.State.Velocity, rigs[i].Body.State.Forward);
+                        if (forwardSpeed > 10f) moving[i] = true;
+                        Vector3 along = track.Tangent(track.Line, drivers[i].Path.Index);
+                        bool spun = Vector3.Dot(rigs[i].Body.State.Forward, along) < 0f;
+                        trouble[i] = moving[i] && (MathF.Abs(forwardSpeed) < 3f || spun);
+                        racing[i] = !retired[i] && !control.Entries[i].Disqualified;
+                        flagIndex[i] = drivers[i].Path.Index;
+                        flagProgress[i] = drivers[i].Path.ProgressM;
+                    }
+                    foreach (var (car, passed) in flags.Update(track, flagIndex, flagProgress, trouble, racing, time))
+                    {
+                        yellowPasses++;
+                        control.YellowPass(car, passed, time);
+                        if (verbose)
+                            Console.WriteLine($"    YELLOW  {time,7:0.0} s  {control.Entries[car].Name} passed "
+                                            + $"{control.Entries[passed].Name} under a yellow flag");
+                    }
+                    if (flags.Yellow.Count > 0) yellowSeconds += ReactionSteps * Dt;
+                    for (int i = 0; i < cars; i++)
+                    {
+                        drivers[i].UnderYellow = flags.InYellow[i] >= 0;
+                        drivers[i].YellowFor = flags.InYellow[i];
+                        drivers[i].YieldTo = flags.BlueFor[i];
+                        if (flags.BlueFor[i] >= 0 && bluePair[i] < 0) blueFlags++;
+                        bluePair[i] = flags.BlueFor[i];
+
+                        // Held up: a car at least a lap up within HeldUpM behind, until it is past
+                        // or drops back past the flag's reach.
+                        for (int b = 0; b < cars; b++)
+                        {
+                            if (b == i) continue;
+                            float lead = flagProgress[b] - flagProgress[i];
+                            float behind = RaceFlags.BehindOnRoad(track, flagProgress[i], flagProgress[b]);
+                            // Only directly behind: a lapping car queued behind another lapping car is
+                            // held up by that car, not by the one being lapped.
+                            bool between = false;
+                            for (int c = 0; c < cars && !between; c++)
+                            {
+                                if (c == i || c == b || !racing[c]) continue;
+                                float back = ((flagProgress[i] - flagProgress[c]) % track.LengthM + track.LengthM) % track.LengthM;
+                                between = back < behind;
+                            }
+                            bool held = racing[i] && racing[b] && !between && lead >= track.LengthM - HeldUpM && behind < HeldUpM;
+                            bool gone = !racing[i] || !racing[b] || lead < track.LengthM - RaceFlags.BlueBehindM
+                                     || behind > RaceFlags.BlueBehindM;
+                            if (held && heldSince[i, b] < 0f) heldSince[i, b] = time;
+                            if (heldSince[i, b] < 0f) continue;
+                            longestBlue = MathF.Max(longestBlue, time - heldSince[i, b]);
+                            if (!gone) continue;
+                            if (verbose)
+                                Console.WriteLine($"    BLUE    {time,7:0.0} s  {control.Entries[b].Name} by "
+                                                + $"{control.Entries[i].Name} after {time - heldSince[i, b]:0.0} s held up");
+                            heldSince[i, b] = -1f;
+                        }
+                    }
+
+                    for (int i = 0; i < cars; i++)
+                    {
                         field[i] = new RaceDriver.Seen
                         {
                             Index = drivers[i].Path.Index,
@@ -129,6 +212,8 @@ namespace CarRace.Harness
                             // road. Leaving it in the field makes everyone queue behind a
                             // parked car and the race never ends.
                             Gone = retired[i],
+                            Yielding = flags.BlueFor[i] >= 0,
+                            YieldingTo = flags.BlueFor[i],
                         };
                     }
 
@@ -200,6 +285,10 @@ namespace CarRace.Harness
                     if (entry.Finished) { retired[i] = true; continue; }
 
                     VehicleInputs input = drivers[i].Drive(rig.Body.State, Dt);
+                    // --stop-car N --stop-at S: car N stands on its brakes for StopSeconds from S,
+                    // where it is, for the yellow flags.
+                    if (i + 1 == stopCar && time >= stopAt && time < stopAt + StopSeconds)
+                        input = new VehicleInputs { Brake = 1f, Steer = input.Steer };
                     rig.Step(input);
 
                     // Track limits, judged as in Unity. A disqualified car is out of the race.
@@ -243,7 +332,20 @@ namespace CarRace.Harness
             csv?.Dispose();
             if (csvPath != null) Console.WriteLine($"  telemetry written to {csvPath}\n");
 
-            return Report(control, retired, track, totalContacts, contactsOnLapOne, time, timeout);
+            Console.WriteLine($"  flags: yellow out for {yellowSeconds:0.0} s, {yellowPasses} passes under yellow; "
+                            + $"{blueFlags} blue flags, the longest hold-up {longestBlue:0.0} s");
+            int result = Report(control, retired, track, totalContacts, contactsOnLapOne, time, timeout);
+            if (yellowPasses > 0)
+            {
+                Console.WriteLine("  FAIL: a car passed under a yellow flag.");
+                result = 1;
+            }
+            if (longestBlue > BlueSeconds)
+            {
+                Console.WriteLine($"  FAIL: a car lapping another was held up {longestBlue:0.0} s; it should be by within {BlueSeconds:0} s.");
+                result = 1;
+            }
+            return result;
         }
 
         /// <summary>

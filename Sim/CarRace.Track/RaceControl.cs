@@ -88,11 +88,14 @@ namespace CarRace.Track
 
         public enum Ruling { None, Warning, Penalty, Disqualified, GiveBack }
 
+        /// <summary>What a ruling is for.</summary>
+        public enum Cause { TrackLimits, Cut, PlaceKept, YellowFlag }
+
         public sealed class Event
         {
             public float TimeS;
             public int Car;
-            public TrackLimits.Kind Offence;
+            public Cause Cause;
             public Ruling Ruling;
             /// <summary>Seconds added by this ruling, if any.</summary>
             public float Seconds;
@@ -153,7 +156,8 @@ namespace CarRace.Track
                 }
             }
 
-            var ruled = new Event { TimeS = time, Car = car, Offence = offence, Ruling = ruling,
+            var ruled = new Event { TimeS = time, Car = car, Ruling = ruling,
+                                    Cause = offence == TrackLimits.Kind.Cut ? Cause.Cut : Cause.TrackLimits,
                                     Seconds = ruling == Ruling.Warning ? 0f : PenaltySeconds };
             Events.Add(ruled);
             return ruled;
@@ -190,7 +194,7 @@ namespace CarRace.Track
                 bool behindNow = Entries[other].ProgressM < mineNow;
                 if (!aheadThen || !behindNow || Owing.Exists(o => o.Car == car && o.Passed == other)) continue;
                 Owing.Add(new Owed { Car = car, Passed = other, DeadlineS = time + GiveBackSeconds });
-                Events.Add(new Event { TimeS = time, Car = car, Offence = TrackLimits.Kind.TrackLimits,
+                Events.Add(new Event { TimeS = time, Car = car, Cause = Cause.PlaceKept,
                                        Ruling = Ruling.GiveBack, Other = other });
             }
         }
@@ -216,17 +220,37 @@ namespace CarRace.Track
                 if (time < owed.DeadlineS && !offender.Finished) continue;
 
                 Owing.RemoveAt(k);
-                offender.Penalties++;
-                offender.PenaltyS += KeptPlaceSeconds;
-                Ruling ruling = Ruling.Penalty;
-                if (offender.Penalties >= PenaltiesToDisqualify)
-                {
-                    offender.Disqualified = true;
-                    ruling = Ruling.Disqualified;
-                }
-                Events.Add(new Event { TimeS = time, Car = owed.Car, Offence = TrackLimits.Kind.TrackLimits,
-                                       Ruling = ruling, Seconds = KeptPlaceSeconds, Other = owed.Passed });
+                Penalise(owed.Car, Cause.PlaceKept, KeptPlaceSeconds, owed.Passed, time);
             }
+        }
+
+        /// <summary>
+        /// A pass under a yellow flag: <paramref name="car"/> left a yellow zone ahead of
+        /// <paramref name="passed"/>, which was ahead of it when it went in. PenaltySeconds.
+        /// </summary>
+        public Event YellowPass(int car, int passed, float time)
+        {
+            Entry entry = Entries[car];
+            if (entry.Finished || entry.Disqualified) return null;
+            return Penalise(car, Cause.YellowFlag, PenaltySeconds, passed, time);
+        }
+
+        /// <summary>A penalty of <paramref name="seconds"/>, the black flag if it is the
+        /// PenaltiesToDisqualify-th.</summary>
+        Event Penalise(int car, Cause cause, float seconds, int other, float time)
+        {
+            Entry entry = Entries[car];
+            entry.Penalties++;
+            entry.PenaltyS += seconds;
+            Ruling ruling = Ruling.Penalty;
+            if (entry.Penalties >= PenaltiesToDisqualify)
+            {
+                entry.Disqualified = true;
+                ruling = Ruling.Disqualified;
+            }
+            var ruled = new Event { TimeS = time, Car = car, Cause = cause, Ruling = ruling, Seconds = seconds, Other = other };
+            Events.Add(ruled);
+            return ruled;
         }
 
         /// <summary>

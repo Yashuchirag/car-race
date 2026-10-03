@@ -95,7 +95,10 @@ namespace CarRace.Harness
                                    Array.IndexOf(args, "--reverse-grid") >= 0,
                                    Array.IndexOf(args, "--verbose") >= 0,
                                    raceCsv >= 0 && raceCsv + 1 < args.Length ? args[raceCsv + 1] : null,
-                                   Array.IndexOf(args, "--fastest-last") >= 0);
+                                   Array.IndexOf(args, "--fastest-last") >= 0,
+                                   Option(args, "--stop-car", -1),
+                                   Option(args, "--stop-at", 0),
+                                   Option(args, "--lapped", -1));
             }
 
             int lapIndex = Array.IndexOf(args, "--lap");
