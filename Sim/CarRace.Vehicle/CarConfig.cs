@@ -177,6 +177,19 @@ namespace CarRace.Vehicle
             };
         }
 
+        /// <summary>
+        /// A copy sharing nothing that can be changed in place. The arrays are the trap: the
+        /// Unity definition hands out its own gear ratio array, so a setup that edited a
+        /// shallow copy's gears would quietly retune the asset, and every car built from it.
+        /// </summary>
+        public CarConfig Clone()
+        {
+            var copy = (CarConfig)MemberwiseClone();
+            copy.GearRatios = (float[])GearRatios?.Clone();
+            copy.TorqueCurve = ((float Rpm, float Torque)[])TorqueCurve?.Clone();
+            return copy;
+        }
+
         // ---- derived ----------------------------------------------------------
         public float FrontAxleToCg => Wheelbase * (1f - FrontWeightBias);
         public float RearAxleToCg => Wheelbase * FrontWeightBias;

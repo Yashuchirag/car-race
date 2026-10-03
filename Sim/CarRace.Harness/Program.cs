@@ -40,6 +40,7 @@ namespace CarRace.Harness
             if (Array.IndexOf(args, "--grip") >= 0) { GripSweep(config); return 0; }
             if (Array.IndexOf(args, "--corner") >= 0) { CornerSweep(config); return 0; }
             if (Array.IndexOf(args, "--dump") >= 0) { DumpCase(config, "/tmp/case.csv"); return 0; }
+            if (Array.IndexOf(args, "--setup-sweep") >= 0) return SetupSweep.Run(config);
 
             int netIndex = Array.IndexOf(args, "--net");
             if (netIndex >= 0)
@@ -183,7 +184,7 @@ namespace CarRace.Harness
             return axes && order;
         }
 
-        static float ZeroToHundred(CarConfig config)
+        internal static float ZeroToHundred(CarConfig config)
         {
             var rig = new Rig(config);
             rig.Settle();
@@ -201,7 +202,7 @@ namespace CarRace.Harness
         /// grip limit the car understeers, then snaps, and what gets measured is a
         /// spin rather than a cornering limit.
         /// </summary>
-        static float Skidpad(CarConfig config)
+        internal static float Skidpad(CarConfig config)
         {
             float best = 0f;
             foreach (float radius in new[] { 20f, 30f, 45f, 60f })
@@ -209,7 +210,7 @@ namespace CarRace.Harness
             return best;
         }
 
-        static float RunSkidpad(CarConfig config, float radius, bool verbose)
+        internal static float RunSkidpad(CarConfig config, float radius, bool verbose)
         {
             var rig = new Rig(config);
             rig.Settle();
@@ -288,7 +289,7 @@ namespace CarRace.Harness
             return best;
         }
 
-        static float BrakingDistance(CarConfig config)
+        internal static float BrakingDistance(CarConfig config)
         {
             var rig = new Rig(config);
             rig.Settle();
@@ -303,7 +304,7 @@ namespace CarRace.Harness
             return (rig.Body.State.Position - start).Length();
         }
 
-        static float TopSpeed(CarConfig config)
+        internal static float TopSpeed(CarConfig config)
         {
             var rig = new Rig(config);
             rig.Settle();
@@ -323,7 +324,7 @@ namespace CarRace.Harness
         /// A steering pulse at speed, then hands off. The car must damp its own yaw
         /// and keep going roughly straight rather than diverging into a spin.
         /// </summary>
-        static (bool, string) StraightLineStability(CarConfig config)
+        internal static (bool, string) StraightLineStability(CarConfig config)
         {
             var rig = new Rig(config);
             rig.Settle();
