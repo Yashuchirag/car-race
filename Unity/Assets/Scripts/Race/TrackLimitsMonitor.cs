@@ -11,8 +11,9 @@ namespace CarRace.UnityGame
     /// RaceDirector, as CarContacts is, which turns each offence into a ruling.
     ///
     /// Follows the car along the centreline with the same short forward search as TrackRecovery
-    /// and LapTimer. A jump of more than 25 m in one step is a recovery or a restart, and cancels
-    /// any excursion: the car was carried back, it did not drive back.
+    /// and LapTimer. With PenaliseRecovery (the player's car), R while off the track is judged
+    /// Kind.Recovery, a penalty; otherwise a recovery, and any jump of more than 25 m in one step
+    /// (a restart), cancels the excursion.
     /// </summary>
     public sealed class TrackLimitsMonitor : MonoBehaviour
     {
@@ -29,6 +30,10 @@ namespace CarRace.UnityGame
 
         public TrackLimits Judge { get; } = new TrackLimits();
 
+        /// <summary>R off the track is penalised: set for the player's car. The AI being put
+        /// back on their line after being stuck is not.</summary>
+        public bool PenaliseRecovery;
+
         CarController _car;
         Rigidbody _body;
         TrackPath _path;
@@ -44,6 +49,11 @@ namespace CarRace.UnityGame
             _body = GetComponent<Rigidbody>();
             _last = _body.position;
             _index = path.Nearest(_last, 0, back: 0, ahead: path.centre.Length - 1);
+            _car.Recovering += () =>
+            {
+                if (!PenaliseRecovery) { Judge.Cancel(); return; }
+                Report(Judge.Recovered(_index));
+            };
         }
 
         void FixedUpdate()
@@ -62,8 +72,14 @@ namespace CarRace.UnityGame
             TrackLimits.Kind kind = Judge.Step(_track, _index, ToSim(position), ToSim(transform.forward),
                                                ToSim(_body.linearVelocity), _car.Sim.Wheels, Time.fixedDeltaTime);
             if (!wasOff && Judge.Off) Left?.Invoke();
+            Report(kind);
+        }
+
+        void Report(TrackLimits.Kind kind)
+        {
             if (kind == TrackLimits.Kind.None) return;
-            if (kind != TrackLimits.Kind.Incident) Offences++;
+            if (kind == TrackLimits.Kind.TrackLimits || kind == TrackLimits.Kind.Cut || kind == TrackLimits.Kind.Recovery)
+                Offences++;
             if (RaceDirector.AiLogAsked)
                 Debug.Log($"LIMITS t {Time.timeSinceLevelLoad:0.00} {name} {kind}: drove {Judge.LastDrivenM:0.0} m " +
                           $"where the road needs {Judge.LastLegalM:0.0} m");

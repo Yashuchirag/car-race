@@ -41,12 +41,16 @@ namespace CarRace.UnityGame
         string _banner = "";
 
         // Track limits: a lap during which the car committed an offence is invalid, shown so and
-        // never a best lap, a best sector or the trace the delta is measured against.
+        // never a best lap, a best sector or the trace the delta is measured against. An
+        // excursion is judged when the car is back on the road, so a lap that ends with the car
+        // off the track waits (_held) until it is: the offence belongs to that lap, not the next.
         TrackLimitsMonitor _limits;
         int _offencesAtLapStart;
         bool _lastLapInvalid;
         bool LapInvalid => _limits != null && _limits.Offences != _offencesAtLapStart;
         int Offences => _limits != null ? _limits.Offences : 0;
+        bool OffTrack => _limits != null && _limits.Judge.Off;
+        (float lap, float[] splits, float[] trace, int offencesAtStart)? _held;
 
         const float WrongWaySeconds = 0.75f;
 
@@ -77,6 +81,16 @@ namespace CarRace.UnityGame
             }
             _lastPosition = position;
             _index = track.Nearest(position, _index);
+
+            // A lap that ended off the track, decided once the excursion has been judged; an
+            // offence then is that lap's, so the lap now being driven starts clean of it.
+            if (_held.HasValue && !OffTrack)
+            {
+                var held = _held.Value;
+                _held = null;
+                CompleteLap(held.lap, held.splits, held.trace, Offences != held.offencesAtStart);
+                _offencesAtLapStart = Offences;
+            }
 
             Vector3 along = track.centre[(_index + 1) % n] - track.centre[(_index - 1 + n) % n];
             Vector3 facing = car.transform.forward;
@@ -111,31 +125,9 @@ namespace CarRace.UnityGame
             {
                 _splits[2] = lap - _splits[0] - _splits[1];
                 _sectorDoneAt[2] = _clock;
-                bool invalid = LapInvalid;
-                if (!invalid && lap < _bestTraceLap)
-                {
-                    // Measured from the line. Lap one starts on the grid behind it, so its
-                    // trace reads the seconds to the line everywhere; without this, the lap
-                    // after it would show that much gained all the way round.
-                    float atLine = float.IsNaN(_trace[0]) ? 0f : _trace[0];
-                    _bestTrace = new float[_trace.Length];
-                    for (int i = 0; i < _trace.Length; i++) _bestTrace[i] = _trace[i] - atLine;
-                    _bestTraceLap = lap;
-                }
+                if (OffTrack) _held = (lap, (float[])_splits.Clone(), (float[])_trace.Clone(), _offencesAtLapStart);
+                else CompleteLap(lap, _splits, _trace, LapInvalid);
                 System.Array.Fill(_trace, float.NaN);
-                if (!invalid)
-                    for (int s = 0; s < 3; s++) _bestSectors[s] = Mathf.Min(_bestSectors[s], _splits[s]);
-                _lastLap = lap;
-                _lastLapInvalid = invalid;
-                _laps++;
-                if (!invalid && (_bestLap < 0f || lap < _bestLap))
-                {
-                    _banner = $"NEW BEST LAP   {Format(lap)}";
-                    _bannerUntil = _clock + BannerSeconds;
-                    _bestLap = lap;
-                    PlayerPrefs.SetFloat(BestKey, lap);
-                    PlayerPrefs.Save();
-                }
                 _lapStart = _clock;
                 _nextGate = 0;
                 _offencesAtLapStart = Offences;
@@ -143,6 +135,35 @@ namespace CarRace.UnityGame
 
             // After the gates, so the step that ends a lap records the new lap's 0.
             _trace[_index] = _clock - _lapStart;
+        }
+
+        /// <summary>A lap's result: the last lap, and the best lap, sectors and delta trace if it
+        /// is valid and quicker.</summary>
+        void CompleteLap(float lap, float[] splits, float[] trace, bool invalid)
+        {
+            if (!invalid && lap < _bestTraceLap)
+            {
+                // Measured from the line. Lap one starts on the grid behind it, so its
+                // trace reads the seconds to the line everywhere; without this, the lap
+                // after it would show that much gained all the way round.
+                float atLine = float.IsNaN(trace[0]) ? 0f : trace[0];
+                _bestTrace = new float[trace.Length];
+                for (int i = 0; i < trace.Length; i++) _bestTrace[i] = trace[i] - atLine;
+                _bestTraceLap = lap;
+            }
+            if (!invalid)
+                for (int s = 0; s < 3; s++) _bestSectors[s] = Mathf.Min(_bestSectors[s], splits[s]);
+            _lastLap = lap;
+            _lastLapInvalid = invalid;
+            _laps++;
+            if (!invalid && (_bestLap < 0f || lap < _bestLap))
+            {
+                _banner = $"NEW BEST LAP   {Format(lap)}";
+                _bannerUntil = _clock + BannerSeconds;
+                _bestLap = lap;
+                PlayerPrefs.SetFloat(BestKey, lap);
+                PlayerPrefs.Save();
+            }
         }
 
         // The timing panel, in the manner of broadcast graphics: purple a new best sector or

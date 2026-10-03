@@ -32,12 +32,20 @@ namespace CarRace.Track
             /// <summary>No offence yet on the lap being driven; only a valid lap can be a best lap.</summary>
             public bool LapValid = true;
 
+            /// <summary>The lap just completed was invalid: by the line, or by an excursion that
+            /// began on it and was judged on the next.</summary>
+            public bool LastLapValid = true;
+
             public bool Finished => FinishedAtS >= 0f;
 
             /// <summary>The time the result is ranked on: the race time plus any penalties.</summary>
             public float ResultS => FinishedAtS + PenaltyS;
             internal float LapStartedAtS;
             internal int LastSeenLaps = int.MinValue;
+            // The best lap before the last one counted, to take back if the last turns out
+            // invalid; and the lap count when the car last left the track.
+            internal float BestBeforeLastS = float.MaxValue;
+            internal int OffOnLaps = int.MinValue;
         }
 
         public readonly Entry[] Entries;
@@ -68,6 +76,8 @@ namespace CarRace.Track
             if (entry.LastSeenLaps >= 0)
             {
                 entry.LastLapS = time - entry.LapStartedAtS;
+                entry.BestBeforeLastS = entry.BestLapS;
+                entry.LastLapValid = entry.LapValid;
                 if (entry.LapValid && entry.LastLapS < entry.BestLapS) entry.BestLapS = entry.LastLapS;
                 entry.LapsComplete = laps;
                 if (laps >= RaceLaps && !entry.Finished) entry.FinishedAtS = time;
@@ -90,7 +100,7 @@ namespace CarRace.Track
         public enum Ruling { None, Warning, Penalty, Disqualified, GiveBack }
 
         /// <summary>What a ruling is for.</summary>
-        public enum Cause { TrackLimits, Cut, PlaceKept, YellowFlag, SafetyCar }
+        public enum Cause { TrackLimits, Cut, PlaceKept, YellowFlag, SafetyCar, Recovery }
 
         public sealed class Event
         {
@@ -124,20 +134,30 @@ namespace CarRace.Track
         public readonly List<Event> Events = new List<Event>();
 
         /// <summary>
-        /// Rules on a judged excursion. A cut costs PenaltySeconds at once; running wide is a
-        /// warning, under the black and white flag, Warnings times, and a penalty every time
-        /// after that. Either makes the lap invalid. The PenaltiesToDisqualify-th penalty is
-        /// the black flag. Incidents and anything after the flag or a disqualification cost
-        /// nothing.
+        /// Rules on a judged excursion. A cut, or a recovery (R) off the track, costs
+        /// PenaltySeconds at once; running wide at a corner is a warning, under the black and
+        /// white flag, Warnings times, and a penalty every time after that. Any of them makes the
+        /// lap invalid: the lap the car left the track on, which is the one just completed if it
+        /// came back after crossing the line. The PenaltiesToDisqualify-th penalty is the black
+        /// flag. Incidents, excursions on a straight, and anything after the flag or a
+        /// disqualification cost nothing.
         /// </summary>
         public Event Judge(int car, TrackLimits.Kind offence, float time)
         {
             Entry entry = Entries[car];
-            if (offence != TrackLimits.Kind.Cut && offence != TrackLimits.Kind.TrackLimits) return null;
+            if (offence != TrackLimits.Kind.Cut && offence != TrackLimits.Kind.TrackLimits
+                && offence != TrackLimits.Kind.Recovery) return null;
             if (entry.Finished || entry.Disqualified) return null;
             OwePlaces(car, time);
 
-            entry.LapValid = false;
+            if (entry.OffOnLaps != int.MinValue && entry.OffOnLaps < entry.LastSeenLaps && entry.LastSeenLaps > 0)
+            {
+                // Left the track before the line and came back after it: the offence is the last lap's.
+                if (entry.LastLapValid) entry.BestLapS = entry.BestBeforeLastS;
+                entry.LastLapValid = false;
+            }
+            else entry.LapValid = false;
+            entry.OffOnLaps = int.MinValue;
             Ruling ruling;
             if (offence == TrackLimits.Kind.TrackLimits && entry.Warnings < Warnings)
             {
@@ -158,7 +178,8 @@ namespace CarRace.Track
             }
 
             var ruled = new Event { TimeS = time, Car = car, Ruling = ruling,
-                                    Cause = offence == TrackLimits.Kind.Cut ? Cause.Cut : Cause.TrackLimits,
+                                    Cause = offence == TrackLimits.Kind.Cut ? Cause.Cut
+                                          : offence == TrackLimits.Kind.Recovery ? Cause.Recovery : Cause.TrackLimits,
                                     Seconds = ruling == Ruling.Warning ? 0f : PenaltySeconds };
             Events.Add(ruled);
             return ruled;
@@ -173,6 +194,7 @@ namespace CarRace.Track
         /// </summary>
         public void LeftTrack(int car)
         {
+            Entries[car].OffOnLaps = Entries[car].LastSeenLaps;
             _progressWhenOff ??= new float[Entries.Length * Entries.Length];
             for (int other = 0; other < Entries.Length; other++)
                 _progressWhenOff[car * Entries.Length + other] = Entries[other].ProgressM;

@@ -20,6 +20,9 @@ namespace CarRace.Harness
     ///   A wide run at every corner: from the apex to 40 m past the corner, the line moved out
     ///   to 2.5 m beyond the outside edge. Every one must be a track limits offence, never a cut.
     ///
+    ///   A run onto the grass in the middle of the longest straight, 2.5 m past the right
+    ///   edge for about 80 m: ruled Straight, never an offence, since nothing is gained there.
+    ///
     ///   A clean lap on the racing line at AI pace: no offence at all.
     /// </summary>
     public static class LimitsTest
@@ -69,6 +72,19 @@ namespace CarRace.Harness
                     });
                     cases.Add((new Case { Circuit = name, Kind = "wide", Corner = index }, wide, w0, w1));
                 }
+                int middle = StraightMiddle(track);
+                if (middle >= 0)
+                {
+                    int s0 = track.Wrap(middle - Samples(track, 60f)), s1 = track.Wrap(middle + Samples(track, 60f));
+                    int sSpan = ((s1 - s0) % track.Count + track.Count) % track.Count;
+                    TrackData off = WithLine(track, s0, s1, (i, t) =>
+                    {
+                        float blend = MathF.Min(1f, MathF.Min(t, 1f - t) * sSpan * track.SampleSpacingM / 20f);
+                        Vector3 r = TrackData.Right(track.Tangent(track.Centre, i));
+                        return Vector3.Lerp(track.Line[i], track.Centre[i] + r * (track.WidthRight[i] + 2.5f), blend);
+                    });
+                    cases.Add((new Case { Circuit = name, Kind = "straight" }, off, s0, s1));
+                }
                 clean.Add((new Case { Circuit = name, Kind = "clean" }, track));
             }
 
@@ -76,39 +92,45 @@ namespace CarRace.Harness
             {
                 var (c, track, start, end) = cases[k];
                 Drive(config, track, track.Wrap(start - Samples(track, 400f)), end, c.Rulings, laps: 0);
-                c.Passed = c.Kind == "cut"
-                    ? c.Rulings.Contains(TrackLimits.Kind.Cut)
-                    : c.Rulings.Contains(TrackLimits.Kind.TrackLimits) && !c.Rulings.Contains(TrackLimits.Kind.Cut);
+                c.Passed = c.Kind == "cut" ? c.Rulings.Contains(TrackLimits.Kind.Cut)
+                         : c.Kind == "straight" ? c.Rulings.Contains(TrackLimits.Kind.Straight)
+                                                  && !c.Rulings.Contains(TrackLimits.Kind.TrackLimits) && !c.Rulings.Contains(TrackLimits.Kind.Cut)
+                         : c.Rulings.Contains(TrackLimits.Kind.TrackLimits) && !c.Rulings.Contains(TrackLimits.Kind.Cut);
             });
             Parallel.For(0, clean.Count, k =>
             {
                 var (c, track) = clean[k];
                 Drive(config, track, 0, 0, c.Rulings, laps: 1);
-                c.Passed = c.Rulings.TrueForAll(r => r == TrackLimits.Kind.Incident);
+                c.Passed = c.Rulings.TrueForAll(r => r == TrackLimits.Kind.Incident || r == TrackLimits.Kind.Straight);
             });
 
             bool allPassed = true;
-            Console.WriteLine($"  {"circuit",-12} {"cuts ruled cut",16} {"wide runs warned",18} {"clean lap offences",20}   result");
-            Console.WriteLine("  " + new string('-', 80));
+            Console.WriteLine($"  {"circuit",-12} {"cuts ruled cut",16} {"wide runs warned",18} {"straight let go",16} {"clean lap offences",20}   result");
+            Console.WriteLine("  " + new string('-', 97));
             foreach (string name in circuits)
             {
                 var cuts = cases.FindAll(x => x.Case.Circuit == name && x.Case.Kind == "cut").ConvertAll(x => x.Case);
                 var wides = cases.FindAll(x => x.Case.Circuit == name && x.Case.Kind == "wide").ConvertAll(x => x.Case);
+                var straights = cases.FindAll(x => x.Case.Circuit == name && x.Case.Kind == "straight").ConvertAll(x => x.Case);
                 Case lap = clean.Find(x => x.Case.Circuit == name).Case;
-                bool ok = cuts.TrueForAll(c => c.Passed) && wides.TrueForAll(c => c.Passed) && lap.Passed;
+                bool ok = cuts.TrueForAll(c => c.Passed) && wides.TrueForAll(c => c.Passed) && straights.TrueForAll(c => c.Passed) && lap.Passed;
                 allPassed &= ok;
                 Console.WriteLine($"  {name,-12} {$"{cuts.FindAll(c => c.Passed).Count} of {cuts.Count}",16} "
                                 + $"{$"{wides.FindAll(c => c.Passed).Count} of {wides.Count}",18} "
-                                + $"{lap.Rulings.FindAll(r => r != TrackLimits.Kind.Incident).Count,20}   {(ok ? "PASS" : "FAIL")}");
+                                + $"{$"{straights.FindAll(c => c.Passed).Count} of {straights.Count}",16} "
+                                + $"{lap.Rulings.FindAll(r => r != TrackLimits.Kind.Incident && r != TrackLimits.Kind.Straight).Count,20}   {(ok ? "PASS" : "FAIL")}");
                 foreach (Case c in cuts) if (!c.Passed)
                     Console.WriteLine($"      cut at corner {c.Corner} ({c.SavedM:0} m shorter than legal) ruled {Describe(c.Rulings)}");
                 foreach (Case c in wides) if (!c.Passed)
                     Console.WriteLine($"      wide at corner {c.Corner} ruled {Describe(c.Rulings)}");
+                foreach (Case c in straights) if (!c.Passed)
+                    Console.WriteLine($"      off on the straight ruled {Describe(c.Rulings)}");
                 if (!lap.Passed) Console.WriteLine($"      clean lap ruled {Describe(lap.Rulings)}");
             }
             bool rules = Rules(out string why);
-            string said = rules ? "two warnings then penalties, a cut penalised at once, the black flag at the fifth "
-                                + "penalty, invalid laps never best, penalties at the flag, places gained off track given back or 10 s each   PASS"
+            string said = rules ? "two warnings then penalties, a cut or R off track penalised at once, the black flag at the fifth "
+                                + "penalty, invalid laps never best, an offence across the line on the lap it began, penalties at the flag, "
+                                + "places gained off track given back or 10 s each   PASS"
                                 : "FAIL: " + why;
             Console.WriteLine($"\n  rulings: {said}");
             allPassed &= rules;
@@ -152,7 +174,49 @@ namespace CarRace.Harness
             if (order[0].Name != "B" || order[1].Name != "A" || !order[1].Disqualified)
             { why = "the classification does not put the disqualified car last"; return false; }
             if (order[0].ResultS != 205f) { why = $"B's result {order[0].ResultS} s, expected 205 with its penalty"; return false; }
-            return GiveBack(out why);
+            return AcrossTheLine(out why) && GiveBack(out why);
+        }
+
+        /// <summary>Off before the line and judged after it: the lap just completed is invalid,
+        /// loses its place as best, and the new lap is clean. And R off the track: a penalty at
+        /// once, the warnings untouched.</summary>
+        static bool AcrossTheLine(out string why)
+        {
+            why = null;
+            var control = new RaceControl(new[] { "S" }, 5);
+            RaceControl.Entry s = control.Entries[0];
+            control.Update(0, 0f, 0, 0f);
+            control.Update(0, 70f, 1, 0f);           // lap 1, 70 s, valid: best
+            control.LeftTrack(0);                     // off at the end of lap 2...
+            control.Update(0, 130f, 2, 0f);          // ...60 s, best for the moment...
+            control.Judge(0, TrackLimits.Kind.TrackLimits, 131f);   // ...judged on lap 3
+            if (s.LastLapValid || !s.LapValid) { why = "an offence begun before the line was charged to the new lap"; return false; }
+            if (s.BestLapS != 70f) { why = $"best lap {s.BestLapS} s after the lap it was set on turned out invalid, expected 70"; return false; }
+            control.Update(0, 195f, 3, 0f);          // lap 3, 65 s, valid: best
+            if (s.BestLapS != 65f || !s.LastLapValid) { why = "the lap after an offence across the line was not clean"; return false; }
+
+            RaceControl.Event recovered = control.Judge(0, TrackLimits.Kind.Recovery, 200f);
+            if (recovered == null || recovered.Ruling != RaceControl.Ruling.Penalty || recovered.Cause != RaceControl.Cause.Recovery
+                || s.Warnings != 1 || s.LapValid)
+            { why = "R off the track was not a penalty at once with the lap invalid"; return false; }
+            if (control.Judge(0, TrackLimits.Kind.Straight, 210f) != null) { why = "an excursion on a straight was ruled on"; return false; }
+            return true;
+        }
+
+        /// <summary>The middle of the longest truly straight stretch (radius over 1 km), if it
+        /// is at least 400 m long; else -1.</summary>
+        static int StraightMiddle(TrackData track)
+        {
+            int n = track.Count;
+            float[] k = TrackData.SignedCurvature(track.Centre, Math.Max(1, (int)MathF.Round(6f / track.SampleSpacingM)));
+            int best = 0, bestEnd = -1, run = 0;
+            for (int s = 0; s < 2 * n; s++)
+            {
+                run = MathF.Abs(k[s % n]) < 1f / 1000f ? run + 1 : 0;
+                if (run > best && run < n) { best = run; bestEnd = s; }
+            }
+            if (best * track.SampleSpacingM < 400f) return -1;
+            return track.Wrap(bestEnd - best / 2);
         }
 
         /// <summary>Places gained off the track: kept past the deadline costs 10 s a place;

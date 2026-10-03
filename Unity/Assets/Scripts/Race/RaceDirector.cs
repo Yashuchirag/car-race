@@ -323,6 +323,7 @@ namespace CarRace.UnityGame
                 // keeps the standings. Not before GO: the grid is no place for an offence.
                 var monitor = _cars[i].gameObject.AddComponent<TrackLimitsMonitor>();
                 monitor.Watch(track, _track);
+                monitor.PenaliseRecovery = _cars[i] == player;
                 monitor.Judged = kind =>
                 {
                     if (_started && _keepsStandings) _control.Judge(entry, kind, _raceTime);

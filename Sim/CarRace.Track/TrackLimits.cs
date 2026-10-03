@@ -26,14 +26,20 @@ namespace CarRace.Track
     ///   left and where it came back, and at least CutMinimumM less: it went round less of the
     ///   track than anyone staying on it could have;
     ///
-    ///   otherwise a track limits offence, a car that ran wide.
+    ///   a track limits offence, a car that ran wide, if it was at a corner: the road turns
+    ///   CornerDegrees or more from CornerLookBackM before it left to where it came back, which
+    ///   takes in running wide at a corner's exit;
     ///
-    /// A recovery (R, or the AI being put back on its line) cancels the excursion: the car did
-    /// not drive back, it was carried.
+    ///   otherwise nothing: off on a straight, where leaving the road gains nothing, the grass
+    ///   only slows the car. Kind.Straight, for the logs.
+    ///
+    /// A recovery while off (R) ends the excursion as Kind.Recovery, which race control
+    /// penalises: the car was carried back to the road, so nobody can tell what it gained.
+    /// The AI being put back on its line cancels the excursion instead (Cancel).
     /// </summary>
     public sealed class TrackLimits
     {
-        public enum Kind { None, Incident, TrackLimits, Cut }
+        public enum Kind { None, Incident, TrackLimits, Cut, Straight, Recovery }
 
         /// <summary>How far past the edge a wheel's contact point must be to count as off: about
         /// half a tyre's width, so a tyre still touching the line does not.</summary>
@@ -43,6 +49,8 @@ namespace CarRace.Track
         public const float CrawlMs = 15f / 3.6f;
         public const float CutShare = 0.97f;
         public const float CutMinimumM = 3f;
+        public const float CornerDegrees = 15f;
+        public const float CornerLookBackM = 60f;
 
         /// <summary>The last excursion judged, for the HUD and the logs.</summary>
         public Kind LastKind { get; private set; }
@@ -64,6 +72,23 @@ namespace CarRace.Track
         {
             _off = false;
             _backFor = 0f;
+        }
+
+        /// <summary>
+        /// The car has been recovered (R). Off the track, that ends the excursion as
+        /// Kind.Recovery; on it, nothing has happened and it returns None.
+        /// </summary>
+        public Kind Recovered(int index)
+        {
+            if (!_off) return Kind.None;
+            _off = false;
+            _backFor = 0f;
+            LastFromIndex = _fromIndex;
+            LastToIndex = index;
+            LastDrivenM = _driven;
+            LastLegalM = 0f;
+            LastKind = Kind.Recovery;
+            return LastKind;
         }
 
         /// <summary>
@@ -114,8 +139,34 @@ namespace CarRace.Track
 
             if (_worstSlip > SpinDegrees || _slowest < CrawlMs) LastKind = Kind.Incident;
             else if (_driven < CutShare * LastLegalM && LastLegalM - _driven >= CutMinimumM) LastKind = Kind.Cut;
-            else LastKind = Kind.TrackLimits;
+            else if (AtCorner(track, _fromIndex, index)) LastKind = Kind.TrackLimits;
+            else LastKind = Kind.Straight;
             return LastKind;
+        }
+
+        /// <summary>
+        /// Whether the road turns CornerDegrees or more, in total, from CornerLookBackM before
+        /// <paramref name="fromIndex"/> to <paramref name="toIndex"/>. Total turning, left and
+        /// right added, so a chicane counts; measured every 3 m or so, over the centreline's
+        /// sample noise.
+        /// </summary>
+        public static bool AtCorner(TrackData track, int fromIndex, int toIndex)
+        {
+            int n = track.Count;
+            int span = ((toIndex - fromIndex) % n + n) % n;
+            if (span > n / 2) span = 0;
+            int back = (int)MathF.Round(CornerLookBackM / track.SampleSpacingM);
+            int stride = Math.Max(1, (int)MathF.Round(3f / track.SampleSpacingM));
+            float turned = 0f;
+            Vector3 previous = track.Tangent(track.Centre, track.Wrap(fromIndex - back));
+            for (int k = -back + stride; k <= span; k += stride)
+            {
+                Vector3 tangent = track.Tangent(track.Centre, track.Wrap(fromIndex + k));
+                float cos = MathF.Max(-1f, MathF.Min(1f, Vector3.Dot(Vector3.Normalize(previous), Vector3.Normalize(tangent))));
+                turned += MathF.Acos(cos) * 180f / MathF.PI;
+                previous = tangent;
+            }
+            return turned >= CornerDegrees;
         }
 
         /// <summary>Whether a point is more than WheelMarginM past either road edge at a sample.</summary>

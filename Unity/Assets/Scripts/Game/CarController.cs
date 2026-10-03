@@ -343,8 +343,13 @@ namespace CarRace.UnityGame
         /// at the start when the scene has no track. After a spin the car used to be sent back
         /// to the start, which threw the lap away, so a spin felt unrecoverable when it was not.
         /// </summary>
+        /// <summary>Called just before Recover moves the car, so a track limits judge can rule on
+        /// a car carried back from off the track.</summary>
+        public event Action Recovering;
+
         public void Recover()
         {
+            Recovering?.Invoke();
             if (RecoveryPose == null) { Respawn(); return; }
             var pose = RecoveryPose();
             PlaceAt(pose.position, pose.rotation);

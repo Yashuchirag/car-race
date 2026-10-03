@@ -143,13 +143,14 @@ namespace CarRace.UnityGame
             string offence = _banner.Cause == RaceControl.Cause.PlaceKept ? $"Kept the place on {other}"
                            : _banner.Cause == RaceControl.Cause.YellowFlag ? $"Passed {other} under a yellow flag"
                            : _banner.Cause == RaceControl.Cause.SafetyCar ? $"Passed {other} under the safety car"
+                           : _banner.Cause == RaceControl.Cause.Recovery ? "Recovered with R from off the track"
                            : _banner.Cause == RaceControl.Cause.Cut ? "Corner cut: you gained by leaving the track"
-                           : "Track limits: four wheels off";
+                           : "Track limits: four wheels off at a corner";
             switch (_banner.Ruling)
             {
                 case RaceControl.Ruling.Warning:
                     DrawBanner(false, false, $"TRACK LIMITS  ·  WARNING {Mathf.Min(ruled.Warnings, RaceControl.Warnings)} OF {RaceControl.Warnings}",
-                               $"Four wheels off. After {RaceControl.Warnings} warnings each one costs {RaceControl.PenaltySeconds:0} s. Lap invalid.");
+                               $"Four wheels off at a corner. After {RaceControl.Warnings} warnings each one costs {RaceControl.PenaltySeconds:0} s. Lap invalid.");
                     break;
                 case RaceControl.Ruling.Penalty:
                     DrawBanner(false, false, $"+{_banner.Seconds:0} s PENALTY",
