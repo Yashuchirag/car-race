@@ -228,7 +228,17 @@ namespace CarRace.UnityGame
             {
                 int entry = i < aiCars.Length ? _aiEntry[i] : _playerEntry;
                 _cars[i].gameObject.AddComponent<CarContacts>().Touched = () => _control.Entries[entry].Contacts++;
+
+                // Track limits, judged on the machine that drives the car, ruled on by whoever
+                // keeps the standings. Not before GO: the grid is no place for an offence.
+                var monitor = _cars[i].gameObject.AddComponent<TrackLimitsMonitor>();
+                monitor.Watch(track, _track);
+                monitor.Judged = kind =>
+                {
+                    if (_started && _keepsStandings) _control.Judge(entry, kind, _raceTime);
+                };
             }
+            gameObject.AddComponent<RaceHud>().Show(this, _playerEntry);
         }
 
         /// <summary>The same limits the harness plans with (LapRun.PlanningLimits), from the
@@ -498,7 +508,7 @@ namespace CarRace.UnityGame
         void Update()
         {
             // Not while paused: the settings menu outlives the scene, and so would its pause.
-            if (_control != null && PlayerEntry.Finished && Time.timeScale > 0f && Input.GetKeyDown(KeyCode.Return))
+            if (_control != null && RaceOver && Time.timeScale > 0f && Input.GetKeyDown(KeyCode.Return))
             {
                 if (!Lan)
                 {
@@ -514,6 +524,9 @@ namespace CarRace.UnityGame
         }
 
         RaceControl.Entry PlayerEntry => _control.Entries[_playerEntry];
+
+        /// <summary>The player has taken the flag, or been shown the black one.</summary>
+        bool RaceOver => PlayerEntry.Finished || PlayerEntry.Disqualified;
 
         void OnGUI()
         {
@@ -560,7 +573,7 @@ namespace CarRace.UnityGame
                 GUI.Label(new Rect(0f, Screen.height * 0.3f, Screen.width, Hud.Px(160f)), "GO", _bigStyle);
             }
 
-            if (me.Finished) Results();
+            if (me.Finished || me.Disqualified) Results();
         }
 
         /// <summary>The classification, as the harness prints it: finishers in the order they
@@ -568,7 +581,7 @@ namespace CarRace.UnityGame
         void Results()
         {
             RaceControl.Entry[] order = _control.Classification();
-            float winner = order[0].Finished ? order[0].FinishedAtS : 0f;
+            float winner = order[0].Finished ? order[0].ResultS : 0f;
             float fastest = float.MaxValue;
             foreach (RaceControl.Entry e in order) fastest = Mathf.Min(fastest, e.BestLapS);
 
@@ -576,23 +589,26 @@ namespace CarRace.UnityGame
             // only for the cars this machine drives, so that column is left out.
             var text = new System.Text.StringBuilder();
             int nameWidth = Lan ? 12 : 8;
-            text.AppendLine($"{"Pos",-4}{"Driver".PadRight(nameWidth)}{"Grid",5}{"+/-",5}{"Best lap",11}{"Race time",11}{"Gap",10}{(Lan ? "" : $"{"Hits",6}")}");
-            text.AppendLine(new string('-', Lan ? 58 : 60));
+            text.AppendLine($"{"Pos",-4}{"Driver".PadRight(nameWidth)}{"Grid",5}{"+/-",5}{"Best lap",11}{"Race time",11}{"Gap",10}{"Pen",6}{(Lan ? "" : $"{"Hits",6}")}");
+            text.AppendLine(new string('-', Lan ? 64 : 66));
             foreach (RaceControl.Entry e in order)
             {
                 int gained = e.Grid - e.Position;
                 bool left = HasLeft(System.Array.IndexOf(_control.Entries, e));
                 string name = e.Name.Length > nameWidth - 1 ? e.Name.Substring(0, nameWidth - 1) : e.Name;
                 string best = e.BestLapS < float.MaxValue ? Format(e.BestLapS) + (e.BestLapS == fastest ? "*" : " ") : "-";
-                string time = e.Finished ? Format(e.FinishedAtS) : left ? "left" : $"lap {Mathf.Clamp(e.LapsComplete + 1, 1, raceLaps)}";
-                string gap = !e.Finished ? (left ? "-" : "running") : e.Position == 1 ? "-" : $"+{e.FinishedAtS - winner:0.000}";
-                text.AppendLine($"{e.Position,-4}{name.PadRight(nameWidth)}{e.Grid,5}{(gained == 0 ? "0" : gained.ToString("+0;-0")),5}{best,11}{time,11}{gap,10}{(Lan ? "" : $"{e.Contacts,6}")}");
+                // Race time with penalties in it, as the order is; the Pen column says how much.
+                string time = e.Disqualified ? "DSQ" : e.Finished ? Format(e.ResultS) : left ? "left" : $"lap {Mathf.Clamp(e.LapsComplete + 1, 1, raceLaps)}";
+                string gap = e.Disqualified ? "-" : !e.Finished ? (left ? "-" : "running") : e.Position == 1 ? "-" : $"+{e.ResultS - winner:0.000}";
+                string pen = e.PenaltyS > 0f ? $"+{e.PenaltyS:0}s" : "-";
+                string position = e.Disqualified ? "DSQ" : e.Position.ToString();
+                text.AppendLine($"{position,-4}{name.PadRight(nameWidth)}{e.Grid,5}{(gained == 0 || e.Disqualified ? "0" : gained.ToString("+0;-0")),5}{best,11}{time,11}{gap,10}{pen,6}{(Lan ? "" : $"{e.Contacts,6}")}");
             }
             text.AppendLine();
-            text.Append("* fastest lap");
+            text.Append("* fastest lap. Penalties are in the race time.");
 
             float buttons = Hud.Px(64f);
-            float width = Hud.Px(640f), height = Hud.Px(30f + 26f * (order.Length + 5)) + buttons;
+            float width = Hud.Px(700f), height = Hud.Px(30f + 26f * (order.Length + 5)) + buttons;
             var panel = new Rect(Screen.width * 0.5f - width * 0.5f, Screen.height * 0.5f - height * 0.5f, width, height);
             GUI.Box(panel, GUIContent.none);
             GUI.Box(panel, GUIContent.none);   // twice: one box is too faint to read a table over

@@ -40,6 +40,14 @@ namespace CarRace.UnityGame
         float _bannerUntil = -1f;
         string _banner = "";
 
+        // Track limits: a lap during which the car committed an offence is invalid, shown so and
+        // never a best lap, a best sector or the trace the delta is measured against.
+        TrackLimitsMonitor _limits;
+        int _offencesAtLapStart;
+        bool _lastLapInvalid;
+        bool LapInvalid => _limits != null && _limits.Offences != _offencesAtLapStart;
+        int Offences => _limits != null ? _limits.Offences : 0;
+
         const float WrongWaySeconds = 0.75f;
 
         string BestKey => $"CarRace.BestLap.{track.trackName}";
@@ -56,6 +64,7 @@ namespace CarRace.UnityGame
         void FixedUpdate()
         {
             _clock += Time.fixedDeltaTime;
+            if (_limits == null) _limits = car.GetComponent<TrackLimitsMonitor>();
             Vector3 position = car.position;
             int n = track.centre.Length;
 
@@ -82,6 +91,7 @@ namespace CarRace.UnityGame
                 _running = true;
                 _lapStart = _clock;
                 _nextGate = 0;
+                _offencesAtLapStart = Offences;
             }
 
             float lap = _clock - _lapStart;
@@ -101,7 +111,8 @@ namespace CarRace.UnityGame
             {
                 _splits[2] = lap - _splits[0] - _splits[1];
                 _sectorDoneAt[2] = _clock;
-                if (lap < _bestTraceLap)
+                bool invalid = LapInvalid;
+                if (!invalid && lap < _bestTraceLap)
                 {
                     // Measured from the line. Lap one starts on the grid behind it, so its
                     // trace reads the seconds to the line everywhere; without this, the lap
@@ -112,10 +123,12 @@ namespace CarRace.UnityGame
                     _bestTraceLap = lap;
                 }
                 System.Array.Fill(_trace, float.NaN);
-                for (int s = 0; s < 3; s++) _bestSectors[s] = Mathf.Min(_bestSectors[s], _splits[s]);
+                if (!invalid)
+                    for (int s = 0; s < 3; s++) _bestSectors[s] = Mathf.Min(_bestSectors[s], _splits[s]);
                 _lastLap = lap;
+                _lastLapInvalid = invalid;
                 _laps++;
-                if (_bestLap < 0f || lap < _bestLap)
+                if (!invalid && (_bestLap < 0f || lap < _bestLap))
                 {
                     _banner = $"NEW BEST LAP   {Format(lap)}";
                     _bannerUntil = _clock + BannerSeconds;
@@ -125,6 +138,7 @@ namespace CarRace.UnityGame
                 }
                 _lapStart = _clock;
                 _nextGate = 0;
+                _offencesAtLapStart = Offences;
             }
 
             // After the gates, so the step that ends a lap records the new lap's 0.
@@ -184,10 +198,16 @@ namespace CarRace.UnityGame
             var timeRect = new Rect(x + pad, row, width - 2f * pad, Hud.Px(50f));
             _bigStyle.normal.textColor = new Color(0f, 0f, 0f, 0.6f);
             GUI.Label(new Rect(timeRect.x + Hud.Px(2f), timeRect.y + Hud.Px(2f), timeRect.width, timeRect.height), Format(current), _bigStyle);
-            _bigStyle.normal.textColor = Color.white;
+            bool invalid = _running && LapInvalid;
+            _bigStyle.normal.textColor = invalid ? Muted : Color.white;
             GUI.Label(timeRect, Format(current), _bigStyle);
 
-            if (_running && _bestTrace != null && !float.IsNaN(_bestTrace[_index]))
+            if (invalid)
+            {
+                _deltaStyle.normal.textColor = Behind;
+                GUI.Label(timeRect, "INVALID", _deltaStyle);
+            }
+            else if (_running && _bestTrace != null && !float.IsNaN(_bestTrace[_index]))
             {
                 float delta = current - _bestTrace[_index];
                 _deltaStyle.normal.textColor = delta <= 0f ? Ahead : Behind;
@@ -208,7 +228,8 @@ namespace CarRace.UnityGame
             }
             row += barHeight + Hud.Px(10f);
 
-            Row(x, pad, width, ref row, "LAST", _lastLap < 0f ? "-" : Format(_lastLap), _lastLap > 0f && _lastLap <= _bestLap ? Purple : Color.white);
+            Row(x, pad, width, ref row, "LAST", _lastLap < 0f ? "-" : _lastLapInvalid ? $"INVALID  {Format(_lastLap)}" : Format(_lastLap),
+                _lastLapInvalid ? Behind : _lastLap > 0f && _lastLap <= _bestLap ? Purple : Color.white);
             Row(x, pad, width, ref row, "BEST", _bestLap < 0f ? "-" : Format(_bestLap), _bestLap < 0f ? Color.white : Purple);
             if (reference) Row(x, pad, width, ref row, "AI REF", Format(track.referenceLapSeconds), Muted);
 
