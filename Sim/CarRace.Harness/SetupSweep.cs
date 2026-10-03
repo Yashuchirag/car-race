@@ -53,6 +53,7 @@ namespace CarRace.Harness
             public Corner Slow, Fast;
             public float BrakingSideslip, BrakingCompression;
             public float NudgeYaw, NudgeSideslip;
+            public float TurnRadius, SteerSeconds;
 
             public float Compression => MathF.Max(BrakingCompression, MathF.Max(Slow.Compression, Fast.Compression));
             public float Sideslip => MathF.Max(MathF.Max(BrakingSideslip, NudgeSideslip), MathF.Max(Slow.Sideslip, Fast.Sideslip));
@@ -99,6 +100,9 @@ namespace CarRace.Harness
                 ("all for oversteer", new[] { ("springFront", false), ("springRear", true), ("barFront", false),
                     ("barRear", true), ("downforceFront", true), ("downforceRear", false), ("diffPower", true),
                     ("diffCoast", false), ("diffPreload", false), ("brakeBias", false) }),
+                ("steering all quick", new[] { ("steerLock", true), ("steerFalloff", true), ("steerRate", true) }),
+                ("quick steering, oversteer", new[] { ("steerLock", true), ("steerFalloff", true), ("steerRate", true),
+                    ("barFront", false), ("barRear", true), ("downforceFront", true), ("downforceRear", false) }),
             };
             Array.Resize(ref configs, configs.Length + combinations.Length);
             for (int c = 0; c < combinations.Length; c++)
@@ -198,6 +202,21 @@ namespace CarRace.Harness
                                + $"{high.Fast.YawRate:0.0000} rad/s, top {low.TopSpeed:0.0} to {high.TopSpeed:0.0} km/h";
                         ok = high.Fast.YawRate < low.Fast.YawRate && high.TopSpeed < low.TopSpeed;
                         break;
+                    case "steerLock":
+                        expect = $"more lock turns tighter: radius {low.TurnRadius:0.00} to {high.TurnRadius:0.00} m "
+                               + $"(worked out {CarSetup.TurningRadiusM(configs[2 + 2 * i], 4f):0.00} to {CarSetup.TurningRadiusM(configs[3 + 2 * i], 4f):0.00})";
+                        ok = high.TurnRadius < low.TurnRadius
+                          && MathF.Abs(CarSetup.TurningRadiusM(configs[2 + 2 * i], 4f) / low.TurnRadius - 1f) < 0.05f
+                          && MathF.Abs(CarSetup.TurningRadiusM(configs[3 + 2 * i], 4f) / high.TurnRadius - 1f) < 0.05f;
+                        break;
+                    case "steerFalloff":
+                        expect = $"less sensitive keeps more lock at speed: fast yaw {low.Fast.YawRate:0.0000} to {high.Fast.YawRate:0.0000} rad/s";
+                        ok = high.Fast.YawRate > low.Fast.YawRate;
+                        break;
+                    case "steerRate":
+                        expect = $"quicker reaches lock sooner: {low.SteerSeconds:0.000} to {high.SteerSeconds:0.000} s";
+                        ok = high.SteerSeconds < low.SteerSeconds;
+                        break;
                     default:
                         if (s.Key == $"gear{lastGear}")
                         {
@@ -269,7 +288,43 @@ namespace CarRace.Harness
             (m.StraightStable, m.StraightDetail) = Program.StraightLineStability(config);
             (m.BrakingSideslip, m.BrakingCompression) = HardBraking(config);
             (m.NudgeYaw, m.NudgeSideslip) = Nudge(config);
+            m.TurnRadius = FullLockRadius(config);
+            m.SteerSeconds = SteerTime(config);
             return m;
+        }
+
+        /// <summary>Full lock at walking pace, 4 m/s, held for 6 s: the radius the car turns on,
+        /// speed over yaw rate.</summary>
+        static float FullLockRadius(CarConfig config)
+        {
+            var rig = new Rig(config);
+            rig.Settle();
+            var input = new VehicleInputs();
+            const float Speed = 4f;
+            float yaw = 0f;
+            int samples = 0;
+            while (rig.Time < 10f)
+            {
+                rig.HoldSpeed(ref input, Speed);
+                input.Steer = 1f;
+                rig.Step(input);
+                if (rig.Time < 6f) continue;
+                yaw += MathF.Abs(rig.YawRate);
+                samples++;
+            }
+            float mean = samples > 0 ? yaw / samples : 0f;
+            return mean > 1e-4f ? rig.ForwardSpeed / mean : float.PositiveInfinity;
+        }
+
+        /// <summary>From straight to 90% of full lock, standing still: how fast the rack moves.</summary>
+        static float SteerTime(CarConfig config)
+        {
+            var rig = new Rig(config);
+            rig.Settle();
+            float start = rig.Time;
+            var input = new VehicleInputs { Steer = 1f, Brake = 1f };
+            while (rig.Sim.SteerPosition < 0.9f && rig.Time < start + 5f) rig.Step(input);
+            return rig.Time - start;
         }
 
         /// <summary>

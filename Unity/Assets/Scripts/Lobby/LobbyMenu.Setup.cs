@@ -14,8 +14,8 @@ namespace CarRace.UnityGame
     /// </summary>
     public sealed partial class LobbyMenu
     {
-        static readonly string[] SetupTabs = { "SUSPENSION", "BRAKES", "GEARBOX", "DIFFERENTIAL", "AERO", "ASSISTS" };
-        const int AssistsTab = 5;
+        static readonly string[] SetupTabs = { "SUSPENSION", "BRAKES", "GEARBOX", "DIFFERENTIAL", "AERO", "STEERING", "ASSISTS" };
+        const int AssistsTab = 6;
 
         static readonly (SetupStore.Assist assist, string label, string hint)[] Assists =
         {
@@ -39,7 +39,7 @@ namespace CarRace.UnityGame
 
         void OpenSetup()
         {
-            _setup = SetupStore.Load(SetupScene, car.ToConfig());
+            _setup = SetupStore.Load(SetupScene, SetupStore.Baseline(car.ToConfig()));
             _setupOpen = true;
         }
 
@@ -63,7 +63,7 @@ namespace CarRace.UnityGame
             float fy = inside.y;
             for (int k = 0; k < _stats.Length; k++)
             {
-                if (k == 6) fy += Hud.Px(10f);   // the balances, apart from the figures
+                if (k == 7) fy += Hud.Px(10f);   // the balances, apart from the figures
                 MetricRow(inside, ref fy, k);
             }
             _small.alignment = TextAnchor.UpperLeft;
@@ -121,16 +121,20 @@ namespace CarRace.UnityGame
                     bool changed = !_setup.IsDefault(s);
                     _text.alignment = TextAnchor.MiddleRight;
                     _text.normal.textColor = changed ? AccentLight : Color.white;
-                    GUI.Label(new Rect(row.x, row.y, row.width - Hud.Px(150f), row.height),
-                              $"{s.Format(value)} {s.Unit}".Trim(), _text);
+                    string shown = $"{s.Format(value)} {s.Unit}".Trim();
+                    // The lock, with the turning radius it gives beside it.
+                    if (s.Key == "steerLock") shown += $"  ·  {CarSetup.TurningRadiusM(_setup.Apply()):0.0} m radius";
+                    GUI.Label(new Rect(row.x, row.y, row.width - Hud.Px(282f), row.height), shown, _text);
                     _text.normal.textColor = Color.white;
                     _text.alignment = TextAnchor.MiddleLeft;
-                    if (changed)
+
+                    // Back to the body's own value, at any time; it says what that is.
+                    var back = new Rect(row.xMax - Hud.Px(270f), row.y + Hud.Px(5f), Hud.Px(130f), row.height - Hud.Px(10f));
+                    if (Button(back, changed ? $"DEFAULT {s.Format(_setup.Default(s))}" : "DEFAULT", changed, back: true))
                     {
-                        _small.alignment = TextAnchor.MiddleLeft;
-                        GUI.Label(new Rect(row.x + row.width * 0.45f, row.y, row.width * 0.25f, row.height),
-                                  $"built {s.Format(_setup.Default(s))}", _small);
-                        _small.alignment = TextAnchor.UpperLeft;
+                        _setup.Set(s, _setup.Default(s));
+                        SetupStore.Save(SetupScene, _setup);
+                        _statsFor = null;
                     }
 
                     var minus = new Rect(row.xMax - Hud.Px(132f), row.y + Hud.Px(5f), Hud.Px(58f), row.height - Hud.Px(10f));
@@ -148,10 +152,11 @@ namespace CarRace.UnityGame
             float foot = panel.yMax - footer;
             Hud.Fill(new Rect(x, foot, inner, Hud.Px(2f)), new Color(1f, 1f, 1f, 0.1f));
             GUI.Label(new Rect(x + Hud.Px(2f), foot + Hud.Px(8f), inner, Hud.Px(40f)),
-                      _setupHint ?? "Point at a setting to see what it does. Changes are saved for this circuit as you make them.", _small);
+                      _setupHint ?? $"Defaults are the {(SetupStore.Body.Length > 0 ? SetupStore.Body : "car's")}{(SetupStore.Body.Length > 0 ? "'s own" : " own")}. " +
+                                    "Point at a setting to see what it does. Changes are saved for this circuit as you make them.", _small);
             float buttonY = panel.yMax - Hud.Px(56f);
             if (_setupTab != AssistsTab
-                && Button(new Rect(x, buttonY, Hud.Px(150f), Hud.Px(42f)), "RESET TAB", true, back: true))
+                && Button(new Rect(x, buttonY, Hud.Px(190f), Hud.Px(42f)), "TAB TO DEFAULT", true, back: true))
             {
                 _setup.Reset((CarSetup.Group)_setupTab);
                 SetupStore.Save(SetupScene, _setup);
@@ -159,7 +164,7 @@ namespace CarRace.UnityGame
             }
             // The resets are the car's; the assists are switched one by one.
             if (_setupTab != AssistsTab
-                && Button(new Rect(x + Hud.Px(160f), buttonY, Hud.Px(150f), Hud.Px(42f)), "RESET ALL", !_setup.AllDefault, back: true))
+                && Button(new Rect(x + Hud.Px(200f), buttonY, Hud.Px(190f), Hud.Px(42f)), "ALL TO DEFAULT", !_setup.AllDefault, back: true))
             {
                 _setup.Reset();
                 SetupStore.Save(SetupScene, _setup);
@@ -189,6 +194,10 @@ namespace CarRace.UnityGame
                 case CarSetup.Group.Gearbox:
                     return $"Top speed: {CarSetup.GearedTopSpeedKph(built):0} km/h at the rev limit in top gear, " +
                            $"{Analytic.TopSpeedKph(built):0} km/h where power meets drag. The car reaches the lower.";
+                case CarSetup.Group.Steering:
+                    float radius = CarSetup.TurningRadiusM(built);
+                    return $"Turning radius {radius:0.0} m at full lock, a {2f * radius:0} m circle. Half the lock is gone by " +
+                           $"{built.SteerFalloffSpeed * 3.6f:0} km/h; lock to lock takes {2f / built.SteerRatePerSecond:0.00} s.";
                 case CarSetup.Group.Aero:
                     return $"Aero balance {100f * CarSetup.AeroBalanceFront(built):0}% front. " +
                            $"Top speed where power meets drag: {Analytic.TopSpeedKph(built):0} km/h.";

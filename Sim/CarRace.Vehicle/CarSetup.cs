@@ -11,7 +11,8 @@ namespace CarRace.Vehicle
     ///
     /// Only what the model simulates is offered, so every setting changes something real:
     /// springs, dampers and anti-roll bars, brake bias and pressure, the gearing, the limited
-    /// slip differential and downforce. Ride height is not offered. The model keeps the car at
+    /// slip differential, downforce, and the steering: its lock, how much of it is left at
+    /// speed, and how fast the rack moves. Ride height is not offered. The model keeps the car at
     /// CgHeight whatever the springs (VehicleSim.AttachmentHeight), so lowering it would only
     /// cut weight transfer, with no bottoming out and no aero cost to weigh against it, and the
     /// best setting would always be the lowest.
@@ -24,7 +25,7 @@ namespace CarRace.Vehicle
     /// </summary>
     public sealed class CarSetup
     {
-        public enum Group { Suspension, Brakes, Gearbox, Differential, Aero }
+        public enum Group { Suspension, Brakes, Gearbox, Differential, Aero, Steering }
 
         /// <summary>Downforce coefficient gained for each unit of drag coefficient added, about
         /// what a road car's rear wing manages. A racing wing does better, a lip spoiler worse.</summary>
@@ -241,6 +242,23 @@ namespace CarRace.Vehicle
             return car.RevLimitRpm * Physics.RpmToRadPerSec / overall * radius * 3.6f;
         }
 
+        /// <summary>
+        /// The radius the car's centre of mass turns on at full lock, metres, rolling at
+        /// <paramref name="speedMs"/> (the lock left after the speed sensitivity takes its
+        /// share): the rear axle's turning centre (wheelbase over the tangent of the lock) and
+        /// the centre of mass's distance ahead of the rear axle, which the weight split gives.
+        /// The setup screen shows it barely rolling; the sweep drives it at 4 m/s and agrees
+        /// within a few per cent, the tyres' slip angles at walking pace being small.
+        /// </summary>
+        public static float TurningRadiusM(CarConfig car, float speedMs = 0f)
+        {
+            float falloff = 1f / (1f + speedMs / MathF.Max(car.SteerFalloffSpeed, 0.01f));
+            float lock_ = car.MaxSteerAngleDegrees * falloff * MathF.PI / 180f;
+            float toRear = car.Wheelbase * car.FrontWeightBias;
+            float rear = car.Wheelbase / MathF.Tan(MathF.Max(lock_, 0.01f));
+            return MathF.Sqrt(rear * rear + toRear * toRear);
+        }
+
         /// <summary>Share of the downforce on the front axle, the high speed balance.</summary>
         public static float AeroBalanceFront(CarConfig car)
         {
@@ -329,6 +347,18 @@ namespace CarRace.Vehicle
             table.Add(new Setting("downforceRear", Group.Aero, "Downforce, rear", "kg at 200 km/h", KgAt200, 0, 0.02f,
                 "Rear grip in fast corners and under braking: more than the front is steadier at speed. Every kilogram adds drag.",
                 c => c.LiftRearClA, (c, v) => c.LiftRearClA = v, own => own * 0.75f, own => own * 3f));
+
+            // Steering. Absolute ranges rather than shares of the car's own value, so every body's
+            // own defaults (the game's) sit inside the same checked ranges.
+            table.Add(new Setting("steerLock", Group.Steering, "Steering lock", "deg", 1f, 1, 0.5f,
+                "More lock turns tighter at low speed: a smaller turning radius for hairpins. On a pad or wheel it also makes the steering quicker round the centre.",
+                c => c.MaxSteerAngleDegrees, (c, v) => c.MaxSteerAngleDegrees = v, own => 26f, own => 40f));
+            table.Add(new Setting("steerFalloff", Group.Steering, "Speed sensitivity", "km/h at half lock", 3.6f, 0, 5f / 3.6f,
+                "The speed by which the steering has lost half its lock. Higher keeps more lock at speed: sharper turn-in in fast corners, and easier to spin.",
+                c => c.SteerFalloffSpeed, (c, v) => c.SteerFalloffSpeed = v, own => 30f, own => 60f));
+            table.Add(new Setting("steerRate", Group.Steering, "Steering speed", "locks/s", 1f, 1, 0.1f,
+                "How fast the wheels can turn, in full locks a second. Quicker reacts sooner; slower is calmer and smooths a keyboard's jabs.",
+                c => c.SteerRatePerSecond, (c, v) => c.SteerRatePerSecond = v, own => 2f, own => 5f));
 
             return table;
         }

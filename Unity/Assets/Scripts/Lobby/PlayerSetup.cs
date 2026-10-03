@@ -100,6 +100,7 @@ namespace CarRace.UnityGame
             set
             {
                 PlayerPrefs.SetInt(DesignKey, Mathf.Clamp(value, 0, Mathf.Max(CarDesigns.Count - 1, 0)));
+                SetupStore.Body = CarDesigns.NameOf(DesignIndex);
                 PlayerPrefs.Save();
             }
         }

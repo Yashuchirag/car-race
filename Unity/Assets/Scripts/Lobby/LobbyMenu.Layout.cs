@@ -62,6 +62,7 @@ namespace CarRace.UnityGame
         void StartLayout(string[] args)
         {
             if (displayCar != null) displayCar.rotation = Quaternion.Euler(0f, CarYaw, 0f);
+            SetupStore.Body = CarDesigns.NameOf(PlayerSetup.DesignIndex);
             if (Camera.main != null)
             {
                 _orbit = Camera.main.gameObject.AddComponent<LobbyCamera>();
@@ -394,6 +395,7 @@ namespace CarRace.UnityGame
                     GameAudio.Select();
                     PlayerSetup.DesignIndex = i;
                     CarDesigns.Apply(displayCar, i);
+                    _statsFor = null;
                     if (LanSession.Active) LanSession.Current.SendSetup();
                 }
             }
@@ -522,7 +524,7 @@ namespace CarRace.UnityGame
         }
 
         /// <summary>The figures the GARAGE tab shows; the setup screen's panel shows them all.</summary>
-        static readonly int[] GarageMetrics = { 0, 1, 2, 3, 5 };
+        static readonly int[] GarageMetrics = { 0, 1, 2, 3, 5, 6 };
 
         /// <summary>The car's figures with the chosen circuit's setup, and as built, worked out again
         /// whenever the setup changes or the circuit does: the closed-form numbers the harness
@@ -532,7 +534,7 @@ namespace CarRace.UnityGame
             string key = SetupScene;
             if (_stats != null && _statsFor == key) return;
             _statsFor = key;
-            CarConfig built = car != null ? car.ToConfig() : CarConfig.ReferenceSportsCar();
+            CarConfig built = SetupStore.Baseline(car != null ? car.ToConfig() : CarConfig.ReferenceSportsCar());
             CarConfig c = car != null ? SetupStore.Load(SetupScene, built).Apply() : built;
             float Top(CarConfig x) => Mathf.Min(CarSetup.GearedTopSpeedKph(x), Analytic.TopSpeedKph(x));
             float Downforce(CarConfig x) => (x.LiftFrontClA + x.LiftRearClA) * CarSetup.KgAt200;
@@ -554,6 +556,7 @@ namespace CarRace.UnityGame
                 Bar("0 TO 100 KM/H", sprint, Analytic.ZeroToHundredSeconds(built), "s", "0.00", (9f - sprint) / 7f),
                 Bar("DOWNFORCE AT 200 KM/H", Downforce(c), Downforce(built), "kg", "0", Downforce(c) / 400f),
                 Bar("CORNERING", Analytic.SkidpadCeilingG(c), Analytic.SkidpadCeilingG(built), "g", "0.00", Analytic.SkidpadCeilingG(c) / 1.6f),
+                Bar("TURNING RADIUS", CarSetup.TurningRadiusM(c), CarSetup.TurningRadiusM(built), "m", "0.0", (7f - CarSetup.TurningRadiusM(c)) / 4f),
                 Share("AERO BALANCE", CarSetup.AeroBalanceFront(c), CarSetup.AeroBalanceFront(built)),
                 Share("ROLL BALANCE", Roll(c), Roll(built)),
                 Share("BRAKE BIAS", c.BrakeBias, built.BrakeBias),

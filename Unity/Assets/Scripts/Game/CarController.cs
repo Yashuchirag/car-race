@@ -125,13 +125,13 @@ namespace CarRace.UnityGame
         void ApplyPlayerSetup()
         {
             string scene = gameObject.scene.name;
-            CarSetup setup = SetupStore.Load(scene, _config);
+            CarSetup setup = SetupStore.Load(scene, SetupStore.Baseline(_config));
             _config = setup.Apply();
             antiLockBrakes = SetupStore.Get(SetupStore.Assist.Abs);
             tractionControl = SetupStore.Get(SetupStore.Assist.TractionControl);
             engineDragControl = SetupStore.Get(SetupStore.Assist.EngineBrakingControl);
             automaticGearbox = SetupStore.Get(SetupStore.Assist.AutomaticGearbox);
-            Debug.Log($"{name}: setup for {scene}: " +
+            Debug.Log($"{name}: setup for {scene} on the {(SetupStore.Body.Length > 0 ? SetupStore.Body : "car as built")}: " +
                       $"{(setup.AllDefault ? "as built" : setup.ToText().Replace('\n', ' ').Trim())}; " +
                       $"ABS {(antiLockBrakes ? "on" : "off")}, traction control {(tractionControl ? "on" : "off")}, " +
                       $"engine braking control {(engineDragControl ? "on" : "off")}, " +

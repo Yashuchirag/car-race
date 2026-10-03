@@ -15,6 +15,24 @@ namespace CarRace.UnityGame
     {
         const string SetupKey = "CarRace.Setup.";
         const string AssistKey = "CarRace.Assist.";
+        const string BodyKey = "CarRace.CarBody";
+
+        /// <summary>The player's body by name (CarDesigns), whose steering the setups are changes
+        /// to; kept by the lobby whenever the body is chosen.</summary>
+        public static string Body
+        {
+            get => PlayerPrefs.GetString(BodyKey, "");
+            set { PlayerPrefs.SetString(BodyKey, value ?? ""); PlayerPrefs.Save(); }
+        }
+
+        /// <summary>The car as built with the player's body's steering (BodySteering): what a
+        /// setup is a change to, and what DEFAULT goes back to.</summary>
+        public static CarConfig Baseline(CarConfig built)
+        {
+            CarConfig car = built.Clone();
+            BodySteering.Apply(car, Body);
+            return car;
+        }
 
         public enum Assist { Abs, TractionControl, EngineBrakingControl, AutomaticGearbox }
 
