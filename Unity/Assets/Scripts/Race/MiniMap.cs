@@ -49,6 +49,10 @@ namespace CarRace.UnityGame
         /// before the map starts.</summary>
         public void SetCars(Transform[] set) => cars = set;
 
+        /// <summary>Whether a sample lies in a yellow zone, drawn yellow; set by RaceDirector.</summary>
+        public System.Func<int, bool> YellowAt;
+        static readonly Color32 YellowZone = new Color32(255, 220, 30, 230);
+
         void Start()
         {
             if (track == null || track.centre.Length < 3 || cars.Length == 0 || cars[0] == null) { enabled = false; return; }
@@ -123,7 +127,8 @@ namespace CarRace.UnityGame
             {
                 int i = ((_index + k) % n + n) % n;
                 float half = 0.5f * (track.widthLeft.Length == n ? track.widthLeft[i] + track.widthRight[i] : 12f);
-                Disc(ToMap(track.centre[i]), Mathf.Max(half * _scale, 1.5f), _roadColour[i]);
+                Disc(ToMap(track.centre[i]), Mathf.Max(half * _scale, 1.5f),
+                     YellowAt != null && YellowAt(i) ? YellowZone : _roadColour[i]);
             }
 
             // The start line across the road at sample 0, if it is in view.

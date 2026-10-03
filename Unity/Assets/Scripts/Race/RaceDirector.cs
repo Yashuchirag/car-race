@@ -98,6 +98,16 @@ namespace CarRace.UnityGame
         /// <summary>The race's bookkeeping. On a LAN client its numbers are the host's.</summary>
         public RaceControl Control => _control;
 
+        /// <summary>The flags, kept where the standings are (solo and a LAN host); null on a client.</summary>
+        public RaceFlags Flags => _keepsStandings ? _flags : null;
+
+        // Flags: per race entry, where the car is, how far it has gone, whether it is in trouble
+        // or still racing, its place in the field the AI see, and whether it has got going yet.
+        RaceFlags _flags;
+        int[] _flagIndex, _fieldOf;
+        float[] _flagProgress;
+        bool[] _trouble, _racing, _moving;
+
         /// <summary>Seconds since GO, the clock the rulings are timed on.</summary>
         public float RaceTime => _raceTime;
 
@@ -223,6 +233,15 @@ namespace CarRace.UnityGame
                 names[_playerEntry] = "You";
             }
             _control = new RaceControl(names, raceLaps);
+            _flags = new RaceFlags(names.Length);
+            _flagIndex = new int[names.Length];
+            _fieldOf = new int[names.Length];
+            _flagProgress = new float[names.Length];
+            _trouble = new bool[names.Length];
+            _racing = new bool[names.Length];
+            _moving = new bool[names.Length];
+            MiniMap map = FindAnyObjectByType<MiniMap>();
+            if (map != null) map.YellowAt = i => Flags != null && Flags.Yellow.Exists(z => RaceFlags.Inside(_track, z, i));
             _left = new bool[names.Length];
 
             for (int i = 0; i < aiCars.Length; i++) _cars[i] = aiCars[i];
@@ -380,6 +399,7 @@ namespace CarRace.UnityGame
                                          _playerPlan);
             // The other players' cars, seen as the player is: the AI assume the same pace.
             for (int r = 0; r < remotes; r++) _field[aiCars.Length + 1 + r] = Seen(_remotes[r]);
+            if (_keepsStandings) UpdateFlags(remotes);
 
             _playerDriver?.Observe(_track, _field, aiCars.Length, elapsed);
             for (int i = 0; i < aiCars.Length; i++)
@@ -475,6 +495,61 @@ namespace CarRace.UnityGame
                 Position = position,
             };
         }
+
+        /// <summary>
+        /// The marshals' look at the field, every reaction interval, as RaceRun does headless: each
+        /// car in trouble (stopped, or pointing back along the lap, once it has got going) raises a
+        /// yellow; a pass under one is penalised; and each AI driver is told the flags it is under,
+        /// by its place in the field, which is how the drivers know each other.
+        /// </summary>
+        void UpdateFlags(int remotes)
+        {
+            for (int e = 0; e < _fieldOf.Length; e++) { _fieldOf[e] = -1; _racing[e] = false; _trouble[e] = false; }
+            for (int k = 0; k < aiCars.Length; k++)
+                Mark(_aiEntry[k], k, aiCars[k].transform, aiCars[k].GetComponent<Rigidbody>().linearVelocity,
+                     _drivers[k].Path.Index, _drivers[k].Path.ProgressM);
+            Mark(_playerEntry, aiCars.Length, player.transform, player.GetComponent<Rigidbody>().linearVelocity,
+                 _player.Index, _player.ProgressM(_track));
+            for (int r = 0; r < remotes; r++)
+                if (_remotes[r] != null && _remoteEntry.TryGetValue(_remotes[r], out var remote))
+                    Mark(remote.Entry, aiCars.Length + 1 + r, _remotes[r].transform, _remotes[r].Velocity,
+                         _field[aiCars.Length + 1 + r].Index, remote.Progress.ProgressM(_track));
+
+            foreach (var (car, passed) in _flags.Update(_track, _flagIndex, _flagProgress, _trouble, _racing, _raceTime))
+                _control.YellowPass(car, passed, _raceTime);
+
+            for (int k = 0; k < aiCars.Length; k++) Tell(_drivers[k], _aiEntry[k]);
+            if (_playerDriver != null) Tell(_playerDriver, _playerEntry);
+            for (int e = 0; e < _fieldOf.Length; e++)
+            {
+                if (_fieldOf[e] < 0) continue;
+                _field[_fieldOf[e]].Yielding = _flags.BlueFor[e] >= 0;
+                _field[_fieldOf[e]].YieldingTo = FieldOf(_flags.BlueFor[e]);
+            }
+        }
+
+        void Mark(int entry, int field, Transform car, Vector3 velocity, int index, float progressM)
+        {
+            float forward = Vector3.Dot(velocity, car.forward);
+            if (forward > 10f) _moving[entry] = true;
+            Vec3 along = _track.Tangent(_track.Line, index);
+            bool backwards = Vector3.Dot(car.forward, new Vector3(along.X, 0f, along.Z)) < 0f;
+            RaceControl.Entry e = _control.Entries[entry];
+            _fieldOf[entry] = field;
+            _flagIndex[entry] = index;
+            _flagProgress[entry] = progressM;
+            _racing[entry] = !e.Finished && !e.Disqualified && !HasLeft(entry);
+            _trouble[entry] = _moving[entry] && (Mathf.Abs(forward) < 3f || backwards);
+        }
+
+        void Tell(RaceDriver driver, int entry)
+        {
+            driver.UnderYellow = _flags.InYellow[entry] >= 0;
+            driver.YellowFor = FieldOf(_flags.InYellow[entry]);
+            driver.YieldTo = FieldOf(_flags.BlueFor[entry]);
+        }
+
+        int FieldOf(int entry) => entry >= 0 ? _fieldOf[entry] : -1;
 
         /// <summary>The grip under a car, its wheels' average: 1 on asphalt, 0.45 on grass.</summary>
         static float Grip(CarController car)

@@ -17,7 +17,9 @@ namespace CarRace.UnityGame
         int _entry, _seen;
         RaceControl.Event _banner;
         float _bannerUntil;
-        Texture2D _blackAndWhite;
+        Texture2D _blackAndWhite, _chequered;
+        bool _wasYellow;
+        float _greenUntil;
         GUIStyle _title, _detail, _status;
 
         public void Show(RaceDirector director, int playerEntry)
@@ -30,6 +32,7 @@ namespace CarRace.UnityGame
         void OnDestroy()
         {
             if (_blackAndWhite != null) Destroy(_blackAndWhite);
+            if (_chequered != null) Destroy(_chequered);
         }
 
         void Update()
@@ -51,6 +54,7 @@ namespace CarRace.UnityGame
             if (Event.current.type != EventType.Repaint || Hud.Hidden || _director == null || _director.Control == null) return;
             Styles();
             RaceControl.Entry me = _director.Control.Entries[_entry];
+            FlagPanel(me);
 
             // Penalties so far, under the position box and its hint.
             if (me.PenaltyS > 0f || me.Warnings > 0)
@@ -77,8 +81,10 @@ namespace CarRace.UnityGame
 
             if (_banner == null || Time.time > _bannerUntil) return;
             RaceControl.Entry ruled = _director.Control.Entries[_entry];
-            string offence = _banner.Other >= 0 ? $"Kept the place on {_director.Control.Entries[_banner.Other].Name}"
-                           : _banner.Offence == TrackLimits.Kind.Cut ? "Corner cut: you gained by leaving the track"
+            string other = _banner.Other >= 0 ? _director.Control.Entries[_banner.Other].Name : "";
+            string offence = _banner.Cause == RaceControl.Cause.PlaceKept ? $"Kept the place on {other}"
+                           : _banner.Cause == RaceControl.Cause.YellowFlag ? $"Passed {other} under a yellow flag"
+                           : _banner.Cause == RaceControl.Cause.Cut ? "Corner cut: you gained by leaving the track"
                            : "Track limits: four wheels off";
             switch (_banner.Ruling)
             {
@@ -115,6 +121,58 @@ namespace CarRace.UnityGame
             else Hud.Fill(new Rect(banner.x, banner.y, Hud.Px(6f), banner.height), new Color(1f, 0.55f, 0.1f));
             GUI.Label(new Rect(text, banner.y + Hud.Px(8f), banner.xMax - text - Hud.Px(10f), Hud.Px(34f)), title, _title);
             GUI.Label(new Rect(text, banner.y + Hud.Px(40f), banner.xMax - text - Hud.Px(10f), Hud.Px(30f)), detail, _detail);
+        }
+
+        /// <summary>
+        /// The flag being shown to you, left of the position box: yellow in a yellow zone (no
+        /// overtaking), blue with the car to let by, green for GreenSeconds after a yellow, and
+        /// the chequered flag once you have finished.
+        /// </summary>
+        void FlagPanel(RaceControl.Entry me)
+        {
+            RaceFlags flags = _director.Flags;
+            bool yellow = flags != null && flags.InYellow[_entry] >= 0;
+            int blue = flags != null ? flags.BlueFor[_entry] : -1;
+            if (_wasYellow && !yellow) _greenUntil = Time.time + GreenSeconds;
+            _wasYellow = yellow;
+
+            string label;
+            Color colour = Color.white;
+            Texture2D pattern = null;
+            if (me.Finished) { label = "CHEQUERED FLAG"; pattern = Chequered(); }
+            else if (yellow) { label = "YELLOW  ·  NO OVERTAKING"; colour = new Color(1f, 0.82f, 0.05f); }
+            else if (blue >= 0) { label = $"BLUE  ·  LET {_director.Control.Entries[blue].Name.ToUpperInvariant()} BY"; colour = new Color(0.1f, 0.35f, 0.95f); }
+            else if (Time.time < _greenUntil) { label = "GREEN  ·  TRACK CLEAR"; colour = new Color(0.15f, 0.75f, 0.3f); }
+            else return;
+
+            float width = Hud.Px(300f), height = Hud.Px(56f);
+            var panel = new Rect(Screen.width * 0.5f - Hud.Px(170f) - width, Hud.Px(10f), width, height);
+            Hud.Rounded(panel, new Color(0.05f, 0.06f, 0.1f, 0.88f));
+            var flag = new Rect(panel.x + Hud.Px(10f), panel.y + Hud.Px(10f), Hud.Px(50f), Hud.Px(36f));
+            Hud.Fill(new Rect(flag.x - 2f, flag.y - 2f, flag.width + 4f, flag.height + 4f), new Color(0.7f, 0.7f, 0.72f));
+            if (pattern != null) GUI.DrawTexture(flag, pattern);
+            else Hud.Fill(flag, colour);
+            _status.alignment = TextAnchor.MiddleLeft;
+            _status.normal.textColor = Color.white;
+            GUI.Label(new Rect(flag.xMax + Hud.Px(10f), panel.y, panel.xMax - flag.xMax - Hud.Px(14f), height), label, _status);
+            _status.alignment = TextAnchor.MiddleCenter;
+            _status.normal.textColor = new Color(1f, 0.55f, 0.1f);
+        }
+
+        const float GreenSeconds = 2f;
+
+        Texture2D Chequered()
+        {
+            if (_chequered != null) return _chequered;
+            const int W = 8, H = 6;
+            var pixels = new Color32[W * H];
+            for (int y = 0; y < H; y++)
+            for (int x = 0; x < W; x++)
+                pixels[y * W + x] = (x + y) % 2 == 0 ? new Color32(10, 10, 10, 255) : new Color32(245, 245, 245, 255);
+            _chequered = new Texture2D(W, H, TextureFormat.RGBA32, false) { filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp };
+            _chequered.SetPixels32(pixels);
+            _chequered.Apply();
+            return _chequered;
         }
 
         /// <summary>The black and white flag: split corner to corner, black above.</summary>
