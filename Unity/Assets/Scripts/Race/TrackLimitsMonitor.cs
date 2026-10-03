@@ -19,6 +19,10 @@ namespace CarRace.UnityGame
         /// <summary>Called with each judged excursion that is an offence or an incident.</summary>
         public Action<TrackLimits.Kind> Judged;
 
+        /// <summary>Called on the step the car leaves the track, so race control can note who
+        /// was ahead of it then.</summary>
+        public Action Left;
+
         /// <summary>Offences so far, cuts and track limits together: LapTimer marks a lap invalid
         /// when this changes during it.</summary>
         public int Offences { get; private set; }
@@ -54,8 +58,10 @@ namespace CarRace.UnityGame
             _last = position;
             _index = _path.Nearest(position, _index);
 
+            bool wasOff = Judge.Off;
             TrackLimits.Kind kind = Judge.Step(_track, _index, ToSim(position), ToSim(transform.forward),
                                                ToSim(_body.linearVelocity), _car.Sim.Wheels, Time.fixedDeltaTime);
+            if (!wasOff && Judge.Off) Left?.Invoke();
             if (kind == TrackLimits.Kind.None) return;
             if (kind != TrackLimits.Kind.Incident) Offences++;
             if (RaceDirector.AiLogAsked)

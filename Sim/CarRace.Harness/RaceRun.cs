@@ -151,6 +151,7 @@ namespace CarRace.Harness
                         }
                     }
 
+                    control.Tick(time);
                     int fresh = CountContacts(rigs, retired, contact, control,
                                               drivers, track, time, verbose);
 
@@ -202,9 +203,11 @@ namespace CarRace.Harness
                     rig.Step(input);
 
                     // Track limits, judged as in Unity. A disqualified car is out of the race.
+                    bool wasOff = judges[i].Off;
                     TrackLimits.Kind offence = judges[i].Step(track, drivers[i].Path.Index, rig.Body.State.Position,
                                                               rig.Body.State.Forward, rig.Body.State.Velocity,
                                                               rig.Sim.Wheels, Dt);
+                    if (!wasOff && judges[i].Off) control.LeftTrack(i);
                     RaceControl.Event ruling = control.Judge(i, offence, time);
                     if (ruling != null && verbose)
                         Console.WriteLine($"    {ruling.Ruling.ToString().ToUpperInvariant(),-7} {time,7:0.0} s  s = "

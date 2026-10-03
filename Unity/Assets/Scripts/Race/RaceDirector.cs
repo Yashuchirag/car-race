@@ -98,6 +98,9 @@ namespace CarRace.UnityGame
         /// <summary>The race's bookkeeping. On a LAN client its numbers are the host's.</summary>
         public RaceControl Control => _control;
 
+        /// <summary>Seconds since GO, the clock the rulings are timed on.</summary>
+        public float RaceTime => _raceTime;
+
         /// <summary>
         /// Set up as a LAN race, before Start: the AI this machine drives (none on a client),
         /// the cars moved from the network, whom the AI see and avoid like the player, the
@@ -237,6 +240,10 @@ namespace CarRace.UnityGame
                 {
                     if (_started && _keepsStandings) _control.Judge(entry, kind, _raceTime);
                 };
+                monitor.Left = () =>
+                {
+                    if (_started && _keepsStandings) _control.LeftTrack(entry);
+                };
             }
             gameObject.AddComponent<RaceHud>().Show(this, _playerEntry);
         }
@@ -346,6 +353,7 @@ namespace CarRace.UnityGame
                     if (pair.Key != null)
                         _control.Update(pair.Value.Entry, _raceTime, pair.Value.Progress.Laps, pair.Value.Progress.ProgressM(_track));
                 _control.Rank();
+                _control.Tick(_raceTime);
             }
 
             _sinceReaction += dt;

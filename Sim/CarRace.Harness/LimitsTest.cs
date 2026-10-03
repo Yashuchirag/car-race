@@ -108,7 +108,7 @@ namespace CarRace.Harness
             }
             bool rules = Rules(out string why);
             string said = rules ? "two warnings then penalties, a cut penalised at once, the black flag at the fifth "
-                                + "penalty, invalid laps never best, penalties at the flag   PASS"
+                                + "penalty, invalid laps never best, penalties at the flag, places gained off track given back or 10 s each   PASS"
                                 : "FAIL: " + why;
             Console.WriteLine($"\n  rulings: {said}");
             allPassed &= rules;
@@ -152,6 +152,37 @@ namespace CarRace.Harness
             if (order[0].Name != "B" || order[1].Name != "A" || !order[1].Disqualified)
             { why = "the classification does not put the disqualified car last"; return false; }
             if (order[0].ResultS != 205f) { why = $"B's result {order[0].ResultS} s, expected 205 with its penalty"; return false; }
+            return GiveBack(out why);
+        }
+
+        /// <summary>Places gained off the track: kept past the deadline costs 10 s a place;
+        /// given back in time, nothing; a stopped car passed is owed nothing.</summary>
+        static bool GiveBack(out string why)
+        {
+            why = null;
+            foreach (bool returned in new[] { false, true })
+            {
+                // P leaves the track 10 m behind Q and 30 m behind R, and comes back ahead of both.
+                var control = new RaceControl(new[] { "P", "Q", "R" }, 5);
+                control.Update(0, 0f, 0, 100f);
+                control.Update(1, 0f, 0, 110f);
+                control.Update(2, 0f, 0, 130f);
+                control.LeftTrack(0);
+                control.Update(0, 3f, 0, 250f);
+                control.Update(1, 3f, 0, 240f);
+                control.Update(2, 3f, 0, 245f);
+                control.Judge(0, TrackLimits.Kind.TrackLimits, 3f);
+                if (control.Owing.Count != 2) { why = $"{control.Owing.Count} places owed, expected 2"; return false; }
+
+                // Q is let back by in time when it should be; R never is.
+                if (returned) control.Update(1, 8f, 0, 400f);
+                control.Tick(8f);
+                control.Tick(13.1f);
+                float expected = returned ? 10f : 20f;
+                if (control.Entries[0].PenaltyS != expected)
+                { why = $"{control.Entries[0].PenaltyS} s of penalty with {(returned ? "one place" : "no place")} given back, expected {expected}"; return false; }
+                if (control.Owing.Count != 0) { why = "places still owed after the deadline"; return false; }
+            }
             return true;
         }
 

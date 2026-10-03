@@ -86,7 +86,7 @@ namespace CarRace.Track
         /// <summary>The penalty that brings the black flag.</summary>
         public const int PenaltiesToDisqualify = 5;
 
-        public enum Ruling { None, Warning, Penalty, Disqualified }
+        public enum Ruling { None, Warning, Penalty, Disqualified, GiveBack }
 
         public sealed class Event
         {
@@ -94,7 +94,27 @@ namespace CarRace.Track
             public int Car;
             public TrackLimits.Kind Offence;
             public Ruling Ruling;
+            /// <summary>Seconds added by this ruling, if any.</summary>
+            public float Seconds;
+            /// <summary>For a place to give back, or one kept: the car passed. Otherwise -1.</summary>
+            public int Other = -1;
         }
+
+        /// <summary>Seconds to give back a place gained off the track, and the cost of keeping it.</summary>
+        public const float GiveBackSeconds = 10f;
+        public const float KeptPlaceSeconds = 10f;
+
+        /// <summary>A place gained off the track, owed back to <see cref="Passed"/> by <see cref="DeadlineS"/>.</summary>
+        public sealed class Owed
+        {
+            public int Car, Passed;
+            public float DeadlineS;
+        }
+
+        /// <summary>Places gained off the track not yet given back, oldest first.</summary>
+        public readonly List<Owed> Owing = new List<Owed>();
+
+        float[] _progressWhenOff;
 
         /// <summary>Every ruling so far, oldest first.</summary>
         public readonly List<Event> Events = new List<Event>();
@@ -111,6 +131,7 @@ namespace CarRace.Track
             Entry entry = Entries[car];
             if (offence != TrackLimits.Kind.Cut && offence != TrackLimits.Kind.TrackLimits) return null;
             if (entry.Finished || entry.Disqualified) return null;
+            OwePlaces(car, time);
 
             entry.LapValid = false;
             Ruling ruling;
@@ -132,9 +153,80 @@ namespace CarRace.Track
                 }
             }
 
-            var ruled = new Event { TimeS = time, Car = car, Offence = offence, Ruling = ruling };
+            var ruled = new Event { TimeS = time, Car = car, Offence = offence, Ruling = ruling,
+                                    Seconds = ruling == Ruling.Warning ? 0f : PenaltySeconds };
             Events.Add(ruled);
             return ruled;
+        }
+
+        // ---- places gained off the track ---------------------------------------
+
+        /// <summary>
+        /// The car has just left the track: remembers where everyone was, so that when the
+        /// excursion is judged an offence, every car that was ahead then and is behind now is a
+        /// place gained off the track. Call it from the step the judge first says Off.
+        /// </summary>
+        public void LeftTrack(int car)
+        {
+            _progressWhenOff ??= new float[Entries.Length * Entries.Length];
+            for (int other = 0; other < Entries.Length; other++)
+                _progressWhenOff[car * Entries.Length + other] = Entries[other].ProgressM;
+        }
+
+        /// <summary>
+        /// Each car passed off the track, ahead of <paramref name="car"/> when it left and behind
+        /// it now, is owed its place back within GiveBackSeconds. A car that has stopped racing
+        /// (finished, disqualified) is not owed anything: passing it gained nothing.
+        /// </summary>
+        void OwePlaces(int car, float time)
+        {
+            if (_progressWhenOff == null) return;
+            int n = Entries.Length;
+            float mineThen = _progressWhenOff[car * n + car], mineNow = Entries[car].ProgressM;
+            for (int other = 0; other < n; other++)
+            {
+                if (other == car || Entries[other].Finished || Entries[other].Disqualified) continue;
+                bool aheadThen = _progressWhenOff[car * n + other] > mineThen;
+                bool behindNow = Entries[other].ProgressM < mineNow;
+                if (!aheadThen || !behindNow || Owing.Exists(o => o.Car == car && o.Passed == other)) continue;
+                Owing.Add(new Owed { Car = car, Passed = other, DeadlineS = time + GiveBackSeconds });
+                Events.Add(new Event { TimeS = time, Car = car, Offence = TrackLimits.Kind.TrackLimits,
+                                       Ruling = Ruling.GiveBack, Other = other });
+            }
+        }
+
+        /// <summary>
+        /// Settles the places owed, once a step after Update: one given back (the passed car is
+        /// ahead again) is cleared; one still kept at its deadline, or when the car that owes it
+        /// takes the flag, costs KeptPlaceSeconds and counts as a penalty; one owed to a car that
+        /// has stopped racing is dropped.
+        /// </summary>
+        public void Tick(float time)
+        {
+            for (int k = Owing.Count - 1; k >= 0; k--)
+            {
+                Owed owed = Owing[k];
+                Entry offender = Entries[owed.Car], passed = Entries[owed.Passed];
+                if (offender.Disqualified || passed.Finished && !offender.Finished || passed.Disqualified
+                    || passed.ProgressM > offender.ProgressM && !offender.Finished)
+                {
+                    Owing.RemoveAt(k);
+                    continue;
+                }
+                if (time < owed.DeadlineS && !offender.Finished) continue;
+
+                Owing.RemoveAt(k);
+                offender.Penalties++;
+                offender.PenaltyS += KeptPlaceSeconds;
+                Ruling ruling = Ruling.Penalty;
+                if (offender.Penalties >= PenaltiesToDisqualify)
+                {
+                    offender.Disqualified = true;
+                    ruling = Ruling.Disqualified;
+                }
+                Events.Add(new Event { TimeS = time, Car = owed.Car, Offence = TrackLimits.Kind.TrackLimits,
+                                       Ruling = ruling, Seconds = KeptPlaceSeconds, Other = owed.Passed });
+            }
         }
 
         /// <summary>
