@@ -49,10 +49,26 @@ namespace CarRace.UnityGame
             if (LanSession.Active && LanSession.Current.IsReadyToRace) { _setupOpen = false; return; }
 
             Hud.Fill(new Rect(0f, 0f, Screen.width, Screen.height), new Color(0f, 0f, 0f, 0.55f));
-            float width = Mathf.Min(Hud.Px(940f), Screen.width - Hud.Px(40f));
+            // The setup, and beside it the car's figures, live: each press shows what it did.
+            float side = Hud.Px(400f), between = Hud.Px(16f);
+            float width = Mathf.Min(Hud.Px(940f), Screen.width - Hud.Px(40f) - side - between);
             float height = Mathf.Min(Hud.Px(700f), Screen.height - Hud.Px(40f));
-            var panel = new Rect((Screen.width - width) * 0.5f, (Screen.height - height) * 0.5f, width, height);
+            float left = (Screen.width - width - between - side) * 0.5f;
+            var panel = new Rect(left, (Screen.height - height) * 0.5f, width, height);
             PanelWithHeader(panel, $"SETUP  ·  {CircuitName(SetupScene).ToUpperInvariant()}");
+            var figures = new Rect(panel.xMax + between, panel.y, side, height);
+            PanelWithHeader(figures, "PERFORMANCE");
+            Stats();
+            var inside = new Rect(figures.x + Hud.Px(18f), figures.y + Hud.Px(58f), figures.width - Hud.Px(36f), figures.height - Hud.Px(70f));
+            float fy = inside.y;
+            for (int k = 0; k < _stats.Length; k++)
+            {
+                if (k == 6) fy += Hud.Px(10f);   // the balances, apart from the figures
+                MetricRow(inside, ref fy, k);
+            }
+            _small.alignment = TextAnchor.UpperLeft;
+            GUI.Label(new Rect(inside.x, fy + Hud.Px(2f), inside.width, Hud.Px(44f)),
+                      "Orange: changed from the car as built. Balances read front on the left.", _small);
 
             float pad = Hud.Px(16f), gap = Hud.Px(6f);
             float x = panel.x + pad, inner = panel.width - 2f * pad, y = panel.y + Hud.Px(52f);
@@ -139,6 +155,7 @@ namespace CarRace.UnityGame
             {
                 _setup.Reset((CarSetup.Group)_setupTab);
                 SetupStore.Save(SetupScene, _setup);
+                _statsFor = null;
             }
             // The resets are the car's; the assists are switched one by one.
             if (_setupTab != AssistsTab
@@ -146,6 +163,7 @@ namespace CarRace.UnityGame
             {
                 _setup.Reset();
                 SetupStore.Save(SetupScene, _setup);
+                _statsFor = null;
             }
             if (Button(new Rect(panel.xMax - pad - Hud.Px(160f), buttonY, Hud.Px(160f), Hud.Px(42f)), "DONE", true))
                 _setupOpen = false;
@@ -155,6 +173,7 @@ namespace CarRace.UnityGame
         {
             _setup.Nudge(s, presses);
             SetupStore.Save(SetupScene, _setup);
+            _statsFor = null;
         }
 
         /// <summary>What a group's settings come to, in the terms a driver thinks in.</summary>

@@ -42,7 +42,13 @@ namespace CarRace.UnityGame
         int _previewPixels;
 
         // Performance: the figures, the bars as drawn (easing to the figures), and what they are for.
-        (string label, float value, string unit, string format, float fraction)[] _stats;
+        sealed class Metric
+        {
+            public string Label, Unit, Format;
+            public float Value, Built, Fraction;
+            public bool Balance;       // a front to rear share, drawn as a marker on a scale
+        }
+        Metric[] _stats;
         float[] _statShown;
         string _statsFor;
         bool _wasSetupOpen;
@@ -435,22 +441,7 @@ namespace CarRace.UnityGame
             // Performance, from the physics with this circuit's setup.
             Section(area, ref y, "PERFORMANCE", $"YOUR SETUP FOR {CircuitName(SetupScene).ToUpperInvariant()}");
             Stats();
-            for (int i = 0; i < _stats.Length; i++)
-            {
-                var (label, value, unit, format, fraction) = _stats[i];
-                if (Event.current.type == EventType.Repaint)
-                    _statShown[i] = Mathf.Lerp(_statShown[i], fraction, 1f - Mathf.Exp(-6f * Time.unscaledDeltaTime));
-                float shownValue = fraction > 0f ? value * Mathf.Clamp01(_statShown[i] / fraction) : value;
-                GUI.Label(new Rect(area.x, y, area.width, Hud.Px(22f)), label, _caption);
-                _value.alignment = TextAnchor.MiddleRight;
-                GUI.Label(new Rect(area.x, y - Hud.Px(2f), area.width, Hud.Px(24f)), shownValue.ToString(format) + " " + unit, _value);
-                _value.alignment = TextAnchor.MiddleLeft;
-                var track = new Rect(area.x, y + Hud.Px(25f), area.width, Hud.Px(6f));
-                Hud.Fill(track, new Color(1f, 1f, 1f, 0.1f));
-                Hud.Fill(new Rect(track.x, track.y, track.width * Mathf.Clamp01(_statShown[i]), track.height),
-                         Color.Lerp(AccentLight, Accent, Mathf.Clamp01(_statShown[i])));
-                y += Hud.Px(42f);
-            }
+            foreach (int k in GarageMetrics) MetricRow(area, ref y, k);
             y += Hud.Px(4f);
             if (Button(new Rect(area.x, y, area.width, Hud.Px(46f)), "TUNE THE SETUP  ▸", !locked && car != null && SetupScene.Length > 0, back: true))
                 OpenSetup();
@@ -530,28 +521,82 @@ namespace CarRace.UnityGame
             _brightnessBar.Apply();
         }
 
-        /// <summary>The car's figures with the chosen circuit's setup, worked out again when the
-        /// circuit changes or the setup screen closes: the closed-form numbers the harness checks
-        /// the physics against (Analytic).</summary>
+        /// <summary>The figures the GARAGE tab shows; the setup screen's panel shows them all.</summary>
+        static readonly int[] GarageMetrics = { 0, 1, 2, 3, 5 };
+
+        /// <summary>The car's figures with the chosen circuit's setup, and as built, worked out again
+        /// whenever the setup changes or the circuit does: the closed-form numbers the harness
+        /// checks the physics against (Analytic), and CarSetup's own readouts.</summary>
         void Stats()
         {
             string key = SetupScene;
             if (_stats != null && _statsFor == key) return;
             _statsFor = key;
-            CarConfig c = car != null ? SetupStore.Load(SetupScene, car.ToConfig()).Apply() : CarConfig.ReferenceSportsCar();
-            float power = Analytic.PeakPowerWatts(c) / 1000f;
-            float top = Mathf.Min(CarSetup.GearedTopSpeedKph(c), Analytic.TopSpeedKph(c));
+            CarConfig built = car != null ? car.ToConfig() : CarConfig.ReferenceSportsCar();
+            CarConfig c = car != null ? SetupStore.Load(SetupScene, built).Apply() : built;
+            float Top(CarConfig x) => Mathf.Min(CarSetup.GearedTopSpeedKph(x), Analytic.TopSpeedKph(x));
+            float Downforce(CarConfig x) => (x.LiftFrontClA + x.LiftRearClA) * CarSetup.KgAt200;
+            float Roll(CarConfig x)
+            {
+                float front = x.SpringRateFront * 0.5f + x.AntiRollFront, rear = x.SpringRateRear * 0.5f + x.AntiRollRear;
+                return front / (front + rear);
+            }
+            Metric Bar(string label, float value, float builtValue, string unit, string format, float fraction) =>
+                new Metric { Label = label, Value = value, Built = builtValue, Unit = unit, Format = format, Fraction = Mathf.Clamp01(fraction) };
+            Metric Share(string label, float share, float builtShare) =>
+                new Metric { Label = label, Value = share * 100f, Built = builtShare * 100f, Unit = "% front", Format = "0", Fraction = share, Balance = true };
             float sprint = Analytic.ZeroToHundredSeconds(c);
-            float grip = Analytic.SkidpadCeilingG(c);
             _stats = new[]
             {
-                ("POWER", power, "kW", "0", power / 450f),
-                ("WEIGHT", c.Mass, "kg", "0", c.Mass / 2000f),
-                ("TOP SPEED", top, "km/h", "0", top / 360f),
-                ("0 TO 100 KM/H", sprint, "s", "0.0", Mathf.Clamp01((9f - sprint) / 7f)),
-                ("CORNERING", grip, "g", "0.00", grip / 1.6f),
+                Bar("POWER", Analytic.PeakPowerWatts(c) / 1000f, Analytic.PeakPowerWatts(built) / 1000f, "kW", "0", Analytic.PeakPowerWatts(c) / 450000f),
+                Bar("WEIGHT", c.Mass, built.Mass, "kg", "0", c.Mass / 2000f),
+                Bar("TOP SPEED", Top(c), Top(built), "km/h", "0", Top(c) / 360f),
+                Bar("0 TO 100 KM/H", sprint, Analytic.ZeroToHundredSeconds(built), "s", "0.00", (9f - sprint) / 7f),
+                Bar("DOWNFORCE AT 200 KM/H", Downforce(c), Downforce(built), "kg", "0", Downforce(c) / 400f),
+                Bar("CORNERING", Analytic.SkidpadCeilingG(c), Analytic.SkidpadCeilingG(built), "g", "0.00", Analytic.SkidpadCeilingG(c) / 1.6f),
+                Share("AERO BALANCE", CarSetup.AeroBalanceFront(c), CarSetup.AeroBalanceFront(built)),
+                Share("ROLL BALANCE", Roll(c), Roll(built)),
+                Share("BRAKE BIAS", c.BrakeBias, built.BrakeBias),
             };
             if (_statShown == null || _statShown.Length != _stats.Length) _statShown = new float[_stats.Length];
+        }
+
+        /// <summary>
+        /// One figure: its name, its value (orange, with the value as built beside it, once the
+        /// setup has moved it), and under them a bar that fills to it, or for a balance a marker
+        /// on a front to rear scale with the middle marked. Bars and markers ease to new values.
+        /// </summary>
+        void MetricRow(Rect area, ref float y, int index)
+        {
+            Metric m = _stats[index];
+            if (Event.current.type == EventType.Repaint)
+                _statShown[index] = Mathf.Lerp(_statShown[index], m.Fraction, 1f - Mathf.Exp(-8f * Time.unscaledDeltaTime));
+            bool changed = Mathf.Abs(m.Value - m.Built) > 0.0005f * Mathf.Max(1f, Mathf.Abs(m.Built));
+            GUI.Label(new Rect(area.x, y, area.width, Hud.Px(22f)), m.Label, _caption);
+            _value.alignment = TextAnchor.MiddleRight;
+            _value.normal.textColor = changed ? AccentLight : Color.white;
+            GUI.Label(new Rect(area.x, y - Hud.Px(2f), area.width, Hud.Px(24f)), m.Value.ToString(m.Format) + " " + m.Unit, _value);
+            _value.normal.textColor = Color.white;
+            _value.alignment = TextAnchor.MiddleLeft;
+            if (changed)
+            {
+                float width = _value.CalcSize(new GUIContent(m.Value.ToString(m.Format) + " " + m.Unit)).x;
+                _caption.alignment = TextAnchor.MiddleRight;
+                GUI.Label(new Rect(area.x, y, area.width - width - Hud.Px(12f), Hud.Px(22f)), "BUILT " + m.Built.ToString(m.Format), _caption);
+                _caption.alignment = TextAnchor.MiddleLeft;
+            }
+            var track = new Rect(area.x, y + Hud.Px(25f), area.width, Hud.Px(6f));
+            Hud.Fill(track, new Color(1f, 1f, 1f, 0.1f));
+            float shown = Mathf.Clamp01(_statShown[index]);
+            if (m.Balance)
+            {
+                Hud.Fill(new Rect(track.center.x - Hud.Px(1f), track.y - Hud.Px(3f), Hud.Px(2f), track.height + Hud.Px(6f)), new Color(1f, 1f, 1f, 0.4f));
+                // Front on the left, as the share counts it.
+                float at = track.x + track.width * (1f - shown);
+                Hud.Fill(new Rect(at - Hud.Px(3f), track.y - Hud.Px(4f), Hud.Px(6f), track.height + Hud.Px(8f)), changed ? AccentLight : Color.white);
+            }
+            else Hud.Fill(new Rect(track.x, track.y, track.width * shown, track.height), Color.Lerp(AccentLight, Accent, shown));
+            y += Hud.Px(42f);
         }
 
         // ------------------------------------------------------------------ the camera's views
