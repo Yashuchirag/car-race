@@ -81,6 +81,8 @@ namespace CarRace.Harness
             var stoppedSince = new float[cars];
             var offLineM = new float[cars];
             var crawlingSince = new float[cars];
+            var judges = new TrackLimits[cars];
+            for (int i = 0; i < cars; i++) judges[i] = new TrackLimits();
             var nextCrawlLog = new float[cars];
             for (int i = 0; i < cars; i++) crawlingSince[i] = -1f;
             for (int i = 0; i < cars; i++) stoppedSince[i] = -1f;
@@ -198,6 +200,17 @@ namespace CarRace.Harness
 
                     VehicleInputs input = drivers[i].Drive(rig.Body.State, Dt);
                     rig.Step(input);
+
+                    // Track limits, judged as in Unity. A disqualified car is out of the race.
+                    TrackLimits.Kind offence = judges[i].Step(track, drivers[i].Path.Index, rig.Body.State.Position,
+                                                              rig.Body.State.Forward, rig.Body.State.Velocity,
+                                                              rig.Sim.Wheels, Dt);
+                    RaceControl.Event ruling = control.Judge(i, offence, time);
+                    if (ruling != null && verbose)
+                        Console.WriteLine($"    {ruling.Ruling.ToString().ToUpperInvariant(),-7} {time,7:0.0} s  s = "
+                                        + $"{drivers[i].Path.Index * track.SampleSpacingM,6:0} m  {entry.Name}  {offence}, "
+                                        + $"drove {judges[i].LastDrivenM:0} m where the road needs {judges[i].LastLegalM:0} m");
+                    if (entry.Disqualified) { retired[i] = true; continue; }
                     if (csv != null && step % ReactionSteps == 0)
                         WriteCsvRow(csv, i, rig, drivers[i], input, track);
 
@@ -376,31 +389,33 @@ namespace CarRace.Harness
             RaceControl.Entry[] order = control.Classification();
 
             Console.WriteLine($"  {"pos",3}  {"driver",-8}{"grid",6}{"best lap",12}"
-                            + $"{"race time",13}{"gap",10}{"places",8}{"hits",6}");
-            Console.WriteLine("  " + new string('-', 66));
+                            + $"{"race time",13}{"gap",10}{"places",8}{"hits",6}{"pen",6}");
+            Console.WriteLine("  " + new string('-', 72));
 
-            float winner = order[0].FinishedAtS;
+            float winner = order[0].ResultS;
+            int offences = control.Events.Count;
             foreach (RaceControl.Entry entry in order)
             {
-                string position = entry.Finished ? $"{entry.Position,3}" : "DNF";
+                string position = entry.Disqualified ? "DSQ" : entry.Finished ? $"{entry.Position,3}" : "DNF";
                 string best = entry.BestLapS < float.MaxValue ? Time(entry.BestLapS) : "-";
-                string raceTime = entry.Finished ? Time(entry.FinishedAtS)
+                string raceTime = entry.Finished ? Time(entry.ResultS)
                                                  : $"lap {entry.LapsComplete + 1}";
                 string gap = !entry.Finished ? "-"
                            : entry.Position == 1 ? "-"
-                           : $"+{entry.FinishedAtS - winner:0.00}s";
+                           : $"+{entry.ResultS - winner:0.00}s";
                 int places = entry.Grid - entry.Position;
                 string moved = !entry.Finished ? "-" : places == 0 ? "0" : $"{places:+0;-0}";
 
                 Console.WriteLine($"  {position}  {entry.Name,-8}{entry.Grid,6}{best,12}"
-                                + $"{raceTime,13}{gap,10}{moved,8}{entry.Contacts,6}");
+                                + $"{raceTime,13}{gap,10}{moved,8}{entry.Contacts,6}{(entry.PenaltyS > 0f ? $"+{entry.PenaltyS:0}s" : "-"),6}");
             }
 
             int finishers = 0;
             foreach (RaceControl.Entry entry in control.Entries) if (entry.Finished) finishers++;
 
             Console.WriteLine($"\n  {finishers} of {control.Entries.Length} finished, "
-                            + $"{contacts} contacts, {contactsOnLapOne} of them on lap one");
+                            + $"{contacts} contacts, {contactsOnLapOne} of them on lap one, "
+                            + $"{offences} track limits offences");
 
             if (time >= timeout)
             {

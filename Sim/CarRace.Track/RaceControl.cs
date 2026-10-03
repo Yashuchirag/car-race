@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace CarRace.Track
 {
@@ -21,7 +22,19 @@ namespace CarRace.Track
             public float FinishedAtS = -1f;
             public int Contacts;
 
+            /// <summary>Seconds of penalty, added to the race time at the flag.</summary>
+            public float PenaltyS;
+            public int Warnings;
+            public int Penalties;
+            public bool Disqualified;
+
+            /// <summary>No offence yet on the lap being driven; only a valid lap can be a best lap.</summary>
+            public bool LapValid = true;
+
             public bool Finished => FinishedAtS >= 0f;
+
+            /// <summary>The time the result is ranked on: the race time plus any penalties.</summary>
+            public float ResultS => FinishedAtS + PenaltyS;
             internal float LapStartedAtS;
             internal int LastSeenLaps = int.MinValue;
         }
@@ -54,26 +67,93 @@ namespace CarRace.Track
             if (entry.LastSeenLaps >= 0)
             {
                 entry.LastLapS = time - entry.LapStartedAtS;
-                if (entry.LastLapS < entry.BestLapS) entry.BestLapS = entry.LastLapS;
+                if (entry.LapValid && entry.LastLapS < entry.BestLapS) entry.BestLapS = entry.LastLapS;
                 entry.LapsComplete = laps;
                 if (laps >= RaceLaps && !entry.Finished) entry.FinishedAtS = time;
             }
 
             entry.LapStartedAtS = time;
             entry.LastSeenLaps = laps;
+            entry.LapValid = true;
+        }
+
+        // ---- penalties ------------------------------------------------------
+
+        public const float PenaltySeconds = 5f;
+        /// <summary>Track limits offences that are only warned; the next and every one after it
+        /// is a penalty.</summary>
+        public const int Warnings = 2;
+        /// <summary>The penalty that brings the black flag.</summary>
+        public const int PenaltiesToDisqualify = 5;
+
+        public enum Ruling { None, Warning, Penalty, Disqualified }
+
+        public sealed class Event
+        {
+            public float TimeS;
+            public int Car;
+            public TrackLimits.Kind Offence;
+            public Ruling Ruling;
+        }
+
+        /// <summary>Every ruling so far, oldest first.</summary>
+        public readonly List<Event> Events = new List<Event>();
+
+        /// <summary>
+        /// Rules on a judged excursion. A cut costs PenaltySeconds at once; running wide is a
+        /// warning, under the black and white flag, Warnings times, and a penalty every time
+        /// after that. Either makes the lap invalid. The PenaltiesToDisqualify-th penalty is
+        /// the black flag. Incidents and anything after the flag or a disqualification cost
+        /// nothing.
+        /// </summary>
+        public Event Judge(int car, TrackLimits.Kind offence, float time)
+        {
+            Entry entry = Entries[car];
+            if (offence != TrackLimits.Kind.Cut && offence != TrackLimits.Kind.TrackLimits) return null;
+            if (entry.Finished || entry.Disqualified) return null;
+
+            entry.LapValid = false;
+            Ruling ruling;
+            if (offence == TrackLimits.Kind.TrackLimits && entry.Warnings < Warnings)
+            {
+                entry.Warnings++;
+                ruling = Ruling.Warning;
+            }
+            else
+            {
+                if (offence == TrackLimits.Kind.TrackLimits) entry.Warnings++;
+                entry.Penalties++;
+                entry.PenaltyS += PenaltySeconds;
+                ruling = Ruling.Penalty;
+                if (entry.Penalties >= PenaltiesToDisqualify)
+                {
+                    entry.Disqualified = true;
+                    ruling = Ruling.Disqualified;
+                }
+            }
+
+            var ruled = new Event { TimeS = time, Car = car, Offence = offence, Ruling = ruling };
+            Events.Add(ruled);
+            return ruled;
         }
 
         /// <summary>
-        /// Orders the field: everyone who has finished, in the order they finished, then
-        /// everyone still running, by how far they have gone.
+        /// Orders the field: everyone who has finished, by race time plus penalties, then
+        /// everyone still running, by how far they have gone, then anyone disqualified. On the
+        /// road penalties change nothing; they count at the flag, as FIA time penalties do.
         /// </summary>
         public void Rank()
         {
             var order = (Entry[])Entries.Clone();
             Array.Sort(order, (a, b) =>
             {
+                if (a.Disqualified != b.Disqualified) return a.Disqualified ? 1 : -1;
                 if (a.Finished != b.Finished) return a.Finished ? -1 : 1;
-                if (a.Finished && b.Finished) return a.FinishedAtS.CompareTo(b.FinishedAtS);
+                if (a.Finished && b.Finished)
+                {
+                    int byResult = a.ResultS.CompareTo(b.ResultS);
+                    return byResult != 0 ? byResult : a.FinishedAtS.CompareTo(b.FinishedAtS);
+                }
                 return b.ProgressM.CompareTo(a.ProgressM);
             });
 

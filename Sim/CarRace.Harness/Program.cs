@@ -41,6 +41,9 @@ namespace CarRace.Harness
             if (Array.IndexOf(args, "--corner") >= 0) { CornerSweep(config); return 0; }
             if (Array.IndexOf(args, "--dump") >= 0) { DumpCase(config, "/tmp/case.csv"); return 0; }
             if (Array.IndexOf(args, "--setup-sweep") >= 0) return SetupSweep.Run(config);
+            int limitsIndex = Array.IndexOf(args, "--limits-test");
+            if (limitsIndex >= 0)
+                return LimitsTest.Run(config, limitsIndex + 1 < args.Length ? args[limitsIndex + 1] : "all");
 
             int netIndex = Array.IndexOf(args, "--net");
             if (netIndex >= 0)
